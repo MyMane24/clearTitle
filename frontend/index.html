@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Property OCR Pipeline</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --navy:   #1e3a5f;
+    --blue:   #2563eb;
+    --lblue:  #eff6ff;
+    --green:  #16a34a;
+    --lgreen: #dcfce7;
+    --amber:  #d97706;
+    --lamber: #fef3c7;
+    --red:    #dc2626;
+    --lred:   #fee2e2;
+    --gray:   #6b7280;
+    --lgray:  #f3f4f6;
+    --border: #e5e7eb;
+    --white:  #ffffff;
+  }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #f0f4f8;
+    color: #1f2937;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: linear-gradient(135deg, var(--navy) 0%, var(--blue) 100%);
+    color: var(--white);
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.2);
+  }
+  .header-icon { font-size: 32px; }
+  .header h1  { font-size: 20px; font-weight: 700; }
+  .header p   { font-size: 12px; opacity: .8; margin-top: 2px; }
+  .health-dot {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    opacity: .85;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #86efac; }
+  .dot.red { background: #fca5a5; }
+
+  /* ── Layout ── */
+  .main { max-width: 1100px; margin: 28px auto; padding: 0 20px; }
+
+  /* ── Step bar ── */
+  .steps {
+    display: flex;
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+  .step {
+    flex: 1;
+    padding: 14px 10px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--gray);
+    background: var(--lgray);
+    border-right: 1px solid var(--border);
+    transition: all .2s;
+  }
+  .step:last-child { border-right: none; }
+  .step.active { background: var(--blue);   color: var(--white); }
+  .step.done   { background: var(--green);  color: var(--white); }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.05);
+  }
+  .card-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--navy);
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* ── Upload zone ── */
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 48px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: all .2s;
+    background: var(--lgray);
+  }
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: var(--blue);
+    background: var(--lblue);
+  }
+  .upload-icon  { font-size: 48px; margin-bottom: 12px; }
+  .upload-title { font-size: 16px; font-weight: 600; color: var(--navy); margin-bottom: 6px; }
+  .upload-sub   { font-size: 13px; color: var(--gray); }
+  #file-input   { display: none; }
+
+  /* ── File list ── */
+  .file-list    { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .file-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--lgray);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+  .file-icon  { font-size: 20px; }
+  .file-name  { font-weight: 600; flex: 1; color: var(--navy); }
+  .file-size  { color: var(--gray); font-size: 12px; }
+  .file-pages { color: var(--blue); font-size: 12px; font-weight: 600; }
+  .file-remove {
+    cursor: pointer;
+    color: var(--red);
+    font-size: 18px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: background .1s;
+  }
+  .file-remove:hover { background: var(--lred); }
+
+  /* ── Buttons ── */
+  .btn {
+    padding: 11px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: all .15s;
+  }
+  .btn-primary { background: var(--blue);  color: var(--white); }
+  .btn-primary:hover { background: #1d4ed8; }
+  .btn-primary:disabled { background: var(--gray); cursor: not-allowed; }
+  .btn-secondary { background: var(--lgray); color: var(--navy); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--border); }
+  .btn-row { display: flex; gap: 10px; margin-top: 16px; }
+
+  /* ── Progress ── */
+  .progress-bar-wrap {
+    background: var(--lgray);
+    border-radius: 999px;
+    height: 10px;
+    overflow: hidden;
+    margin: 10px 0;
+  }
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--blue), #60a5fa);
+    border-radius: 999px;
+    transition: width .4s ease;
+  }
+  .progress-label { font-size: 12px; color: var(--gray); margin-bottom: 4px; }
+
+  /* ── Log box ── */
+  .log-box {
+    background: #0f172a;
+    color: #86efac;
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    max-height: 220px;
+    overflow-y: auto;
+    margin-top: 12px;
+  }
+  .log-box .log-err  { color: #fca5a5; }
+  .log-box .log-warn { color: #fbbf24; }
+  .log-box .log-ok   { color: #86efac; }
+  .log-box .log-info { color: #93c5fd; }
+
+  /* ── Results summary ── */
+  .metrics-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+  .metric-box {
+    background: var(--lblue);
+    border: 1px solid #bfdbfe;
+    border-radius: 10px;
+    padding: 12px 18px;
+    flex: 1;
+    min-width: 110px;
+  }
+  .metric-box .val { font-size: 26px; font-weight: 700; color: var(--navy); }
+  .metric-box .lbl { font-size: 11px; color: var(--gray); margin-top: 2px; }
+
+  /* ── Doc tabs ── */
+  .doc-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  .doc-tab {
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 2px solid var(--border);
+    background: var(--lgray);
+    color: #374151;
+    transition: all .15s;
+  }
+  .doc-tab.active   { border-color: var(--blue); background: var(--lblue); color: var(--blue); }
+  .doc-tab.error    { border-color: var(--red);  background: var(--lred);  color: var(--red);  }
+  .doc-tab.complete { border-color: var(--green); }
+
+  /* ── View toggle ── */
+  .view-toggle {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    width: fit-content;
+    margin-bottom: 14px;
+  }
+  .vt-btn {
+    padding: 7px 18px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--lgray);
+    color: var(--gray);
+    border: none;
+    border-right: 1px solid var(--border);
+    transition: all .1s;
+  }
+  .vt-btn:last-child { border-right: none; }
+  .vt-btn.active { background: var(--blue); color: var(--white); }
+
+  /* ── JSON / text viewers ── */
+  .json-viewer {
+    background: #0f172a;
+    color: #e2e8f0;
+    border-radius: 8px;
+    padding: 18px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    max-height: 560px;
+    overflow: auto;
+  }
+  pre.json-viewer { white-space: pre-wrap; word-break: break-word; }
+
+  /* JSON syntax colours */
+  .jk { color: #7dd3fc; }  /* key   */
+  .js { color: #86efac; }  /* string */
+  .jn { color: #fbbf24; }  /* number */
+  .jb { color: #f472b6; }  /* bool/null */
+
+  /* ── Doc info bar ── */
+  .doc-info-bar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+    padding: 10px 14px;
+    background: var(--lgray);
+    border-radius: 8px;
+    font-size: 12px;
+  }
+  .doc-info-bar strong { color: var(--navy); }
+
+  /* ── Badges ── */
+  .badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .badge-green  { background: var(--lgreen); color: var(--green); }
+  .badge-red    { background: var(--lred);   color: var(--red);   }
+  .badge-blue   { background: var(--lblue);  color: var(--blue);  }
+  .badge-amber  { background: var(--lamber); color: var(--amber); }
+
+  /* ── Error item ── */
+  .error-item {
+    background: var(--lred);
+    border: 1px solid #fca5a5;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--red);
+    margin-bottom: 8px;
+  }
+
+  /* ── Hidden ── */
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<div class="header">
+  <div class="header-icon">🏠</div>
+  <div>
+    <h1>Property OCR Pipeline</h1>
+    <p>Sarvam Vision OCR · Groq LLM Structuring · Karnataka Property Documents</p>
+  </div>
+  <div class="health-dot" id="health-indicator">
+    <div class="dot" id="health-dot"></div>
+    <span id="health-text">Checking...</span>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- ── Step bar ── -->
+  <div class="steps">
+    <div class="step active" id="step-1">1. Upload Documents</div>
+    <div class="step"        id="step-2">2. Processing</div>
+    <div class="step"        id="step-3">3. Results</div>
+  </div>
+
+  <!-- ═══════════ STAGE 1: UPLOAD ═══════════ -->
+  <div id="stage-upload">
+    <div class="card">
+      <div class="card-title">📁 Upload Property Documents</div>
+
+      <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
+        <div class="upload-icon">📄</div>
+        <div class="upload-title">Drop PDF files here or click to browse</div>
+        <div class="upload-sub">Supports: Sale Deed, EC, RTC, Khata, Mutation and more<br>
+          Short docs (≤10 pages) → single call &nbsp;|&nbsp; Long docs (&gt;10 pages) → auto-chunked</div>
+      </div>
+      <input type="file" id="file-input" multiple accept=".pdf">
+
+      <div class="file-list" id="file-list"></div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btn-process" disabled onclick="startProcessing()">
+          ▶ Run OCR Pipeline
+        </button>
+        <button class="btn btn-secondary" onclick="clearFiles()">✕ Clear All</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ STAGE 2: PROCESSING ═══════════ -->
+  <div id="stage-processing" class="hidden">
+    <div class="card">
+      <div class="card-title">⚙️ Pipeline Running</div>
+      <div class="progress-label" id="progress-label">Initialising...</div>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar" id="progress-bar" style="width:0%"></div>
+      </div>
+      <div class="log-box" id="log-box">
+        <span class="log-info">Pipeline started...</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ STAGE 3: RESULTS ═══════════ -->
+  <div id="stage-results" class="hidden">
+
+    <!-- Summary metrics -->
+    <div class="card">
+      <div class="card-title">📊 Case Summary</div>
+      <div class="metrics-row" id="metrics-row"></div>
+
+      <!-- Errors if any -->
+      <div id="errors-section"></div>
+    </div>
+
+    <!-- Per-document viewer -->
+    <div class="card" id="doc-viewer-card">
+      <div class="card-title">📂 Document Results</div>
+      <div class="doc-tabs"  id="doc-tabs"></div>
+      <div id="doc-panels"></div>
+    </div>
+
+  </div>
+
+</div><!-- /main -->
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────────
+let selectedFiles = [];
+let currentCaseId = null;
+let pollInterval  = null;
+
+// ── Health check ───────────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const r = await fetch('/health');
+    const d = await r.json();
+    const ok = d.sarvam_key && d.groq_key;
+    document.getElementById('health-dot').className  = 'dot' + (ok ? '' : ' red');
+    document.getElementById('health-text').textContent = ok
+      ? 'API keys loaded'
+      : `⚠ Missing: ${[!d.sarvam_key && 'Sarvam', !d.groq_key && 'Groq'].filter(Boolean).join(', ')}`;
+  } catch(e) {
+    document.getElementById('health-dot').className  = 'dot red';
+    document.getElementById('health-text').textContent = 'Server offline';
+  }
+}
+checkHealth();
+
+// ── File drag & drop ───────────────────────────────────────────────────────────
+const zone = document.getElementById('upload-zone');
+zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('drag-over'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+zone.addEventListener('drop', e => {
+  e.preventDefault();
+  zone.classList.remove('drag-over');
+  handleFiles([...e.dataTransfer.files]);
+});
+document.getElementById('file-input').addEventListener('change', e => {
+  handleFiles([...e.target.files]);
+  e.target.value = '';
+});
+
+function handleFiles(files) {
+  files.filter(f => f.name.toLowerCase().endsWith('.pdf')).forEach(f => {
+    if (!selectedFiles.find(sf => sf.name === f.name && sf.size === f.size))
+      selectedFiles.push(f);
+  });
+  renderFileList();
+}
+
+function renderFileList() {
+  const list = document.getElementById('file-list');
+  list.innerHTML = '';
+  selectedFiles.forEach((f, i) => {
+    const div = document.createElement('div');
+    div.className = 'file-item';
+    div.innerHTML = `
+      <span class="file-icon">📄</span>
+      <span class="file-name">${f.name}</span>
+      <span class="file-size">${(f.size/1024).toFixed(1)} KB</span>
+      <span class="file-remove" onclick="removeFile(${i})" title="Remove">✕</span>`;
+    list.appendChild(div);
+  });
+  document.getElementById('btn-process').disabled = selectedFiles.length === 0;
+}
+
+function removeFile(i) {
+  selectedFiles.splice(i, 1);
+  renderFileList();
+}
+
+function clearFiles() {
+  selectedFiles = [];
+  renderFileList();
+}
+
+// ── Start processing ───────────────────────────────────────────────────────────
+async function startProcessing() {
+  if (selectedFiles.length === 0) return;
+
+  // Step 1: Upload files
+  setStep(2);
+  showStage('processing');
+  updateProgress(5, 'Uploading documents...');
+
+  const fd = new FormData();
+  selectedFiles.forEach(f => fd.append('files', f));
+
+  let uploadResp;
+  try {
+    const r = await fetch('/api/upload', { method: 'POST', body: fd });
+    if (!r.ok) throw new Error(await r.text());
+    uploadResp = await r.json();
+  } catch(e) {
+    addLog(`✗ Upload failed: ${e.message}`, 'err');
+    return;
+  }
+
+  currentCaseId = uploadResp.case_id;
+  addLog(`✓ ${uploadResp.files.length} file(s) uploaded → Case ${currentCaseId}`, 'ok');
+  updateProgress(10, 'Starting OCR pipeline...');
+
+  // Step 2: Trigger pipeline
+  try {
+    const r = await fetch(`/api/process/${currentCaseId}`, { method: 'POST' });
+    if (!r.ok) throw new Error(await r.text());
+    addLog('✓ Pipeline started — running in background', 'ok');
+  } catch(e) {
+    addLog(`✗ Pipeline start failed: ${e.message}`, 'err');
+    return;
+  }
+
+  // Step 3: Poll for status
+  pollInterval = setInterval(() => pollStatus(), 3000);
+}
+
+async function pollStatus() {
+  if (!currentCaseId) return;
+  try {
+    const r = await fetch(`/api/status/${currentCaseId}`);
+    const d = await r.json();
+
+    // Update progress bar
+    updateProgress(d.progress || 0, `Processing... ${d.progress || 0}%`);
+
+    // Update log (show only last N lines to avoid overflow)
+    const logBox = document.getElementById('log-box');
+    const lines  = (d.log || []).slice(-60);
+    logBox.innerHTML = lines.map(l => {
+      const cls = l.includes('✗') || l.toLowerCase().includes('failed') ? 'log-err'
+                : l.includes('✓') || l.toLowerCase().includes('complete') ? 'log-ok'
+                : l.includes('Step') || l.includes('──') ? 'log-info'
+                : l.includes('⚠') ? 'log-warn'
+                : '';
+      return `<span class="${cls}">${escHtml(l)}</span>`;
+    }).join('<br>');
+    logBox.scrollTop = logBox.scrollHeight;
+
+    // Check if done
+    if (d.status === 'complete' || d.status === 'partial' || d.status === 'failed') {
+      clearInterval(pollInterval);
+      updateProgress(100, 'Pipeline complete');
+      addLog(`── Pipeline finished: ${d.results.length} complete, ${d.errors.length} failed ──`, 'ok');
+      setTimeout(() => showResults(d), 800);
+    }
+  } catch(e) {
+    addLog(`⚠ Polling error: ${e.message}`, 'warn');
+  }
+}
+
+// ── Results ────────────────────────────────────────────────────────────────────
+function showResults(data) {
+  setStep(3);
+  showStage('results');
+
+  const results = data.results || [];
+  const errors  = data.errors  || [];
+
+  // Metrics
+  document.getElementById('metrics-row').innerHTML = `
+    <div class="metric-box"><div class="val">${results.length}</div><div class="lbl">Documents complete</div></div>
+    <div class="metric-box"><div class="val">${errors.length}</div><div class="lbl">Failed</div></div>
+    <div class="metric-box"><div class="val">${results.reduce((s,r)=>s+(r.total_pages||0),0)}</div><div class="lbl">Total pages</div></div>
+    <div class="metric-box"><div class="val">${results.reduce((s,r)=>s+(r.chunks_used||1),0)}</div><div class="lbl">Sarvam calls</div></div>
+    <div class="metric-box"><div class="val"><span class="badge ${data.status==='complete'?'badge-green':'badge-amber'}">${data.status}</span></div><div class="lbl">Case status</div></div>
+  `;
+
+  // Errors
+  const errSec = document.getElementById('errors-section');
+  if (errors.length > 0) {
+    errSec.innerHTML = `<div style="margin-top:14px"><strong style="color:var(--red)">⚠ Errors</strong><div style="margin-top:8px">` +
+      errors.map(e => `<div class="error-item">
+        <strong>${e.doc_id}</strong> — Step: ${e.step}<br>
+        <code style="font-size:11px">${escHtml(e.error)}</code>
+      </div>`).join('') + '</div></div>';
+  } else {
+    errSec.innerHTML = '';
+  }
+
+  // Build doc tabs
+  const tabsEl   = document.getElementById('doc-tabs');
+  const panelsEl = document.getElementById('doc-panels');
+  tabsEl.innerHTML = panelsEl.innerHTML = '';
+
+  results.forEach((res, i) => {
+    // Tab button
+    const tab = document.createElement('div');
+    tab.className = `doc-tab ${i===0?'active':''} complete`;
+    tab.id        = `tab-${res.doc_id}`;
+    tab.textContent = `${res.doc_id}`;
+    tab.onclick   = () => switchTab(res.doc_id, results);
+    tabsEl.appendChild(tab);
+
+    // Panel
+    const panel = document.createElement('div');
+    panel.id      = `panel-${res.doc_id}`;
+    panel.style.display = i === 0 ? 'block' : 'none';
+    panel.innerHTML = buildDocPanel(res);
+    panelsEl.appendChild(panel);
+  });
+}
+
+function buildDocPanel(res) {
+  const structured = res.structured || {};
+  const jsonPretty = syntaxHighlight(JSON.stringify(structured, null, 2));
+
+  return `
+    <div class="doc-info-bar">
+      <strong>${res.filename}</strong>
+      <span class="badge badge-blue">${res.doc_type}</span>
+      <span style="color:var(--gray)">Pages: <strong>${res.total_pages}</strong></span>
+      <span style="color:var(--gray)">Chunks: <strong>${res.chunks_used}</strong></span>
+      <span class="badge badge-green">✓ complete</span>
+    </div>
+
+    <div class="view-toggle" id="vtog-${res.doc_id}">
+      <button class="vt-btn active" onclick="switchView('${res.doc_id}','json')">🗄 Structured JSON</button>
+      <button class="vt-btn"       onclick="switchView('${res.doc_id}','summary')">📋 Field Summary</button>
+    </div>
+
+    <div id="view-${res.doc_id}-json">
+      <div class="json-viewer">${jsonPretty}</div>
+    </div>
+
+    <div id="view-${res.doc_id}-summary" style="display:none">
+      ${buildSummaryTable(structured)}
+    </div>
+  `;
+}
+
+function buildSummaryTable(structured) {
+  // Flatten top-level keys for a quick scan table
+  const rows = flattenObj(structured, '', 0)
+    .filter(r => r.value !== null && r.value !== '' && !Array.isArray(r.raw))
+    .map(r => `<tr>
+      <td style="font-family:monospace;font-size:11px;color:var(--navy);padding:6px 12px;border-bottom:1px solid var(--border);white-space:nowrap">${escHtml(r.key)}</td>
+      <td style="padding:6px 12px;border-bottom:1px solid var(--border);font-size:13px">${escHtml(String(r.value))}</td>
+    </tr>`).join('');
+
+  return `<div style="overflow:auto;max-height:520px">
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr>
+        <th style="background:var(--navy);color:var(--white);padding:8px 12px;text-align:left;font-size:12px">Field</th>
+        <th style="background:var(--navy);color:var(--white);padding:8px 12px;text-align:left;font-size:12px">Value</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+function flattenObj(obj, prefix, depth) {
+  if (depth > 4) return [];
+  const rows = [];
+  for (const [k, v] of Object.entries(obj || {})) {
+    const key = prefix ? `${prefix}.${k}` : k;
+    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+      rows.push(...flattenObj(v, key, depth+1));
+    } else if (Array.isArray(v)) {
+      v.forEach((item, i) => {
+        if (typeof item === 'object') rows.push(...flattenObj(item, `${key}[${i}]`, depth+1));
+        else rows.push({ key: `${key}[${i}]`, value: item, raw: item });
+      });
+    } else {
+      rows.push({ key, value: v, raw: v });
+    }
+  }
+  return rows;
+}
+
+// ── Tab / view switching ───────────────────────────────────────────────────────
+function switchTab(docId, results) {
+  results.forEach(r => {
+    document.getElementById(`panel-${r.doc_id}`).style.display = r.doc_id === docId ? 'block' : 'none';
+    document.getElementById(`tab-${r.doc_id}`).classList.toggle('active', r.doc_id === docId);
+  });
+}
+
+function switchView(docId, view) {
+  ['json','summary'].forEach(v => {
+    const el = document.getElementById(`view-${docId}-${v}`);
+    if (el) el.style.display = v === view ? 'block' : 'none';
+  });
+  const tog = document.getElementById(`vtog-${docId}`);
+  if (tog) tog.querySelectorAll('.vt-btn').forEach(b => {
+    b.classList.toggle('active', b.onclick.toString().includes(`'${view}'`));
+  });
+}
+
+// ── UI helpers ─────────────────────────────────────────────────────────────────
+function showStage(s) {
+  ['upload','processing','results'].forEach(id => {
+    document.getElementById(`stage-${id}`).classList.toggle('hidden', id !== s);
+  });
+}
+function setStep(n) {
+  [1,2,3].forEach(i => {
+    const el = document.getElementById(`step-${i}`);
+    el.className = 'step' + (i < n ? ' done' : i === n ? ' active' : '');
+  });
+}
+function updateProgress(pct, label) {
+  document.getElementById('progress-bar').style.width   = `${pct}%`;
+  document.getElementById('progress-label').textContent = label;
+}
+function addLog(msg, type='info') {
+  const box = document.getElementById('log-box');
+  const span = document.createElement('span');
+  span.className = `log-${type}`;
+  span.textContent = msg;
+  box.appendChild(document.createElement('br'));
+  box.appendChild(span);
+  box.scrollTop = box.scrollHeight;
+}
+
+// ── JSON syntax highlight ──────────────────────────────────────────────────────
+function syntaxHighlight(json) {
+  return escHtml(json)
+    .replace(/("(?:[^"\\]|\\.)*")(\s*:)/g, '<span class="jk">$1</span>$2')
+    .replace(/:\s*("(?:[^"\\]|\\.)*")/g,   ': <span class="js">$1</span>')
+    .replace(/:\s*(-?\d+\.?\d*)/g,          ': <span class="jn">$1</span>')
+    .replace(/:\s*(true|false|null)/g,       ': <span class="jb">$1</span>');
+}
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>
