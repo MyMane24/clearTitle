@@ -22,6 +22,10 @@ from backend.services.ocr_merger     import merge_chunked_outputs
 from backend.services.gemini_structurer import structure_document_with_gemini
 from backend.services.doc_classifier import classify_document
 from backend.services.ec_parser import EC_DOC_TYPE, normalize_ec_document, with_document_type_name
+from backend.services.property_tax_assessment_parser import (
+    PROPERTY_TAX_ASSESSMENT_DOC_TYPE,
+    normalize_property_tax_assessment,
+)
 from backend.services.mysql_store import store_structured_result
 from backend.utils.file_utils        import (
     get_case_dir, save_upload, cleanup_temp, write_json, read_json
@@ -126,6 +130,8 @@ def _structured_output_path(case_dir: Path, doc_id: str, doc_type: str) -> Path:
 async def _structure_document_for_type(merged: dict, doc_type: str, filename: str) -> dict:
     if doc_type == EC_DOC_TYPE:
         return await asyncio.to_thread(normalize_ec_document, merged, filename)
+    if doc_type == PROPERTY_TAX_ASSESSMENT_DOC_TYPE:
+        return await asyncio.to_thread(normalize_property_tax_assessment, merged, filename)
     structured = await asyncio.to_thread(structure_document_with_gemini, merged, doc_type)
     return with_document_type_name(structured, doc_type)
 
@@ -248,6 +254,8 @@ async def _run_pipeline_serial(case_id: str):
             # ── STEP 5: Structure document ────────────────────────────────
             if doc_type == EC_DOC_TYPE:
                 log(f"[{doc_id}] Step 5: Parsing EC table deterministically")
+            elif doc_type == PROPERTY_TAX_ASSESSMENT_DOC_TYPE:
+                log(f"[{doc_id}] Step 5: Parsing property tax assessment table deterministically")
             else:
                 log(f"[{doc_id}] Step 5: Structuring with Gemini LLM")
             try:
@@ -389,6 +397,8 @@ async def _run_pipeline(case_id: str):
 
             if doc_type == EC_DOC_TYPE:
                 log(f"[{doc_id}] Step 5: Parsing EC table deterministically")
+            elif doc_type == PROPERTY_TAX_ASSESSMENT_DOC_TYPE:
+                log(f"[{doc_id}] Step 5: Parsing property tax assessment table deterministically")
             else:
                 log(f"[{doc_id}] Step 5: Structuring with Gemini LLM")
             try:
