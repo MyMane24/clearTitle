@@ -52,13 +52,70 @@ def _extract_pages(chunk: ChunkResult) -> List[dict]:
             pg["content"] = _clean_content(pg.get("content", ""))
         return sorted(json_pages, key=lambda p: p["absolute_page_number"])
 
-    # Fallback: Sarvam returned no page objects — build synthetic from MD
+    # Fallback: Sarvam returned no page objects. Its markdown can still contain
+    # physical page footer markers like "Page 3 Of 16"; split on those.
+    md_pages = _split_markdown_pages(chunk.md_text, chunk.page_start)
+    if md_pages:
+        return md_pages
+
+    # Last fallback: build one synthetic page from the whole chunk.
     return [{
         "page_number":          1,
         "absolute_page_number": chunk.page_start,
         "content":              _clean_content(chunk.md_text),
         "tables":               [],
     }]
+
+
+def _split_markdown_pages(md_text: str, page_start: int) -> List[dict]:
+    """
+    Split Sarvam markdown fallback text into physical pages using footer markers.
+    The marker appears at the end of a page: "Page N Of M".
+    """
+    if not md_text:
+        return []
+
+    marker_re = re.compile(r"(?im)^\s*Page\s+(\d+)\s+Of\s+\d+\s*$")
+    matches = list(marker_re.finditer(md_text))
+    if not matches:
+        return []
+
+    pages: List[dict] = []
+    cursor = 0
+    for match in matches:
+        page_number = int(match.group(1))
+        content = _clean_page_slice(md_text[cursor:match.start()])
+        if content:
+            pages.append({
+                "page_number": page_number,
+                "absolute_page_number": page_number,
+                "content": _clean_content(content),
+                "tables": [],
+            })
+        cursor = match.end()
+
+    trailing = _clean_page_slice(md_text[cursor:])
+    if trailing:
+        if pages:
+            pages[-1]["content"] = _clean_content(
+                pages[-1].get("content", "") + "\n\n" + trailing
+            )
+        else:
+            pages.append({
+                "page_number": page_start,
+                "absolute_page_number": page_start,
+                "content": _clean_content(trailing),
+                "tables": [],
+            })
+
+    return sorted(pages, key=lambda p: p["absolute_page_number"])
+
+
+def _clean_page_slice(text: str) -> str:
+    """Remove chunk/page separators around a split page body."""
+    text = re.sub(r"(?im)^\s*---\s*Page\s+\d+\s*---\s*", "", text)
+    text = re.sub(r"(?m)^\s*---\s*$", "", text)
+    return text.strip()
 
 
 def _deduplicate_pages(sorted_chunks: List[ChunkResult]) -> List[dict]:
