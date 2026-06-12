@@ -54,4 +54,5 @@ async def health():
         "status": "ok",
         "sarvam_key": bool(os.getenv("SARVAM_API_KEY")),
         "groq_key":   bool(os.getenv("GROQ_API_KEY")),
+        "gemini_key": bool(os.getenv("GEMINI_API_KEY")),
     }
