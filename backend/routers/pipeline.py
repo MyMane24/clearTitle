@@ -19,8 +19,10 @@ from fastapi.responses import JSONResponse
 from backend.services.preprocessor   import preprocess_pdf
 from backend.services.sarvam_ocr     import run_sarvam_ocr
 from backend.services.ocr_merger     import merge_chunked_outputs
-from backend.services.groq_structurer import structure_document
+from backend.services.gemini_structurer import structure_document_with_gemini
 from backend.services.doc_classifier import classify_document
+from backend.services.ec_parser import EC_DOC_TYPE, normalize_ec_document, with_document_type_name
+from backend.services.mysql_store import store_structured_result
 from backend.utils.file_utils        import (
     get_case_dir, save_upload, cleanup_temp, write_json, read_json
 )
@@ -94,6 +96,9 @@ async def get_result(case_id: str, doc_id: str):
     case_dir = get_case_dir(case_id)
     result_file = case_dir / "structured" / f"{doc_id}.json"
     if not result_file.exists():
+        matches = sorted((case_dir / "structured").glob(f"{doc_id}_*.json"))
+        result_file = matches[0] if matches else result_file
+    if not result_file.exists():
         raise HTTPException(status_code=404, detail="Result not ready")
     return read_json(result_file)
 
@@ -108,6 +113,45 @@ def _get_doc_workers(total_docs: int) -> int:
     except ValueError:
         configured = DEFAULT_DOC_WORKERS
     return max(1, min(configured, total_docs))
+
+
+def _safe_doc_type(doc_type: str) -> str:
+    return "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in doc_type.upper())
+
+
+def _structured_output_path(case_dir: Path, doc_id: str, doc_type: str) -> Path:
+    return case_dir / "structured" / f"{doc_id}_{_safe_doc_type(doc_type)}.json"
+
+
+async def _structure_document_for_type(merged: dict, doc_type: str, filename: str) -> dict:
+    if doc_type == EC_DOC_TYPE:
+        return await asyncio.to_thread(normalize_ec_document, merged, filename)
+    structured = await asyncio.to_thread(structure_document_with_gemini, merged, doc_type)
+    return with_document_type_name(structured, doc_type)
+
+
+async def _save_to_mysql(
+    *,
+    case_id: str,
+    doc_id: str,
+    filename: str,
+    doc_type: str,
+    structured: dict,
+    result_path: Path,
+) -> tuple[bool, str | None]:
+    try:
+        await asyncio.to_thread(
+            store_structured_result,
+            case_id=case_id,
+            doc_id=doc_id,
+            filename=filename,
+            document_type=doc_type,
+            structured=structured,
+            result_path=result_path,
+        )
+        return True, None
+    except Exception as exc:
+        return False, str(exc)
 
 
 async def _run_pipeline_serial(case_id: str):
@@ -201,16 +245,31 @@ async def _run_pipeline_serial(case_id: str):
             doc_type = classify_document(pdf_path.name, merged["full_text"][:500])
             log(f"[{doc_id}] Step 4: Classified → {doc_type}")
 
-            # ── STEP 5: Structure with Groq ────────────────────────────────
-            log(f"[{doc_id}] Step 5: Structuring with Groq LLM")
+            # ── STEP 5: Structure document ────────────────────────────────
+            if doc_type == EC_DOC_TYPE:
+                log(f"[{doc_id}] Step 5: Parsing EC table deterministically")
+            else:
+                log(f"[{doc_id}] Step 5: Structuring with Gemini LLM")
             try:
-                structured = await asyncio.to_thread(
-                    structure_document, merged, doc_type
+                structured = await _structure_document_for_type(
+                    merged, doc_type, pdf_path.name
                 )
-                # Save structured output
-                out_path = case_dir / "structured" / f"{doc_id}.json"
+                out_path = _structured_output_path(case_dir, doc_id, doc_type)
                 write_json(out_path, structured)
                 log(f"[{doc_id}] ✓ Structured → {out_path.name}")
+
+                mysql_saved, mysql_error = await _save_to_mysql(
+                    case_id=case_id,
+                    doc_id=doc_id,
+                    filename=pdf_path.name,
+                    doc_type=doc_type,
+                    structured=structured,
+                    result_path=out_path,
+                )
+                if mysql_saved:
+                    log(f"[{doc_id}] ✓ Saved to MySQL document_results")
+                else:
+                    log(f"[{doc_id}] ⚠ MySQL save failed: {mysql_error}")
 
                 job["results"].append({
                     "doc_id":       doc_id,
@@ -218,6 +277,9 @@ async def _run_pipeline_serial(case_id: str):
                     "doc_type":     doc_type,
                     "status":       "complete",
                     "structured":   structured,
+                    "result_file":  out_path.name,
+                    "mysql_saved":  mysql_saved,
+                    "mysql_error":  mysql_error,
                     "total_pages":  merged["total_pages"],
                     "chunks_used":  len(ocr_results),
                 })
@@ -325,16 +387,32 @@ async def _run_pipeline(case_id: str):
             doc_type = classify_document(pdf_path.name, merged["full_text"][:500])
             log(f"[{doc_id}] Step 4: Classified → {doc_type}")
 
-            log(f"[{doc_id}] Step 5: Structuring with Groq LLM")
+            if doc_type == EC_DOC_TYPE:
+                log(f"[{doc_id}] Step 5: Parsing EC table deterministically")
+            else:
+                log(f"[{doc_id}] Step 5: Structuring with Gemini LLM")
             try:
-                structured = await asyncio.to_thread(
-                    structure_document,
+                structured = await _structure_document_for_type(
                     merged,
                     doc_type,
+                    pdf_path.name,
                 )
-                out_path = case_dir / "structured" / f"{doc_id}.json"
+                out_path = _structured_output_path(case_dir, doc_id, doc_type)
                 write_json(out_path, structured)
                 log(f"[{doc_id}] ✓ Structured → {out_path.name}")
+
+                mysql_saved, mysql_error = await _save_to_mysql(
+                    case_id=case_id,
+                    doc_id=doc_id,
+                    filename=pdf_path.name,
+                    doc_type=doc_type,
+                    structured=structured,
+                    result_path=out_path,
+                )
+                if mysql_saved:
+                    log(f"[{doc_id}] ✓ Saved to MySQL document_results")
+                else:
+                    log(f"[{doc_id}] ⚠ MySQL save failed: {mysql_error}")
 
                 job["results"].append({
                     "doc_id": doc_id,
@@ -342,6 +420,9 @@ async def _run_pipeline(case_id: str):
                     "doc_type": doc_type,
                     "status": "complete",
                     "structured": structured,
+                    "result_file": out_path.name,
+                    "mysql_saved": mysql_saved,
+                    "mysql_error": mysql_error,
                     "total_pages": merged["total_pages"],
                     "chunks_used": len(ocr_results),
                 })
