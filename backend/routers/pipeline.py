@@ -22,7 +22,7 @@ from backend.services.preprocessor   import preprocess_pdf
 from backend.services.sarvam_ocr     import run_sarvam_ocr
 from backend.services.ocr_merger     import merge_chunked_outputs
 from backend.services.gemini_structurer import structure_document_with_gemini
-from backend.services.doc_classifier import classify_document
+from backend.services.doc_classifier import classify_document, VALID_DOC_TYPES
 from backend.services.ec_parser import EC_DOC_TYPE, normalize_ec_document, with_document_type_name
 from backend.services.property_tax_assessment_parser import (
     PROPERTY_TAX_ASSESSMENT_DOC_TYPE,
@@ -35,8 +35,11 @@ from backend.services.mysql_store import (
     get_case_documents,
     get_case_bundle,
     get_failed_documents,
+    get_classification_failed_documents,
     update_case_status,
     increment_retry,
+    replace_document,
+    skip_document,
 )
 from backend.utils.file_utils        import (
     get_case_dir, save_upload, cleanup_temp, write_json, read_json
@@ -121,7 +124,50 @@ async def process_case(case_id: str, background_tasks: BackgroundTasks):
 async def get_status(case_id: str):
     if case_id not in JOBS:
         raise HTTPException(status_code=404, detail="Case not found")
-    return JOBS[case_id]
+    job = dict(JOBS[case_id])
+
+    # Add a dedicated needs_action field for classification_failed docs
+    # Sources: (1) in-memory JOBS errors with action_required, (2) DB fallback
+    action_errors = [
+        e for e in job.get("errors", [])
+        if e.get("action_required") == "replace_or_skip"
+    ]
+    needs_action = []
+    if action_errors:
+        # Use in-memory data (reliable, no DB dependency)
+        file_info = {f["doc_id"]: f["original_name"] for f in job.get("files", [])}
+        for e in action_errors:
+            needs_action.append({
+                "doc_id": e["doc_id"],
+                "filename": file_info.get(e["doc_id"], e["doc_id"]),
+            })
+    else:
+        # Fallback: query DB
+        try:
+            needs_action = get_classification_failed_documents(case_id)
+        except Exception:
+            needs_action = []
+
+    job["needs_action"] = [
+        {
+            "doc_id": d["doc_id"],
+            "filename": d["filename"],
+            "message": (
+                f"'{d['filename']}' — document type not recognised. Choices:"
+            ),
+            "choices": [
+                {"action": "skip", "method": "POST",
+                 "url": f"/api/case/{case_id}/doc/{d['doc_id']}/skip",
+                 "label": "Continue without this document"},
+                {"action": "replace", "method": "POST",
+                 "url": f"/api/case/{case_id}/doc/{d['doc_id']}/replace",
+                 "label": "Upload a replacement document"},
+            ],
+        }
+        for d in needs_action
+    ]
+
+    return job
 
 
 # ── 4. Result endpoint (single doc) ────────────────────────────────────────────
@@ -156,8 +202,16 @@ async def retry_failed(case_id: str, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=409, detail="Already processing")
 
     failed = get_failed_documents(case_id)
+    classification_failed = get_classification_failed_documents(case_id)
+
     if not failed:
-        raise HTTPException(status_code=400, detail="No failed documents to retry")
+        msg = "No failed documents to retry."
+        if classification_failed:
+            doc_list = ", ".join(d["doc_id"] for d in classification_failed)
+            msg += (f" {len(classification_failed)} document(s) have unrecognised types "
+                    f"({doc_list}). Use POST /api/case/{case_id}/doc/<doc_id>/replace "
+                    f"to upload a valid document, or /skip to proceed without it.")
+        raise HTTPException(status_code=400, detail=msg)
 
     JOBS[case_id]["status"] = "processing"
     JOBS[case_id]["log"].append(f"Retrying {len(failed)} failed document(s)")
@@ -172,6 +226,89 @@ async def retry_failed(case_id: str, background_tasks: BackgroundTasks):
 
     background_tasks.add_task(_run_pipeline, case_id, retry_only=True)
     return {"case_id": case_id, "retrying": len(failed)}
+
+
+# ── 7. Replace document endpoint ───────────────────────────────────────────────
+@router.post("/case/{case_id}/doc/{doc_id}/replace")
+async def replace_doc(case_id: str, doc_id: str, file: UploadFile = File(...)):
+    if case_id not in JOBS:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Replacement must be a PDF")
+
+    # Verify the doc exists in this case
+    docs = get_case_documents(case_id)
+    if not any(d["doc_id"] == doc_id for d in docs):
+        raise HTTPException(status_code=404, detail="Document not found in this case")
+
+    case_dir = get_case_dir(case_id)
+    dest = await save_upload(file, case_dir / "raw", doc_id=doc_id)
+    doc_index = next((i for i, d in enumerate(JOBS[case_id]["files"]) if d["doc_id"] == doc_id), None)
+
+    # Update in-memory job
+    if doc_index is not None:
+        JOBS[case_id]["files"][doc_index]["saved_path"] = str(dest)
+        JOBS[case_id]["files"][doc_index]["original_name"] = file.filename
+
+    # Update DB
+    replace_document(
+        case_id=case_id,
+        doc_id=doc_id,
+        filename=file.filename,
+        file_paths={"raw": str(dest)},
+    )
+
+    # Clean up in-memory error for this doc so needs_action disappears
+    JOBS[case_id]["errors"] = [
+        e for e in JOBS[case_id].get("errors", [])
+        if e.get("doc_id") != doc_id
+    ]
+
+    JOBS[case_id]["log"].append(
+        f"[{doc_id}] Replaced with {file.filename} — ready for retry"
+    )
+
+    return {
+        "case_id": case_id,
+        "doc_id": doc_id,
+        "filename": file.filename,
+        "message": "Document replaced. Call POST /api/retry/{case_id} to process it.",
+    }
+
+
+# ── 8. Skip document endpoint ────────────────────────────────────────────────
+@router.post("/case/{case_id}/doc/{doc_id}/skip")
+async def skip_doc(case_id: str, doc_id: str):
+    if case_id not in JOBS:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    docs = get_case_documents(case_id)
+    doc = next((d for d in docs if d["doc_id"] == doc_id), None)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found in this case")
+    if doc["status"] != "classification_failed":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Document status is '{doc['status']}', not 'classification_failed'. "
+                   "Only classification-failed documents can be skipped.",
+        )
+
+    skip_document(case_id=case_id, doc_id=doc_id)
+    update_case_status(case_id=case_id)
+
+    # Clean up in-memory error for this doc so needs_action disappears
+    JOBS[case_id]["errors"] = [
+        e for e in JOBS[case_id].get("errors", [])
+        if e.get("doc_id") != doc_id
+    ]
+
+    JOBS[case_id]["log"].append(f"[{doc_id}] Skipped — removed from case")
+
+    return {
+        "case_id": case_id,
+        "doc_id": doc_id,
+        "message": "Document skipped. Case will proceed without it.",
+    }
 
 
 # ── Background pipeline ────────────────────────────────────────────────────────
@@ -206,13 +343,38 @@ def _run_ocr_with_retry(pdf_path: Path, output_dir: Path, max_retries: int = OCR
 
 
 # ── Structure helper ────────────────────────────────────────────────────────────
+STRUCTURE_MAX_RETRIES = 3
+STRUCTURE_RETRY_DELAY_SEC = 5
+
+
+def _is_transient_error(e: Exception) -> bool:
+    """True for 503/429/5xx — should be retried."""
+    msg = str(e).lower()
+    return any(x in msg for x in ["503", "429", "500", "unavailable", "rate limit", "too many requests"])
+
+
+def _run_structure_with_retry(merged: dict, doc_type: str) -> dict:
+    last_error = None
+    for attempt in range(1, STRUCTURE_MAX_RETRIES + 1):
+        try:
+            result = structure_document_with_gemini(merged, doc_type)
+            return with_document_type_name(result, doc_type)
+        except Exception as e:
+            last_error = e
+            if _is_transient_error(e) and attempt < STRUCTURE_MAX_RETRIES:
+                time.sleep(STRUCTURE_RETRY_DELAY_SEC * attempt)
+            else:
+                raise
+    raise last_error
+
+
 async def _structure_document_for_type(merged: dict, doc_type: str, filename: str) -> dict:
     if doc_type == EC_DOC_TYPE:
         return await asyncio.to_thread(normalize_ec_document, merged, filename)
     if doc_type == PROPERTY_TAX_ASSESSMENT_DOC_TYPE:
         return await asyncio.to_thread(normalize_property_tax_assessment, merged, filename)
-    structured = await asyncio.to_thread(structure_document_with_gemini, merged, doc_type)
-    return with_document_type_name(structured, doc_type)
+    structured = await asyncio.to_thread(_run_structure_with_retry, merged, doc_type)
+    return structured
 
 
 # ── Main pipeline ───────────────────────────────────────────────────────────────
@@ -326,6 +488,24 @@ async def _run_pipeline(case_id: str, retry_only: bool = False):
 
             doc_type = classify_document(pdf_path.name, merged["full_text"][:500])
             log(f"[{doc_id}] Step 4: Classified → {doc_type}")
+
+            if doc_type == "UNKNOWN":
+                log(f"[{doc_id}] ✗ Unknown document type — needs user action")
+                update_document_status(
+                    case_id=case_id, doc_id=doc_id, status="classification_failed",
+                    document_type=doc_type,
+                    error="Unrecognised document type. "
+                          f"Supported: {', '.join(sorted(VALID_DOC_TYPES))}. "
+                          "Upload a replacement via POST /api/case/{case_id}/doc/{doc_id}/replace, "
+                          "or skip via POST /api/case/{case_id}/doc/{doc_id}/skip",
+                )
+                job["errors"].append({
+                    "doc_id": doc_id, "step": "classify",
+                    "error": "Unrecognised document type. ",
+                    "action_required": "replace_or_skip",
+                })
+                return
+
             update_document_status(
                 case_id=case_id, doc_id=doc_id, status="classifying",
                 document_type=doc_type,
@@ -390,6 +570,9 @@ async def _run_pipeline(case_id: str, retry_only: bool = False):
         )
 
         job["results"].sort(key=lambda r: r["doc_id"])
+        # Remove errors for docs that succeeded this run (e.g. retry)
+        success_ids = {r["doc_id"] for r in job["results"]}
+        job["errors"] = [e for e in job["errors"] if e["doc_id"] not in success_ids]
         job["errors"].sort(key=lambda e: e["doc_id"])
         job["progress"] = 100
         job["status"] = "complete" if not job["errors"] else "partial"

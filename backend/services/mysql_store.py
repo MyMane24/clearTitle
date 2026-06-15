@@ -140,10 +140,10 @@ def update_case_status(*, case_id: str) -> None:
                 completed_docs = (SELECT COUNT(*) FROM case_documents
                     WHERE case_id = %s AND status = 'structured'),
                 failed_docs = (SELECT COUNT(*) FROM case_documents
-                    WHERE case_id = %s AND status = 'failed'),
+                    WHERE case_id = %s AND status IN ('failed','classification_failed')),
                 status = CASE
                     WHEN (SELECT COUNT(*) FROM case_documents
-                        WHERE case_id = %s AND status = 'failed') > 0
+                        WHERE case_id = %s AND status IN ('failed','classification_failed')) > 0
                     THEN 'partial'
                     WHEN (SELECT COUNT(*) FROM case_documents
                         WHERE case_id = %s AND status = 'structured')
@@ -295,9 +295,67 @@ def get_failed_documents(case_id: str) -> list[dict]:
             """
             SELECT doc_id, doc_index, filename, document_type, error, retry_count
             FROM case_documents
-            WHERE case_id = %s AND status = 'failed'
+            WHERE case_id = %s AND status IN ('failed', 'pending_retry')
             ORDER BY doc_index ASC
             """,
             (case_id,),
         )
         return [dict(row) for row in cursor.fetchall()]
+
+
+def get_classification_failed_documents(case_id: str) -> list[dict]:
+    with _get_conn() as conn:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT doc_id, doc_index, filename, document_type, error
+            FROM case_documents
+            WHERE case_id = %s AND status = 'classification_failed'
+            ORDER BY doc_index ASC
+            """,
+            (case_id,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def replace_document(
+    *,
+    case_id: str,
+    doc_id: str,
+    filename: str,
+    file_paths: dict,
+) -> None:
+    with _get_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE case_documents SET
+                filename = %s,
+                file_paths = %s,
+                status = 'failed',
+                retry_count = 0,
+                error = 'Document replaced — pending retry',
+                document_type = '',
+                structured_json = NULL
+            WHERE case_id = %s AND doc_id = %s
+            """,
+            (filename, json.dumps(file_paths, ensure_ascii=False),
+             case_id, doc_id),
+        )
+        conn.commit()
+
+
+def skip_document(*, case_id: str, doc_id: str) -> None:
+    with _get_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE case_documents SET
+                status = 'skipped',
+                retry_count = 0,
+                error = NULL
+            WHERE case_id = %s AND doc_id = %s
+            """,
+            (case_id, doc_id),
+        )
+        conn.commit()

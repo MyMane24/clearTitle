@@ -15,10 +15,11 @@ def get_case_dir(case_id: str) -> Path:
     return d
 
 
-async def save_upload(file: UploadFile, dest_dir: Path) -> Path:
+async def save_upload(file: UploadFile, dest_dir: Path, doc_id: str = "") -> Path:
     dest_dir.mkdir(parents=True, exist_ok=True)
-    # Sanitise filename
     safe_name = re.sub(r"[^\w\-_\. ]", "_", file.filename)
+    if doc_id:
+        safe_name = f"{doc_id}_{safe_name}"
     dest = dest_dir / safe_name
     async with aiofiles.open(dest, "wb") as f:
         content = await file.read()

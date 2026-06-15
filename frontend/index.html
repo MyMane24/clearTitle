@@ -383,6 +383,9 @@
 
       <!-- Errors if any -->
       <div id="errors-section"></div>
+
+      <!-- Needs action: replace-or-skip for classification_failed docs -->
+      <div id="needs-action-section"></div>
     </div>
 
     <!-- Per-document viewer -->
@@ -392,9 +395,7 @@
       <div id="doc-panels"></div>
     </div>
 
-  </div>
-
-</div><!-- /main -->
+  </div><!-- /main -->
 
 <script>
 // ── State ──────────────────────────────────────────────────────────────────────
@@ -534,6 +535,8 @@ async function pollStatus() {
       clearInterval(pollInterval);
       updateProgress(100, 'Pipeline complete');
       addLog(`── Pipeline finished: ${d.results.length} complete, ${d.errors.length} failed ──`, 'ok');
+      console.log('DEBUG status response:', d);
+      console.log('DEBUG needs_action:', d.needs_action);
       setTimeout(() => showResults(d), 800);
     }
   } catch(e) {
@@ -558,16 +561,47 @@ function showResults(data) {
     <div class="metric-box"><div class="val"><span class="badge ${data.status==='complete'?'badge-green':'badge-amber'}">${data.status}</span></div><div class="lbl">Case status</div></div>
   `;
 
-  // Errors
+  // Errors + retry button
   const errSec = document.getElementById('errors-section');
   if (errors.length > 0) {
+    const hasRetryable = errors.some(e => e.step !== 'classify' || !e.action_required);
     errSec.innerHTML = `<div style="margin-top:14px"><strong style="color:var(--red)">⚠ Errors</strong><div style="margin-top:8px">` +
       errors.map(e => `<div class="error-item">
         <strong>${e.doc_id}</strong> — Step: ${e.step}<br>
         <code style="font-size:11px">${escHtml(e.error)}</code>
-      </div>`).join('') + '</div></div>';
+      </div>`).join('') +
+      (hasRetryable ? `<div style="margin-top:12px">
+        <button class="btn btn-primary" onclick="retryFailed('${currentCaseId}')">🔄 Retry Failed</button>
+      </div>` : '') +
+      '</div>';
   } else {
     errSec.innerHTML = '';
+  }
+
+  // Needs action — classification_failed docs (replace or skip)
+  const naSec = document.getElementById('needs-action-section');
+  const needsAction = data.needs_action || [];
+  if (needsAction.length > 0) {
+    naSec.innerHTML = `<div style="margin-top:16px;padding:16px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px">
+      <strong style="color:#b45309">⚠ Document Requires Your Decision</strong>` +
+      needsAction.map(d => `
+        <div style="margin-top:12px;padding:12px;background:var(--white);border-radius:8px;border:1px solid var(--border)">
+          <p style="font-size:14px;margin-bottom:10px"><strong>${escHtml(d.filename)}</strong> — document type not recognised</p>
+          <p style="font-size:12px;color:var(--gray);margin-bottom:12px">What would you like to do with this document?</p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn btn-secondary" onclick="skipDoc('${currentCaseId}','${d.doc_id}')">
+              ✅ Continue without this document
+            </button>
+            <button class="btn btn-primary" onclick="document.getElementById('replace-input-${d.doc_id}').click()">
+              📤 Upload a replacement document
+            </button>
+            <input type="file" id="replace-input-${d.doc_id}" accept=".pdf"
+                   style="display:none" onchange="replaceDoc('${currentCaseId}','${d.doc_id}',this)">
+          </div>
+          <div id="replace-status-${d.doc_id}" style="margin-top:8px;font-size:12px"></div>
+        </div>`).join('') + '</div>';
+  } else {
+    naSec.innerHTML = '';
   }
 
   // Build doc tabs
@@ -715,6 +749,75 @@ function syntaxHighlight(json) {
 }
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Skip / Replace actions for classification_failed docs ──────────────────────
+async function skipDoc(caseId, docId) {
+  try {
+    const r = await fetch(`/api/case/${caseId}/doc/${docId}/skip`, { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || d.message);
+    // Hide needs_action section immediately
+    document.getElementById('needs-action-section').innerHTML = '';
+    // Refresh to show updated status
+    refreshStatus(caseId);
+  } catch(e) {
+    const el = document.getElementById(`replace-status-${docId}`);
+    if (el) el.innerHTML = `<span style="color:var(--red)">✗ Skip failed: ${escHtml(e.message)}</span>`;
+  }
+}
+
+async function replaceDoc(caseId, docId, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const statusEl = document.getElementById(`replace-status-${docId}`);
+  statusEl.textContent = '⏳ Uploading replacement...';
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const r = await fetch(`/api/case/${caseId}/doc/${docId}/replace`, { method: 'POST', body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || d.message);
+    statusEl.innerHTML = `<span style="color:var(--green)">✅ Replaced with ${escHtml(file.name)}. Now retrying...</span>`;
+    // Trigger retry
+    const r2 = await fetch(`/api/retry/${caseId}`, { method: 'POST' });
+    if (!r2.ok) {
+      const err2 = await r2.json();
+      statusEl.innerHTML += `<br><span style="color:var(--amber)">⚠ ${escHtml(err2.detail)}</span>`;
+    } else {
+      // Hide needs_action section, show processing stage
+      document.getElementById('needs-action-section').innerHTML = '';
+      showStage('processing');
+      // Poll for retry progress
+      pollInterval = setInterval(() => pollStatus(), 3000);
+    }
+  } catch(e) {
+    statusEl.innerHTML = `<span style="color:var(--red)">✗ Failed: ${escHtml(e.message)}</span>`;
+  }
+}
+
+async function retryFailed(caseId) {
+  try {
+    const r = await fetch(`/api/retry/${caseId}`, { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || d.message);
+    showStage('processing');
+    addLog(`Retrying ${d.retrying} failed document(s)...`, 'info');
+    pollInterval = setInterval(() => pollStatus(), 3000);
+  } catch(e) {
+    addLog(`✗ Retry failed: ${e.message}`, 'err');
+    refreshStatus(caseId);
+  }
+}
+
+async function refreshStatus(caseId) {
+  try {
+    const r = await fetch(`/api/status/${caseId}`);
+    const d = await r.json();
+    showResults(d);
+  } catch(e) {
+    console.error('Refresh failed', e);
+  }
 }
 </script>
 </body>
