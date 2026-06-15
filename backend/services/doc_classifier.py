@@ -80,7 +80,7 @@ DOC_TYPE_KEYWORDS = {
         "partition deed", "partition", "ಪಾಲು ಪತ್ರ",
     ],
     "GIFT_DEED": [
-        "gift deed", "gifted", "ದಾನ ಪತ್ರ",
+        "gift deed", "deed of gift", "donor", "donee", "gifted", "ದಾನ ಪತ್ರ",
     ],
     "COURT_ORDER": [
         "court order", "decree", "hon'ble court", "ನ್ಯಾಯಾಲಯ",
@@ -109,8 +109,10 @@ FILENAME_PATTERNS = {
     "ec":            "ENCUMBRANCE_CERTIFICATE",
     "encumbrance":   "ENCUMBRANCE_CERTIFICATE",
     "sale":          "SALE_DEED",
-    "deed":          "SALE_DEED",
     "saledeed":      "SALE_DEED",
+    "deedofsale":    "SALE_DEED",
+    "deedofgift":    "GIFT_DEED",
+    "giftdeed":      "GIFT_DEED",
     "rtc":           "RTC_PAHANI",
     "pahani":        "RTC_PAHANI",
     "khata":         "KHATA",

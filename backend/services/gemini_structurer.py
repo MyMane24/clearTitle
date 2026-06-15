@@ -230,6 +230,100 @@ PROPERTY_TAX_ASSESSMENT_SCHEMA = {
     },
 }
 
+GIFT_DEED_SCHEMA = {
+    "document_type": "GIFT_DEED",
+    "file_metadata": {
+        "registration_number":     None,  # 4880
+        "document_number":         None,  # BEL-1-04880-2018-19
+        "book_number":             None,  # 1
+        "cd_number":               None,  # BELD653
+        "execution_date":          None,  # 2018-06-30
+        "registration_date":       None,  # 2018-06-30
+        "registration_time":       None,  # 11:29:50 AM
+        "registration_district":   None,  # Belagavi
+        "issuing_office":          None,  # Sub-Registrar, Belagavi
+        "scanned_sheet_count":     None,  # 7
+        "drafted_by":              None,  # H. G. Hulikatti, Advocate, Belgaum
+        "stamp_paper_society":     None,  # The Karnataka State Registration ...
+        "stamp_paper_price":       None,  # Rs. 2/-
+    },
+    "financial_summary": {
+        "stamp_duty_amount":               None,  # 5600.00
+        "stamp_duty_payment_mode":         None,  # By Cash
+        "stamp_duty_certificate_reference": None,  # Section 10A of Karnataka Stamp Act, 1957
+        "stamp_duty_certificate_date":     None,  # 30/06/2018
+        "registration_fee":                None,  # 1000.00
+        "scanning_fee":                    None,  # 315.00
+        "scrutiny_fee":                    None,  # 35.00
+        "total_registration_fees":         None,  # 1350.00
+    },
+    "parties": {
+        "donors": [
+            {
+                "entity_name":   None,
+                "age":           None,
+                "occupation":    None,
+                "address":       None,
+                "aadhar_number": None,
+            }
+        ],
+        "donees": [
+            {
+                "entity_name":   None,
+                "age":           None,
+                "occupation":    None,
+                "address":       None,
+                "aadhar_number": None,
+            }
+        ],
+        "relationship_between_parties": None,  # Mother
+        "reason_for_gift":              None,  # natural love and affection
+    },
+    "property_schedule": {
+        "plot_number":               None,  # 58
+        "survey_number":             None,  # 633/1 Paiki / R.S. No. 633/1 Paiki
+        "cts_number":                None,
+        "full_schedule_description": None,
+        "measurements": {
+            "dimensions":                      None,  # 30'x40'
+            "total_land_area_sqft":            None,  # 1200
+            "total_land_area_gunthas":         None,  # 0.01.01.63
+            "ground_floor_building_area_sqmtrs": None,  # 56.85
+            "first_floor_building_area_sqmtrs": None,  # 47.32
+        },
+        "boundaries": {
+            "north": None,
+            "east":  None,
+            "west":  None,
+            "south": None,
+        },
+        "property_address":  None,  # Vidya Nagar, Angol, Belagavi
+        "property_type":     None,
+        "building_description": None,  # RCC, Vitrified Flooring, Electricity/Tap Water/Latrine
+    },
+    "covenants": [],  # e.g. ["Donor handed over possession", "Donee shall look after Donor till death"]
+    "registration_participants": {
+        "presented_by":                None,  # Pramod Natraj Potdar
+        "executant":                   None,  # Rajeshwari Natraj Potdar (ಬರೆದುಕೊಡುವವರು)
+        "claimant":                    None,  # Pramod Natraj Potdar (ಬರೆಸಿಕೊಂಡವರು)
+        "registering_officer_name":    None,  # S. B. Randigund
+        "registering_officer_designation": None,  # Senior Sub-Registrar
+    },
+    "witnesses": [
+        {
+            "name":    None,
+            "address": None,
+        }
+    ],
+    "certification": {
+        "true_copy":                       None,  # true
+        "certifying_authority_name":       None,  # S. I. Tigadi
+        "certifying_authority_qualification": None,  # Advocate & Notary
+        "certifying_authority_location":   None,  # Belagavi
+        "certification_date":              None,  # 30 JUN 2018
+    },
+}
+
 SCHEMA_MAP = {
     "SALE_DEED": SALE_DEED_SCHEMA,
     "ENCUMBRANCE_CERTIFICATE": EC_SCHEMA,
@@ -237,6 +331,7 @@ SCHEMA_MAP = {
     "E_PAYMENT_RECEIPT": E_PAYMENT_RECEIPT_SCHEMA,
     "PROPERTY_TAX_ASSESSMENT": PROPERTY_TAX_ASSESSMENT_SCHEMA,
     "TAX_RECEIPT": E_PAYMENT_RECEIPT_SCHEMA,
+    "GIFT_DEED": GIFT_DEED_SCHEMA,
 }
 
 
