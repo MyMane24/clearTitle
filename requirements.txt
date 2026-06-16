@@ -25,3 +25,7 @@ mysql-connector-python==9.1.0
 
 # Validation
 pydantic==2.8.2
+
+# Celery + Redis for distributed task processing
+celery==5.4.0
+redis==5.2.0
