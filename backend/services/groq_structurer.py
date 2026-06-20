@@ -12,7 +12,6 @@ Models tried in order:
 
 import os
 import json
-import re
 from groq import Groq
 from dotenv import load_dotenv
 
@@ -25,7 +24,6 @@ GROQ_MODELS   = [
     "qwen/qwen3-32b",
     "llama-3.1-8b-instant",
 ]
-MAX_CONTEXT_CHARS = 28_000   # ~7k tokens — safe for all Groq models
 
 
 # ── Schema definitions ─────────────────────────────────────────────────────────
@@ -141,7 +139,7 @@ EC_SCHEMA = {
 }
 
 SCHEMA_MAP = {
-    "SALE_DEED":               SALE_DEED_SCHEMA,
+    "SALE_DEED": SALE_DEED_SCHEMA,
     "ENCUMBRANCE_CERTIFICATE": EC_SCHEMA,
 }
 
@@ -172,7 +170,6 @@ OCR TEXT FROM DOCUMENT:
 
 Return ONLY the filled JSON. No explanation."""
 
-
 def structure_document(merged_ocr: dict, doc_type: str) -> dict:
     """
     Call Groq LLM to extract structured fields from merged OCR output.
@@ -183,13 +180,12 @@ def structure_document(merged_ocr: dict, doc_type: str) -> dict:
 
     schema = SCHEMA_MAP.get(doc_type, _generic_schema(doc_type))
 
-    # Truncate OCR text to fit context window
-    ocr_text = merged_ocr.get("full_text", "")[:MAX_CONTEXT_CHARS]
+    ocr_text = merged_ocr.get("full_text", "")
 
     user_prompt = USER_PROMPT_TEMPLATE.format(
-        doc_type = doc_type,
-        schema   = json.dumps(schema, indent=2),
-        ocr_text = ocr_text,
+        doc_type  = doc_type,
+        schema    = json.dumps(schema, indent=2),
+        ocr_text  = ocr_text,
     )
 
     client = Groq(api_key=GROQ_API_KEY)
@@ -204,10 +200,15 @@ def structure_document(merged_ocr: dict, doc_type: str) -> dict:
                     {"role": "user",   "content": user_prompt},
                 ],
                 temperature = 0.0,
-                max_tokens  = 4096,
+                max_tokens  = 32000,
             )
             raw = resp.choices[0].message.content.strip()
-            return _parse_json_response(raw, doc_type)
+            result = json.loads(raw)
+            if "document_type" not in result:
+                result["document_type"] = doc_type
+            if "file_metadata" in result and merged_ocr.get("total_pages"):
+                result["file_metadata"]["scanned_sheet_count"] = merged_ocr["total_pages"]
+            return result
 
         except Exception as e:
             errors.append(f"{model}: {e}")
@@ -215,32 +216,6 @@ def structure_document(merged_ocr: dict, doc_type: str) -> dict:
             continue
 
     raise RuntimeError("All Groq models failed. " + " | ".join(errors))
-
-
-def _parse_json_response(raw: str, doc_type: str) -> dict:
-    """
-    Extract JSON from LLM response.
-    Handles cases where model wraps output in markdown code fences.
-    """
-    # Strip markdown code fences if present
-    clean = re.sub(r"```(?:json)?\s*", "", raw).strip()
-    clean = re.sub(r"```\s*$", "", clean).strip()
-
-    try:
-        parsed = json.loads(clean)
-        # Ensure document_type is set
-        if "document_type" not in parsed:
-            parsed["document_type"] = doc_type
-        return parsed
-    except json.JSONDecodeError as e:
-        # Try to extract first JSON object in the response
-        match = re.search(r"\{.*\}", clean, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group())
-            except Exception:
-                pass
-        raise ValueError(f"Could not parse JSON from Groq response: {e}\n\nRaw:\n{raw[:500]}")
 
 
 def _generic_schema(doc_type: str) -> dict:

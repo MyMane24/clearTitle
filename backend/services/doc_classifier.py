@@ -131,15 +131,6 @@ ALL_DOC_TYPES: set = set(DOC_TYPE_KEYWORDS.keys())
 VALID_DOC_TYPES: set = ALL_DOC_TYPES
 
 
-def classify_by_filename(filename: str) -> str:
-    """Filename-only classifier. Returns doc type or 'UNKNOWN'. No OCR needed."""
-    fname_lower = filename.lower().replace(" ", "").replace("_", "").replace("-", "")
-    for pattern, doc_type in FILENAME_PATTERNS.items():
-        if pattern in fname_lower:
-            return doc_type
-    return "UNKNOWN"
-
-
 def classify_document(filename: str, sample_text: str = "") -> str:
     """
     Returns a document type string like 'SALE_DEED', 'ENCUMBRANCE_CERTIFICATE', etc.

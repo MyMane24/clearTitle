@@ -5,7 +5,6 @@ Uses Gemini for non-EC structured extraction with a larger context window.
 
 import json
 import os
-import re
 from copy import deepcopy
 
 from dotenv import load_dotenv
@@ -357,9 +356,15 @@ def structure_document_with_gemini(merged_ocr: dict, doc_type: str) -> dict:
         config={
             "response_mime_type": "application/json",
             "temperature": 0.0,
+            "max_output_tokens": 65536,
         },
     )
-    return _parse_json_response(response.text, doc_type)
+    result = json.loads(response.text)
+    if "document_type" not in result:
+        result["document_type"] = doc_type
+    if "file_metadata" in result and merged_ocr.get("total_pages"):
+        result["file_metadata"]["scanned_sheet_count"] = merged_ocr["total_pages"]
+    return result
 
 
 def _build_prompt(*, doc_type: str, schema: dict, ocr_text: str) -> str:
@@ -370,25 +375,9 @@ def _build_prompt(*, doc_type: str, schema: dict, ocr_text: str) -> str:
         "- Read the full OCR text provided below.\n"
         "- Return only fields supported by the target JSON schema.\n"
         "- Use null for missing values.\n"
-        "- Do not hallucinate values.\n\n"
-        f"TARGET JSON SCHEMA:\n{json.dumps(schema, indent=2)}\n\n"
+        "- Do not hallucinate values.\n"
+        f"\nTARGET JSON SCHEMA:\n{json.dumps(schema, indent=2)}\n\n"
         f"OCR TEXT FROM DOCUMENT:\n{ocr_text}\n"
     )
 
-
-def _parse_json_response(raw: str, doc_type: str) -> dict:
-    clean = re.sub(r"```(?:json)?\s*", "", raw or "").strip()
-    clean = re.sub(r"```\s*$", "", clean).strip()
-
-    try:
-        parsed = json.loads(clean)
-    except json.JSONDecodeError as exc:
-        match = re.search(r"\{.*\}", clean, re.DOTALL)
-        if not match:
-            raise ValueError(f"Could not parse JSON from Gemini response: {exc}")
-        parsed = json.loads(match.group())
-
-    if "document_type" not in parsed:
-        parsed["document_type"] = doc_type
-    return parsed
 

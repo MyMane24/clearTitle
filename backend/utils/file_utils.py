@@ -37,9 +37,3 @@ def read_json(path: Path) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-
-def cleanup_temp(directory: Path) -> None:
-    """Remove a directory and all its contents."""
-    import shutil
-    if directory.exists():
-        shutil.rmtree(directory, ignore_errors=True)

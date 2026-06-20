@@ -6,18 +6,15 @@ A chord callback finalizes the case once all documents are done.
 
 from __future__ import annotations
 
-import json
-import os
 import time
 from dataclasses import asdict
 from pathlib import Path
-
-from celery import chord
 
 from backend.celery_app import celery_app
 from backend.services.preprocessor import preprocess_pdf
 from backend.services.sarvam_ocr import run_sarvam_ocr
 from backend.services.ocr_merger import merge_chunked_outputs
+from backend.services.groq_structurer import structure_document as structure_document_with_groq
 from backend.services.gemini_structurer import structure_document_with_gemini
 from backend.services.doc_classifier import classify_document, VALID_DOC_TYPES
 from backend.services.ec_parser import (
@@ -44,18 +41,7 @@ OCR_MAX_RETRIES = 3
 OCR_RETRY_DELAY_SEC = 5
 STRUCTURE_MAX_RETRIES = 3
 STRUCTURE_RETRY_DELAY_SEC = 5
-DEFAULT_DOC_WORKERS = 5
-
-
 # ── Doc type helpers ──────────────────────────────────────────────────────────────
-
-def _get_doc_workers(total_docs: int) -> int:
-    try:
-        configured = int(os.getenv("PIPELINE_DOC_WORKERS", DEFAULT_DOC_WORKERS))
-    except ValueError:
-        configured = DEFAULT_DOC_WORKERS
-    return max(1, min(configured, total_docs))
-
 
 def _safe_doc_type(doc_type: str) -> str:
     return "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in doc_type.upper())
@@ -87,6 +73,14 @@ def _run_ocr_with_retry(pdf_path: Path, output_dir: Path) -> list:
 # ── Gemini retry wrapper ──────────────────────────────────────────────────────────
 
 def _run_structure_with_retry(merged: dict, doc_type: str) -> dict:
+    # Try Groq first (cheaper, faster, often handles large text well)
+    try:
+        result = structure_document_with_groq(merged, doc_type)
+        return with_document_type_name(result, doc_type)
+    except Exception as e:
+        pass  # fall through to Gemini
+
+    # Fall back to Gemini with retries
     last_error = None
     for attempt in range(1, STRUCTURE_MAX_RETRIES + 1):
         try:
@@ -266,7 +260,7 @@ def process_document_task(self, case_id: str, doc_id: str):
         elif doc_type == PROPERTY_TAX_ASSESSMENT_DOC_TYPE:
             _log(case_id, f"[{doc_id}] Step 5: Parsing property tax assessment table deterministically")
         else:
-            _log(case_id, f"[{doc_id}] Step 5: Structuring with Gemini LLM")
+            _log(case_id, f"[{doc_id}] Step 5: Structuring with Groq LLM")
 
         # ── Step 5: Structure ────────────────────────────────────────────────
         update_document_status(case_id=case_id, doc_id=doc_id, status="structuring")
@@ -358,36 +352,3 @@ def finalize_case_task(results: list, case_id: str):
 
     total = len(results)
     append_log(case_id, f"── Pipeline done: {total - failed_count} complete, {failed_count} failed ──")
-
-
-# ── Orchestrator: process all docs for a case ─────────────────────────────────────
-
-def start_case_pipeline(case_id: str):
-    """Fire individual doc tasks as a Celery chord. Returns immediately."""
-    from backend.services.redis_store import get_case_files
-
-    files_data = get_case_files(case_id)
-    if not files_data:
-        raise ValueError(f"No files found for case {case_id}")
-
-    doc_tasks = [process_document_task.s(case_id, f["doc_id"]) for f in files_data]
-    callback = finalize_case_task.s(case_id)
-    chord(doc_tasks)(callback)
-
-
-def start_retry_pipeline(case_id: str):
-    """Fire tasks for failed docs only, as a Celery chord."""
-    from backend.services.redis_store import get_case_files
-
-    failed = get_failed_documents(case_id)
-    if not failed:
-        raise ValueError(f"No failed documents for case {case_id}")
-
-    failed_ids = {d["doc_id"] for d in failed}
-    files_data = get_case_files(case_id)
-    tasks = [process_document_task.s(case_id, f["doc_id"]) for f in files_data if f["doc_id"] in failed_ids]
-    if not tasks:
-        raise ValueError(f"No file info found for failed docs in case {case_id}")
-
-    callback = finalize_case_task.s(case_id)
-    chord(tasks)(callback)

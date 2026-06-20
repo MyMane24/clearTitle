@@ -20,7 +20,7 @@ for proxy_var in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https
     if os.getenv(proxy_var, "").startswith("http://127.0.0.1:9"):
         os.environ.pop(proxy_var, None)
 
-from backend.routers.pipeline import router as pipeline_router
+from backend.routers import router as pipeline_router
 
 # ── Ensure required directories exist ─────────────────────────────────────────
 for d in ["uploads", "outputs/structured", "outputs/raw_ocr"]:

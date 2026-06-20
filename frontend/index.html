@@ -160,6 +160,8 @@
   .btn-primary:disabled { background: var(--gray); cursor: not-allowed; }
   .btn-secondary { background: var(--lgray); color: var(--navy); border: 1px solid var(--border); }
   .btn-secondary:hover { background: var(--border); }
+  .btn-danger { background: #dc2626; color: var(--white); }
+  .btn-danger:hover { background: #b91c1c; }
   .btn-row { display: flex; gap: 10px; margin-top: 16px; }
 
   /* ── Progress ── */
@@ -333,6 +335,7 @@
     <div class="step active" id="step-1">1. Upload Documents</div>
     <div class="step"        id="step-2">2. Processing</div>
     <div class="step"        id="step-3">3. Results</div>
+    <div class="step"        id="step-4">4. Verify</div>
   </div>
 
   <!-- ═══════════ STAGE 1: UPLOAD ═══════════ -->
@@ -355,6 +358,7 @@
           ▶ Run OCR Pipeline
         </button>
         <button class="btn btn-secondary" onclick="clearFiles()">✕ Clear All</button>
+        <button class="btn btn-danger" onclick="clearAllData()" style="margin-left:auto">🗑 Clear All Data</button>
       </div>
     </div>
   </div>
@@ -386,6 +390,11 @@
 
       <!-- Needs action: replace-or-skip for classification_failed docs -->
       <div id="needs-action-section"></div>
+
+      <!-- Verify button (only when pipeline is done) -->
+      <div id="verify-button-row" style="margin-top:16px">
+        <button class="btn btn-primary" onclick="showStage4()">🧪 Agentic Verification →</button>
+      </div>
     </div>
 
     <!-- Per-document viewer -->
@@ -397,10 +406,59 @@
 
   </div><!-- /main -->
 
+  <!-- ═══════════ STAGE 4: VERIFICATION ═══════════ -->
+  <div id="stage-verify" class="hidden">
+
+    <div class="card">
+      <div class="card-title">🤖 Agentic Verification</div>
+      <p style="font-size:13px;color:var(--gray);margin-bottom:16px">
+        Gemini AI verifies all documents for this property: cross-checks ownership chain, dates,
+        financials, property identifiers, and red flags — using LangGraph state machine +
+        vector database of past corrections.
+      </p>
+      <div id="verify-before">
+        <button class="btn btn-primary" id="btn-verify" onclick="startVerification()">
+          🧪 Run Verification
+        </button>
+      </div>
+      <div id="verify-loading" class="hidden">
+        <div class="progress-label" id="verify-progress-label">Running agentic verification...</div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar" id="verify-progress-bar" style="width:0%"></div>
+        </div>
+        <div class="log-box" id="verify-log-box" style="max-height:120px">
+          <span class="log-info">Initializing LangGraph workflow...</span>
+        </div>
+      </div>
+      <div id="verify-results" class="hidden">
+        <div id="verify-summary" class="metrics-row"></div>
+        <div id="verify-findings"></div>
+        <div id="verify-feedback-area" class="hidden" style="margin-top:16px;padding:16px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px">
+          <strong style="color:#b45309">✏️ Human Review</strong>
+          <p style="font-size:12px;color:var(--gray);margin:8px 0 12px">
+            Review each finding below. Accept if correct, or provide a correction with reason.
+            Your corrections are stored in the vector database so the AI learns for next time.
+          </p>
+          <div id="feedback-items"></div>
+          <div class="btn-row">
+            <button class="btn btn-primary" onclick="submitFeedback()">📤 Submit Review</button>
+          </div>
+          <div id="feedback-status" style="margin-top:10px;font-size:13px"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card hidden" id="verify-learnings-card">
+      <div class="card-title">📚 Vector Database Learnings</div>
+      <div id="learnings-stats" style="font-size:13px;color:var(--gray)"></div>
+    </div>
+
+  </div>
+
 <script>
 // ── State ──────────────────────────────────────────────────────────────────────
 let selectedFiles = [];
-let currentCaseId = null;
+let currentCaseId = sessionStorage.getItem('currentCaseId') || null;
 let pollInterval  = null;
 
 // ── Health check ───────────────────────────────────────────────────────────────
@@ -419,6 +477,15 @@ async function checkHealth() {
   }
 }
 checkHealth();
+
+// Restore previous session if page was refreshed
+if (currentCaseId) {
+  fetch(`/api/status/${currentCaseId}`).then(r => r.json()).then(d => {
+    if (d.status === 'complete' || d.status === 'partial') {
+      showResults(d);
+    }
+  }).catch(() => {});
+}
 
 // ── File drag & drop ───────────────────────────────────────────────────────────
 const zone = document.getElementById('upload-zone');
@@ -466,6 +533,18 @@ function removeFile(i) {
 function clearFiles() {
   selectedFiles = [];
   renderFileList();
+  sessionStorage.removeItem('currentCaseId');
+  currentCaseId = null;
+}
+
+async function clearAllData() {
+  if (!confirm('This will clear ALL Redis data and purge pending Celery tasks. The page will reload. Continue?')) return;
+  try {
+    await fetch('/api/clear', { method: 'POST' });
+  } catch (_) {
+    // ignore — we're reloading anyway
+  }
+  location.reload();
 }
 
 // ── Start processing ───────────────────────────────────────────────────────────
@@ -491,6 +570,7 @@ async function startProcessing() {
   }
 
   currentCaseId = uploadResp.case_id;
+  sessionStorage.setItem('currentCaseId', currentCaseId);
   addLog(`✓ ${uploadResp.files.length} file(s) uploaded → Case ${currentCaseId}`, 'ok');
   updateProgress(10, 'Starting OCR pipeline...');
 
@@ -715,12 +795,12 @@ function switchView(docId, view) {
 
 // ── UI helpers ─────────────────────────────────────────────────────────────────
 function showStage(s) {
-  ['upload','processing','results'].forEach(id => {
+  ['upload','processing','results','verify'].forEach(id => {
     document.getElementById(`stage-${id}`).classList.toggle('hidden', id !== s);
   });
 }
 function setStep(n) {
-  [1,2,3].forEach(i => {
+  [1,2,3,4].forEach(i => {
     const el = document.getElementById(`step-${i}`);
     el.className = 'step' + (i < n ? ' done' : i === n ? ' active' : '');
   });
@@ -818,6 +898,198 @@ async function refreshStatus(caseId) {
   } catch(e) {
     console.error('Refresh failed', e);
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VERIFICATION ENGINE
+// ═══════════════════════════════════════════════════════════════════════════
+
+let verificationFindings = [];
+
+function showStage4() {
+  showStage('verify');
+  setStep(4);
+}
+
+async function startVerification() {
+  if (!currentCaseId) return;
+
+  document.getElementById('verify-before').classList.add('hidden');
+  document.getElementById('verify-loading').classList.remove('hidden');
+  document.getElementById('verify-results').classList.add('hidden');
+  document.getElementById('verify-feedback-area').classList.add('hidden');
+
+  addVerifyLog('Starting LangGraph workflow...', 'info');
+  document.getElementById('verify-progress-bar').style.width = '10%';
+
+  try {
+    const r = await fetch(`/api/verify/${currentCaseId}`, { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Verification failed');
+    showVerificationResults(data);
+  } catch (e) {
+    addVerifyLog(`✗ ${e.message}`, 'err');
+    document.getElementById('verify-progress-bar').style.width = '0%';
+    document.getElementById('verify-before').classList.remove('hidden');
+  }
+}
+
+function showVerificationResults(data) {
+  document.getElementById('verify-loading').classList.add('hidden');
+  document.getElementById('verify-results').classList.remove('hidden');
+
+  const findings = data.findings || [];
+  verificationFindings = findings;
+
+  document.getElementById('verify-progress-bar').style.width = '100%';
+  document.getElementById('verify-progress-label').textContent = 'Verification complete';
+
+  const verdict = data.verdict || 'UNKNOWN';
+  const verdictBadge = verdict === 'PASS'
+    ? '<span class="badge badge-green">PASS ✓</span>'
+    : '<span class="badge badge-red">FLAGGED ⚠</span>';
+
+  document.getElementById('verify-summary').innerHTML = `
+    <div class="metric-box"><div class="val">${data.total_findings || 0}</div><div class="lbl">Total Findings</div></div>
+    <div class="metric-box"><div class="val">${data.high_severity || 0}</div><div class="lbl">High Severity</div></div>
+    <div class="metric-box"><div class="val">${verdictBadge}</div><div class="lbl">Verdict</div></div>
+  `;
+
+  if (findings.length === 0) {
+    document.getElementById('verify-findings').innerHTML = `
+      <div style="padding:20px;text-align:center;color:var(--green);font-weight:600">
+        ✅ No issues found — all documents are consistent
+      </div>`;
+    return;
+  }
+
+  const severityColors = { high: 'badge-red', medium: 'badge-amber', low: 'badge-blue' };
+
+  let tableHtml = `<div style="overflow-x:auto;margin-top:12px">
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr>
+        <th style="background:var(--navy);color:var(--white);padding:8px 10px;text-align:left">Type</th>
+        <th style="background:var(--navy);color:var(--white);padding:8px 10px;text-align:left">Severity</th>
+        <th style="background:var(--navy);color:var(--white);padding:8px 10px;text-align:left">Doc(s)</th>
+        <th style="background:var(--navy);color:var(--white);padding:8px 10px;text-align:left">Summary</th>
+      </tr></thead><tbody>`;
+
+  findings.forEach((f, i) => {
+    const sevCls = severityColors[f.severity] || 'badge-blue';
+    tableHtml += `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:8px 10px;font-weight:600;white-space:nowrap">${escHtml(f.type)}</td>
+      <td style="padding:8px 10px"><span class="badge ${sevCls}">${f.severity}</span></td>
+      <td style="padding:8px 10px;font-family:monospace;font-size:11px">${(f.doc_ids||[]).join(', ')}</td>
+      <td style="padding:8px 10px">
+        <strong>${escHtml(f.summary)}</strong>
+        <div style="font-size:11px;color:var(--gray);margin-top:2px">${escHtml(f.details)}</div>
+        ${f.suggestion ? `<div style="font-size:11px;color:var(--blue);margin-top:2px">💡 ${escHtml(f.suggestion)}</div>` : ''}
+      </td>
+    </tr>`;
+  });
+
+  tableHtml += '</tbody></table></div>';
+  document.getElementById('verify-findings').innerHTML = tableHtml;
+
+  // Show feedback area for human review
+  buildFeedbackForm(findings);
+}
+
+function buildFeedbackForm(findings) {
+  const area = document.getElementById('verify-feedback-area');
+  area.classList.remove('hidden');
+
+  const container = document.getElementById('feedback-items');
+  container.innerHTML = '';
+
+  findings.forEach((f, i) => {
+    const div = document.createElement('div');
+    div.style.cssText = 'background:var(--white);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px';
+    div.innerHTML = `
+      <div style="display:flex;align-items:start;gap:10px;margin-bottom:8px">
+        <input type="checkbox" id="fb-accept-${i}" checked
+               style="margin-top:3px;width:16px;height:16px">
+        <div style="flex:1">
+          <strong style="font-size:13px">${escHtml(f.type)}</strong>
+          <span class="badge ${f.severity === 'high' ? 'badge-red' : f.severity === 'medium' ? 'badge-amber' : 'badge-blue'}" style="margin-left:6px">${f.severity}</span>
+          <div style="font-size:12px;margin-top:4px">${escHtml(f.summary)}</div>
+          <div style="font-size:11px;color:var(--gray);margin-top:2px">${escHtml(f.details)}</div>
+        </div>
+      </div>
+      <div style="margin-left:26px">
+        <textarea id="fb-correction-${i}" placeholder="If you disagree, explain the correction here..."
+                  style="width:100%;border:1px solid var(--border);border-radius:6px;padding:8px;font-size:12px;resize:vertical;min-height:40px;font-family:inherit">${escHtml(f.suggestion || '')}</textarea>
+        <input type="text" id="fb-reason-${i}" placeholder="Why? (e.g., 'Thumbprints are valid signatures for rural deeds in this region')"
+               style="width:100%;border:1px solid var(--border);border-radius:6px;padding:8px;font-size:12px;margin-top:6px;font-family:inherit">
+        <input type="hidden" id="fb-docid-${i}" value="${(f.doc_ids||[]).join(',')}">
+        <input type="hidden" id="fb-type-${i}" value="${f.type}">
+      </div>
+    `;
+    container.appendChild(div);
+  });
+}
+
+async function submitFeedback() {
+  if (!currentCaseId) return;
+
+  const feedback = [];
+  verificationFindings.forEach((f, i) => {
+    const accepted = document.getElementById(`fb-accept-${i}`).checked;
+    const correction = document.getElementById(`fb-correction-${i}`).value.trim();
+    const reason = document.getElementById(`fb-reason-${i}`).value.trim();
+    const docId = document.getElementById(`fb-docid-${i}`).value;
+    const fType = document.getElementById(`fb-type-${i}`).value;
+
+    feedback.push({
+      doc_id: docId,
+      original_flag: f.summary,
+      human_correction: correction || (accepted ? 'Confirmed correct' : 'Needs review'),
+      reason: reason,
+      accepted: accepted,
+      finding_type: fType,
+    });
+  });
+
+  const statusEl = document.getElementById('feedback-status');
+  statusEl.innerHTML = '<span style="color:var(--blue)">⏳ Storing feedback and updating vector database...</span>';
+
+  try {
+    const r = await fetch(`/api/verify/${currentCaseId}/feedback`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ case_id: currentCaseId, feedback }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Failed');
+    statusEl.innerHTML = `<span style="color:var(--green)">✅ ${data.message}</span>`;
+
+    // Show learnings stats
+    await showLearningsStats();
+  } catch (e) {
+    statusEl.innerHTML = `<span style="color:var(--red)">✗ ${e.message}</span>`;
+  }
+}
+
+async function showLearningsStats() {
+  try {
+    const r = await fetch('/api/verify/learnings/stats');
+    const d = await r.json();
+    document.getElementById('verify-learnings-card').classList.remove('hidden');
+    document.getElementById('learnings-stats').innerHTML =
+      `📊 ${d.total_learnings} past corrections stored in vector database (Qdrant in-memory)`;
+  } catch (e) {
+    // Silent
+  }
+}
+
+function addVerifyLog(msg, type) {
+  const box = document.getElementById('verify-log-box');
+  const span = document.createElement('span');
+  span.className = `log-${type}`;
+  span.textContent = msg;
+  box.appendChild(document.createElement('br'));
+  box.appendChild(span);
+  box.scrollTop = box.scrollHeight;
 }
 </script>
 </body>

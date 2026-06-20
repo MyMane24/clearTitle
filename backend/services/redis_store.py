@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -187,18 +186,17 @@ def set_doc_status(case_id: str, doc_id: str, **fields) -> None:
     r.hset(key, doc_id, json.dumps(existing, ensure_ascii=False))
 
 
-def get_doc_status(case_id: str, doc_id: str) -> dict | None:
-    r = _get_client()
-    raw = r.hget(_docs_status_key(case_id), doc_id)
-    if not raw:
-        return None
-    return json.loads(raw)
+# ── Full flush ────────────────────────────────────────────────────────────────────
 
-
-def get_all_doc_statuses(case_id: str) -> dict[str, dict]:
+def flush_all_cases() -> int:
+    """Delete ALL case:* keys from Redis. Returns count of keys deleted."""
     r = _get_client()
-    raw = r.hgetall(_docs_status_key(case_id))
-    return {k: json.loads(v) for k, v in raw.items()}
+    keys = r.keys("case:*")
+    if not keys:
+        return 0
+    count = len(keys)
+    r.delete(*keys)
+    return count
 
 
 # ── Reset / cleanup ──────────────────────────────────────────────────────────────

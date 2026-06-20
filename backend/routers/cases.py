@@ -1,10 +1,5 @@
 """
-Pipeline Router
-POST /api/upload          — accept PDF files for a case
-POST /api/process/{case_id} — enqueue Celery chord for all docs
-GET  /api/status/{case_id}  — poll job status (reads from Redis)
-POST /api/retry/{case_id}   — enqueue Celery chord for failed docs only
-GET  /api/case/{case_id}/bundle — all structured JSONs for verification
+Case-level endpoints: upload, process, retry, status
 """
 
 from __future__ import annotations
@@ -18,31 +13,28 @@ from backend.services.mysql_store import (
     init_case,
     init_document,
     update_document_status,
-    get_case_documents,
-    get_case_bundle,
     get_failed_documents,
     get_classification_failed_documents,
-    update_case_status,
-    replace_document as db_replace_document,
-    skip_document as db_skip_document,
 )
-from backend.utils.file_utils import get_case_dir, save_upload, read_json
+from backend.utils.file_utils import get_case_dir, save_upload
 from backend.services.redis_store import (
     case_exists as redis_case_exists,
     init_case as redis_init_case,
     get_case_job,
-    update_file_in_case,
-    remove_error_for_doc,
     append_log,
     set_case_status,
     reset_for_retry,
+    flush_all_cases,
 )
-from backend.tasks.pipeline_tasks import start_case_pipeline, start_retry_pipeline
+from backend.celery_app import celery_app
+from backend.services.pipeline_orchestrator import (
+    start_case_pipeline,
+    start_retry_pipeline,
+)
 
 router = APIRouter()
 
 
-# ── 1. Upload endpoint ─────────────────────────────────────────────────────────
 @router.post("/upload")
 async def upload_documents(files: List[UploadFile] = File(...)):
     if not files:
@@ -65,10 +57,8 @@ async def upload_documents(files: List[UploadFile] = File(...)):
             "size_kb":       round(dest.stat().st_size / 1024, 1),
         })
 
-    # Init Redis state
     redis_init_case(case_id, saved)
 
-    # Init DB
     try:
         init_case(case_id=case_id, total_docs=len(saved))
         for s in saved:
@@ -85,7 +75,6 @@ async def upload_documents(files: List[UploadFile] = File(...)):
     return {"case_id": case_id, "files": saved}
 
 
-# ── 2. Process endpoint ────────────────────────────────────────────────────────
 @router.post("/process/{case_id}")
 async def process_case(case_id: str):
     if not redis_case_exists(case_id):
@@ -108,7 +97,6 @@ async def process_case(case_id: str):
     return {"case_id": case_id, "status": "processing", "mode": "celery"}
 
 
-# ── 3. Status / poll endpoint ──────────────────────────────────────────────────
 @router.get("/status/{case_id}")
 async def get_status(case_id: str):
     if not redis_case_exists(case_id):
@@ -116,7 +104,6 @@ async def get_status(case_id: str):
 
     job = get_case_job(case_id)
 
-    # Add a dedicated needs_action field for classification_failed docs
     action_errors = [
         e for e in job.get("errors", [])
         if e.get("action_required") == "replace_or_skip"
@@ -157,30 +144,6 @@ async def get_status(case_id: str):
     return job
 
 
-# ── 4. Result endpoint (single doc) ────────────────────────────────────────────
-@router.get("/result/{case_id}/{doc_id}")
-async def get_result(case_id: str, doc_id: str):
-    case_dir = get_case_dir(case_id)
-    matches = sorted((case_dir / "structured").glob(f"{doc_id}_*.json"))
-    if not matches:
-        raise HTTPException(status_code=404, detail="Result not ready")
-    return read_json(matches[0])
-
-
-# ── 5. Case bundle endpoint (all JSONs for verification) ───────────────────────
-@router.get("/case/{case_id}/bundle")
-async def get_case_bundle_endpoint(case_id: str):
-    docs = get_case_bundle(case_id)
-    if not docs:
-        raise HTTPException(status_code=404, detail="No structured results found")
-    return {
-        "case_id": case_id,
-        "total_docs": len(docs),
-        "documents": docs,
-    }
-
-
-# ── 6. Retry endpoint ──────────────────────────────────────────────────────────
 @router.post("/retry/{case_id}")
 async def retry_failed(case_id: str):
     if not redis_case_exists(case_id):
@@ -202,7 +165,6 @@ async def retry_failed(case_id: str):
                     f"to upload a valid document, or /skip to proceed without it.")
         raise HTTPException(status_code=400, detail=msg)
 
-    # Reset failed doc statuses in DB
     for doc in failed:
         update_document_status(
             case_id=case_id,
@@ -210,7 +172,6 @@ async def retry_failed(case_id: str):
             status="pending_retry",
         )
 
-    # Reset Redis state for retry
     reset_for_retry(case_id)
     append_log(case_id, f"Retrying {len(failed)} failed document(s)")
 
@@ -224,72 +185,16 @@ async def retry_failed(case_id: str):
     return {"case_id": case_id, "retrying": len(failed)}
 
 
-# ── 7. Replace document endpoint ───────────────────────────────────────────────
-@router.post("/case/{case_id}/doc/{doc_id}/replace")
-async def replace_doc(case_id: str, doc_id: str, file: UploadFile = File(...)):
-    if not redis_case_exists(case_id):
-        raise HTTPException(status_code=404, detail="Case not found")
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Replacement must be a PDF")
-
-    docs = get_case_documents(case_id)
-    if not any(d["doc_id"] == doc_id for d in docs):
-        raise HTTPException(status_code=404, detail="Document not found in this case")
-
-    case_dir = get_case_dir(case_id)
-    dest = await save_upload(file, case_dir / "raw", doc_id=doc_id)
-
-    # Update Redis file info
-    update_file_in_case(case_id, doc_id, str(dest), file.filename)
-
-    # Update DB
-    db_replace_document(
-        case_id=case_id,
-        doc_id=doc_id,
-        filename=file.filename,
-        file_paths={"raw": str(dest)},
-    )
-
-    # Clean up errors for this doc
-    remove_error_for_doc(case_id, doc_id)
-
-    append_log(case_id, f"[{doc_id}] Replaced with {file.filename} — ready for retry")
-
+@router.post("/clear")
+async def clear_all_data():
+    """Flush Redis case keys and purge Celery queue for a fresh start."""
+    redis_deleted = flush_all_cases()
+    try:
+        purged = celery_app.control.purge()
+    except Exception:
+        purged = 0
     return {
-        "case_id": case_id,
-        "doc_id": doc_id,
-        "filename": file.filename,
-        "message": "Document replaced. Call POST /api/retry/{case_id} to process it.",
-    }
-
-
-# ── 8. Skip document endpoint ────────────────────────────────────────────────
-@router.post("/case/{case_id}/doc/{doc_id}/skip")
-async def skip_doc(case_id: str, doc_id: str):
-    if not redis_case_exists(case_id):
-        raise HTTPException(status_code=404, detail="Case not found")
-
-    docs = get_case_documents(case_id)
-    doc = next((d for d in docs if d["doc_id"] == doc_id), None)
-    if not doc:
-        raise HTTPException(status_code=404, detail="Document not found in this case")
-    if doc["status"] != "classification_failed":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Document status is '{doc['status']}', not 'classification_failed'. "
-                   "Only classification-failed documents can be skipped.",
-        )
-
-    db_skip_document(case_id=case_id, doc_id=doc_id)
-    update_case_status(case_id=case_id)
-
-    # Clean up Redis error for this doc
-    remove_error_for_doc(case_id, doc_id)
-
-    append_log(case_id, f"[{doc_id}] Skipped — removed from case")
-
-    return {
-        "case_id": case_id,
-        "doc_id": doc_id,
-        "message": "Document skipped. Case will proceed without it.",
+        "redis_keys_deleted": redis_deleted,
+        "celery_tasks_purged": purged,
+        "message": "All data cleared. You can now upload fresh documents.",
     }
