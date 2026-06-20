@@ -180,26 +180,40 @@ flowchart TB
 - Redis 7+
 - API keys: [Sarvam](https://sarvam.ai), [Groq](https://groq.com), [Gemini](https://ai.google.dev)
 
-## Setup
+## Setup & Running the Application
 
+### 1. Installation
+Ensure your database is created:
 ```bash
-# Clone and install
+# Create database
+mysql -u root -e "CREATE DATABASE IF NOT EXISTS property_ocr"
+
+# Install python dependencies
 pip install -r requirements.txt
 
-# Environment variables
+# Configure environment variables
 cp .env.example .env
-# Edit .env with your API keys and database credentials
-
-# Start services (or use Docker)
-mysql -u root -e "CREATE DATABASE IF NOT EXISTS property_ocr"
-redis-server
-
-# Run API server
-uvicorn backend.main:app --reload --port 8000
-
-# Run Celery worker (separate terminal)
-celery -A backend.celery_app worker --loglevel=info --concurrency=4
+# Open .env and insert your database credentials and API keys
 ```
+
+### 2. Execution
+Run the following components in separate terminals:
+
+1. **Start the Redis Server:**
+   ```powershell
+   & "$env:TEMP\redis\redis-server.exe"
+   ```
+
+2. **Start the Celery Worker:**
+   ```powershell
+   .\venv\Scripts\celery.exe -A backend.celery_app worker --loglevel=info --pool=solo --concurrency=1
+   ```
+
+3. **Start the FastAPI Uvicorn Server:**
+   ```powershell
+   .\venv\Scripts\uvicorn.exe backend.main:app --reload --port 8000
+   ```
+
 
 ## Environment Variables
 
