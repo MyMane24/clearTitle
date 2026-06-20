@@ -7,6 +7,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from backend.logger import get_logger
 from backend.services.mysql_store import (
     get_verification_report,
     get_case_bundle,
@@ -22,6 +23,7 @@ from backend.services.redis_store import case_exists as redis_case_exists
 from backend.services import vector_store as vs
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 class FeedbackItem(BaseModel):
@@ -110,7 +112,7 @@ async def submit_feedback(case_id: str, body: FeedbackSubmit):
     try:
         submit_human_feedback(case_id, feedback_list)
     except Exception as e:
-        pass  # Non-fatal: learning store may fail independently
+        logger.warning("Failed to store feedback in vector DB: %s", e)
 
     return {
         "case_id": case_id,

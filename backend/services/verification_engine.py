@@ -16,6 +16,7 @@ from google.genai import types
 from langgraph.graph import StateGraph, END
 from typing_extensions import TypedDict
 
+from backend.logger import get_logger
 from backend.services import vector_store as vs
 from backend.services.mysql_store import (
     get_case_bundle,
@@ -25,6 +26,7 @@ from backend.services.mysql_store import (
     store_feedback,
     create_training_record,
     update_training_record_with_feedback,
+    mark_feedback_embedded,
 )
 from backend.services.verification_tools import (
     verify_sale_deed,
@@ -38,6 +40,8 @@ from backend.services.verification_tools import (
 )
 
 load_dotenv()
+
+logger = get_logger(__name__)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
@@ -476,7 +480,8 @@ def run_verification(case_id: str) -> dict:
             model=GEMINI_MODEL, contents=["ok"],
             config=types.GenerateContentConfig(temperature=0.1, max_output_tokens=10),
         )
-    except Exception:
+    except Exception as e:
+        logger.warning("Gemini API availability check failed: %s", e)
         api_available = False
 
     if api_available:
@@ -507,8 +512,8 @@ def run_verification(case_id: str) -> dict:
             try:
                 results = fn(documents, doc_type_map)
                 fallback_findings.extend(results)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Fallback tool %s failed: %s", fn_name, e)
 
         # Auto-derive verdict
         has_high = any(f.get("severity") == "high" for f in fallback_findings)
@@ -546,8 +551,8 @@ def run_verification(case_id: str) -> dict:
             try:
                 extra = TOOL_FUNCTIONS[tool_name](result)
                 safety_net_findings.extend(extra)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Safety-net tool %s failed: %s", tool_name, e)
 
     # Merge safety net findings into main findings (deduplicate by type+severity+summary)
     existing_keys = set()
@@ -608,8 +613,8 @@ def run_verification(case_id: str) -> dict:
             input_documents=input_documents,
             agent_report=report,
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to create training record for %s: %s", case_id, e)
 
     return report
 
@@ -637,16 +642,15 @@ def submit_human_feedback(case_id: str, feedback_data: list[dict]) -> None:
         }
         try:
             vs.add_learning(text, metadata)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to store learning in vector DB: %s", e)
 
     try:
-        from backend.services.mysql_store import mark_feedback_embedded
         for fb in feedback_data:
             if fb.get("id"):
                 mark_feedback_embedded(fb["id"])
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to mark feedback as embedded: %s", e)
 
     # Build corrected report from feedback
     try:
@@ -687,5 +691,5 @@ def submit_human_feedback(case_id: str, feedback_data: list[dict]) -> None:
             human_feedback=feedback_data,
             corrected_report=corrected_report,
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to update training record with feedback: %s", e)

@@ -1,0 +1,18 @@
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "S", "BLE", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/tasks/*" = ["S"]  # allow subprocess in tasks
+"backend/services/*" = ["S"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

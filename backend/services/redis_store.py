@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import json
 import os
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from redis import Redis
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 
-def _get_client():
+def _get_client() -> "Redis":
     try:
         import redis as redis_module
     except ImportError as exc:

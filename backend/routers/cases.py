@@ -9,6 +9,11 @@ from typing import List
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
 
+from backend.logger import get_logger
+from backend.constants import (
+    STATUS_PENDING_RETRY, STATUS_PROCESSING, STATUS_FAILED,
+)
+
 from backend.services.mysql_store import (
     init_case,
     init_document,
@@ -33,6 +38,7 @@ from backend.services.pipeline_orchestrator import (
 )
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 @router.post("/upload")
@@ -81,20 +87,20 @@ async def process_case(case_id: str):
         raise HTTPException(status_code=404, detail="Case not found")
 
     meta = get_case_job(case_id)
-    if meta["status"] == "processing":
+    if meta["status"] == STATUS_PROCESSING:
         raise HTTPException(status_code=409, detail="Already processing")
 
-    set_case_status(case_id, "processing")
+    set_case_status(case_id, STATUS_PROCESSING)
     append_log(case_id, "Starting Celery pipeline")
 
     try:
         start_case_pipeline(case_id)
     except Exception as e:
-        set_case_status(case_id, "failed")
+        set_case_status(case_id, STATUS_FAILED)
         append_log(case_id, f"FATAL: Failed to start pipeline — {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-    return {"case_id": case_id, "status": "processing", "mode": "celery"}
+    return {"case_id": case_id, "status": STATUS_PROCESSING, "mode": "celery"}
 
 
 @router.get("/status/{case_id}")
@@ -119,7 +125,8 @@ async def get_status(case_id: str):
     else:
         try:
             needs_action = get_classification_failed_documents(case_id)
-        except Exception:
+        except Exception as e:
+            logger.warning("Failed to get classification_failed docs: %s", e)
             needs_action = []
 
     job["needs_action"] = [
@@ -150,7 +157,7 @@ async def retry_failed(case_id: str):
         raise HTTPException(status_code=404, detail="Case not found")
 
     meta = get_case_job(case_id)
-    if meta["status"] == "processing":
+    if meta["status"] == STATUS_PROCESSING:
         raise HTTPException(status_code=409, detail="Already processing")
 
     failed = get_failed_documents(case_id)
@@ -169,7 +176,7 @@ async def retry_failed(case_id: str):
         update_document_status(
             case_id=case_id,
             doc_id=doc["doc_id"],
-            status="pending_retry",
+            status=STATUS_PENDING_RETRY,
         )
 
     reset_for_retry(case_id)
@@ -178,7 +185,7 @@ async def retry_failed(case_id: str):
     try:
         start_retry_pipeline(case_id)
     except Exception as e:
-        set_case_status(case_id, "failed")
+        set_case_status(case_id, STATUS_FAILED)
         append_log(case_id, f"FATAL: Failed to start retry pipeline — {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -191,7 +198,8 @@ async def clear_all_data():
     redis_deleted = flush_all_cases()
     try:
         purged = celery_app.control.purge()
-    except Exception:
+    except Exception as e:
+        logger.warning("Failed to purge Celery queue: %s", e)
         purged = 0
     return {
         "redis_keys_deleted": redis_deleted,
