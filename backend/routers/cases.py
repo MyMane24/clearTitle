@@ -5,44 +5,67 @@ Case-level endpoints: upload, process, retry, status
 from __future__ import annotations
 
 import uuid
-from typing import List
 
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from backend.logger import get_logger
+from backend.celery_app import celery_app
 from backend.constants import (
-    STATUS_PENDING_RETRY, STATUS_PROCESSING, STATUS_FAILED,
+    STATUS_FAILED,
+    STATUS_PENDING_RETRY,
+    STATUS_PROCESSING,
 )
-
+from backend.logger import get_logger
+from backend.services.file_service import list_output_cases
 from backend.services.mysql_store import (
+    get_classification_failed_documents,
+    get_failed_documents,
     init_case,
     init_document,
+    list_cases,
     update_document_status,
-    get_failed_documents,
-    get_classification_failed_documents,
 )
-from backend.utils.file_utils import get_case_dir, save_upload
-from backend.services.redis_store import (
-    case_exists as redis_case_exists,
-    init_case as redis_init_case,
-    get_case_job,
-    append_log,
-    set_case_status,
-    reset_for_retry,
-    flush_all_cases,
-)
-from backend.celery_app import celery_app
 from backend.services.pipeline_orchestrator import (
     start_case_pipeline,
     start_retry_pipeline,
 )
+from backend.services.redis_store import (
+    append_log,
+    flush_all_cases,
+    get_case_job,
+    reset_for_retry,
+    set_case_status,
+)
+from backend.services.redis_store import (
+    case_exists as redis_case_exists,
+)
+from backend.services.redis_store import (
+    init_case as redis_init_case,
+)
+from backend.utils.file_utils import get_case_dir, save_upload
 
 router = APIRouter()
 logger = get_logger(__name__)
 
 
+@router.get("/cases")
+async def get_all_cases(limit: int = 50, offset: int = 0):
+    """List historical cases from MySQL plus output folders."""
+    try:
+        cases = list_cases(limit=limit, offset=offset)
+        for case in cases:
+            case.setdefault("source", "db")
+    except Exception as e:  # noqa: BLE001 - history should still work if MySQL is down
+        logger.warning("Failed to list DB cases: %s", e)
+        cases = []
+
+    seen = {case["id"] for case in cases}
+    output_cases = [case for case in list_output_cases() if case["id"] not in seen]
+    merged = cases + output_cases
+    return {"cases": merged, "total": len(merged)}
+
+
 @router.post("/upload")
-async def upload_documents(files: List[UploadFile] = File(...)):
+async def upload_documents(files: list[UploadFile] = File(...)):
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
 

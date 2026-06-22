@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any
-
 
 MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")
 MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
@@ -158,6 +156,23 @@ def _ensure_tables():
 
 # ── Case-level operations ───────────────────────────────────────────────────────
 
+def list_cases(limit: int = 50, offset: int = 0) -> list[dict]:
+    """Return all cases ordered by most recent first."""
+    _ensure_tables()
+    with _get_conn() as conn:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT id, status, total_docs, completed_docs, failed_docs,
+                   created_at, updated_at
+            FROM cases
+            ORDER BY created_at DESC
+            LIMIT %s OFFSET %s
+            """,
+            (limit, offset),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
 def init_case(*, case_id: str, total_docs: int) -> None:
     _ensure_tables()
     with _get_conn() as conn:
@@ -258,7 +273,7 @@ def update_document_status(
             fields["file_paths"] = json.dumps(merged, ensure_ascii=False)
 
         set_clause = ", ".join(f"{k} = %s" for k in fields)
-        values = list(fields.values()) + [case_id, doc_id]
+        values = [*list(fields.values()), case_id, doc_id]
         cursor.execute(
             f"UPDATE case_documents SET {set_clause} "
             "WHERE case_id = %s AND doc_id = %s",

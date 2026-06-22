@@ -1,25 +1,36 @@
 """
-Document-level endpoints: replace, skip, result, bundle
+Document-level endpoints: replace, skip, result, bundle, ocr-raw, files
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 
+from backend.services.file_service import (
+    get_case_ocr_raw,
+    list_case_ocr_raw,
+    list_case_outputs,
+)
 from backend.services.mysql_store import (
-    get_case_documents,
     get_case_bundle,
+    get_case_documents,
     update_case_status,
+)
+from backend.services.mysql_store import (
     replace_document as db_replace_document,
+)
+from backend.services.mysql_store import (
     skip_document as db_skip_document,
 )
-from backend.utils.file_utils import get_case_dir, read_json, save_upload
+from backend.services.redis_store import (
+    append_log,
+    remove_error_for_doc,
+    update_file_in_case,
+)
 from backend.services.redis_store import (
     case_exists as redis_case_exists,
-    update_file_in_case,
-    remove_error_for_doc,
-    append_log,
 )
+from backend.utils.file_utils import get_case_dir, read_json, save_upload
 
 router = APIRouter()
 
@@ -108,3 +119,25 @@ async def skip_doc(case_id: str, doc_id: str):
         "doc_id": doc_id,
         "message": "Document skipped. Case will proceed without it.",
     }
+
+
+@router.get("/case/{case_id}/doc/{doc_id}/ocr-raw")
+async def get_ocr_raw(case_id: str, doc_id: str):
+    """Return the merged OCR full text for a document."""
+    result = get_case_ocr_raw(case_id, doc_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="OCR raw output not found")
+    return result
+
+
+@router.get("/case/{case_id}/ocr-raw")
+async def list_ocr_raw(case_id: str):
+    """List merged OCR files available for a case."""
+    return {"case_id": case_id, "documents": list_case_ocr_raw(case_id)}
+
+
+@router.get("/case/{case_id}/files")
+async def get_case_files_endpoint(case_id: str):
+    """List the output directory tree for a case."""
+    entries = list_case_outputs(case_id)
+    return {"case_id": case_id, "entries": entries}

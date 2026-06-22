@@ -44,9 +44,13 @@ app.add_middleware(
 app.include_router(pipeline_router, prefix="/api")
 
 # ── Serve frontend ─────────────────────────────────────────────────────────────
+FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
+
 @app.get("/", response_class=FileResponse)
 async def serve_ui():
-    return FileResponse("frontend/index.html")
+    return FileResponse(FRONTEND / "index.html")
+
+app.mount("/static", StaticFiles(directory=str(FRONTEND)), name="static")
 
 @app.get("/health")
 async def health():

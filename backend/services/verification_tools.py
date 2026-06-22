@@ -10,15 +10,56 @@ All fields are populated in the summary — no separate details field.
 doc_ids uses document type names (e.g. "SALE_DEED") so the agent can identify
 which document type has the issue.
 """
-
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, date
 from typing import Any
+from difflib import SequenceMatcher
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
+
+def clean_name(name: str) -> str:
+    n = (name or "").lower()
+    # Remove address and other descriptions
+    for suffix in ("r/o", "resident of", "co", "d/o", "s/o", "w/o", "since deceased", "represented by", "rep by", "legal heirs of", "since deceased rep'd by"):
+        if suffix in n:
+            n = n.split(suffix)[0]
+    # Remove common prefixes
+    for prefix in ("mrs.", "mrs", "smt.", "smt", "mr.", "mr", "sri.", "sri", "shri.", "shri", "ms.", "ms", "dr.", "dr"):
+        n = re.sub(r'\b' + re.escape(prefix) + r'\b', '', n)
+    # Normalize characters
+    n = re.sub(r'[^a-z0-9\s]', '', n)
+    return " ".join(n.split())
+
+
+def names_match(n1: str, n2: str) -> bool:
+    c1 = clean_name(n1)
+    c2 = clean_name(n2)
+    if not c1 or not c2:
+        return False
+    if c1 == c2:
+        return True
+    t1 = set(c1.split())
+    t2 = set(c2.split())
+    if t1 == t2:
+        return True
+    
+    # Check token overlap with fuzzy spelling support
+    common = set()
+    for tok1 in t1:
+        for tok2 in t2:
+            if tok1 == tok2 or SequenceMatcher(None, tok1, tok2).ratio() >= 0.8:
+                common.add(tok1)
+                break
+                
+    min_len = min(len(t1), len(t2))
+    if len(common) >= max(2, min_len - 1):
+        return True
+    return False
+
 
 def _get(d: dict, *keys: str, default: Any = None) -> Any:
     """Safely traverse nested dict."""
@@ -217,10 +258,10 @@ def verify_encumbrance_certificate(documents: dict[str, dict], doc_type_map: dic
         return []
     data = documents.get(doc_id, {})
 
-    fm = _get(data, "file_metadata", default={})
+    fm = _get(data, "file_metadata", default={}) or _get(data, "document_metadata", default={})
     sc = _get(data, "search_criteria", default={})
-    identifiers = _get(sc, "target_identifiers", default={})
-    ledger = _get(data, "historical_ledger", default=[])
+    identifiers = _get(sc, "target_identifiers", default={}) or _get(data, "document_metadata", default={})
+    ledger = _get(data, "historical_ledger", default=[]) or _get(data, "transactions", default=[])
 
     app_no = fm.get("application_number")
     search_start = fm.get("search_start_date")
@@ -270,11 +311,11 @@ def verify_encumbrance_certificate(documents: dict[str, dict], doc_type_map: dic
                              "suggestion": "Obtain an affidavit explaining the gap from the current owner or a supplementary EC covering the gap period from the Sub-Registrar's office."})
 
     mortgage_terms = ["mortgage", "loan", "charge", "lien", "hypothecation", "security"]
-    release_terms = ["release", "satisfaction", "discharge", "redemption", "closure"]
+    release_terms = ["release", "satisfaction", "discharge", "redemption", "closure", "reconveyance", "reconve yance"]
     has_mortgage = False
     has_release = False
     for txn in ledger:
-        ttype = (txn.get("transaction_type") or "").lower()
+        ttype = (txn.get("transaction_type") or txn.get("document_details") or "").lower()
         if any(t in ttype for t in mortgage_terms):
             if any(t in ttype for t in release_terms):
                 has_release = True
@@ -487,8 +528,8 @@ def verify_property_identity(documents: dict[str, dict], doc_type_map: dict[str,
             info["survey"] = _get(data, "property_schedule", "survey_number")
             info["cts"] = _get(data, "property_schedule", "cts_number")
         elif dtype == "ENCUMBRANCE_CERTIFICATE":
-            info["survey"] = _get(data, "search_criteria", "target_identifiers", "survey_number")
-            info["cts"] = _get(data, "search_criteria", "target_identifiers", "cts_number")
+            info["survey"] = _get(data, "search_criteria", "target_identifiers", "survey_number") or _get(data, "document_metadata", "survey_number")
+            info["cts"] = _get(data, "search_criteria", "target_identifiers", "cts_number") or _get(data, "document_metadata", "cts_number")
         elif dtype == "PROPERTY_REGISTER_CARD":
             info["survey"] = _get(data, "property_identification", "city_survey_number")
         elif dtype == "E_PAYMENT_RECEIPT":
@@ -530,10 +571,8 @@ def verify_property_identity(documents: dict[str, dict], doc_type_map: dict[str,
 
 def verify_ownership_chain(documents: dict[str, dict], doc_type_map: dict[str, str]) -> list[dict]:
     """
-    Cross-document check: trace ownership from EC → deed → PRC.
-    EC: historical_ledger[].parties.vendors[] / purchasers[]
-    Deed: parties.vendors[].entity_name, parties.purchasers[].entity_name
-    PRC: holders[].name
+    Verify ownership chain between the deed under review, the EC transactions, and the PRC.
+    Uses robust fuzzy matching and handles historical or multi-property EC ledgers.
     """
     findings: list[dict] = []
 
@@ -548,68 +587,135 @@ def verify_ownership_chain(documents: dict[str, dict], doc_type_map: dict[str, s
         return findings
 
     deed_doc = documents.get(deed_id, {})
-    deed_type = doc_type_map.get(deed_id, "") if deed_id else ""
+    deed_type = doc_type_map.get(deed_id, "")
+    
     if deed_type == "SALE_DEED":
         deed_vendors = [_get(v, "entity_name") for v in _get(deed_doc, "parties", "vendors", default=[]) if isinstance(v, dict)]
-        deed_donors = []
         deed_purchasers = [_get(p, "entity_name") for p in _get(deed_doc, "parties", "purchasers", default=[]) if isinstance(p, dict)]
+        deed_donors = []
         deed_donees = []
     else:
-        deed_vendors = [_get(v, "entity_name") for v in _get(deed_doc, "parties", "vendors", default=[]) if isinstance(v, dict)]
+        deed_vendors = []
+        deed_purchasers = []
         deed_donors = [_get(d, "entity_name") for d in _get(deed_doc, "parties", "donors", default=[]) if isinstance(d, dict)]
-        deed_purchasers = [_get(p, "entity_name") for p in _get(deed_doc, "parties", "purchasers", default=[]) if isinstance(p, dict)]
         deed_donees = [_get(d, "entity_name") for d in _get(deed_doc, "parties", "donees", default=[]) if isinstance(d, dict)]
 
-    transferors = deed_vendors + deed_donors
-    transferees = deed_purchasers + deed_donees
-
-    def norm(n):
-        return (n or "").strip().upper().replace(".", "").replace(",", "")
-
-    transferor_norm = [norm(n) for n in transferors if n]
-    transferee_norm = [norm(n) for n in transferees if n]
+    transferors = [t for t in (deed_vendors + deed_donors) if t]
+    transferees = [t for t in (deed_purchasers + deed_donees) if t]
 
     if ec_id:
         ec_data = documents.get(ec_id, {})
-        ledger = _get(ec_data, "historical_ledger", default=[])
-        if ledger:
-            last_txn = ledger[-1]
-            if last_txn:
-                parties = _get(last_txn, "parties", default={})
-                ec_vendors = _get(parties, "vendors", default=[])
-                ec_purchasers = _get(parties, "purchasers", default=[])
-
-                ec_last_seller = ec_vendors[-1] if ec_vendors else None
-                ec_last_buyer = ec_purchasers[-1] if ec_purchasers else None
-
-                if isinstance(ec_last_seller, str) and transferor_norm:
-                    if norm(ec_last_seller) not in transferor_norm:
-                        findings.append({"type": "OWNERSHIP_MISMATCH", "severity": "high",
-                                         "doc_ids": ["ENCUMBRANCE_CERTIFICATE", deed_type],
-                                         "summary": f"OWNERSHIP_CHAIN: the last EC transaction seller '{ec_last_seller}' does not match the {deed_type} transferor(s) {transferors}. Under the Transfer of Property Act, 1882, a valid chain of title requires that the person selling the property in the current deed acquired title from the previous registered transaction. This break in the chain may indicate a missing deed in the sequence.",
-                                         "suggestion": "A missing transaction may exist between the EC's last seller and the deed transferor. Obtain a complete EC covering additional years or trace the gap through prior deeds and mutation records."})
-
-                if isinstance(ec_last_buyer, str) and transferee_norm:
-                    if norm(ec_last_buyer) not in transferee_norm:
-                        findings.append({"type": "OWNERSHIP_MISMATCH", "severity": "high",
-                                         "doc_ids": ["ENCUMBRANCE_CERTIFICATE", deed_type],
-                                         "summary": f"OWNERSHIP_CHAIN: the last EC transaction buyer '{ec_last_buyer}' does not match the {deed_type} transferee(s) {transferees}. The EC should end with the same party who is now the transferor in the current deed. A mismatch indicates the chain of title is broken.",
-                                         "suggestion": "Verify the chain by obtaining a supplementary EC covering the period up to the deed execution date. There may be additional transactions not captured in this EC."})
-        else:
+        ledger = _get(ec_data, "historical_ledger", default=[]) or _get(ec_data, "transactions", default=[])
+        if not ledger:
             findings.append({"type": "EC_GAP", "severity": "medium", "doc_ids": ["ENCUMBRANCE_CERTIFICATE"],
                              "summary": "OWNERSHIP_CHAIN: the EC has no historical entries. Without transaction data, the ownership chain cannot be traced from the EC to the current deed.",
                              "suggestion": "Obtain an EC that covers the relevant period and contains the historical transaction entries."})
+            return findings
 
-    if prc_id and transferee_norm:
+        # Sort ledger chronologically
+        dated_txns = []
+        for txn in ledger:
+            d = _parse_date(txn.get("execution_date"))
+            if d:
+                dated_txns.append((d, txn))
+        dated_txns.sort(key=lambda x: x[0])
+
+        # Look for the matching transaction in the EC corresponding to our deed
+        matching_txn = None
+        for d, txn in dated_txns:
+            ec_seller = txn.get("seller_or_executant")
+            ec_buyer = txn.get("buyer_or_claimant")
+            if not ec_seller or not ec_buyer:
+                parties = _get(txn, "parties", default={})
+                ec_vendors = _get(parties, "vendors", default=[])
+                ec_purchasers = _get(parties, "purchasers", default=[])
+                ec_seller = ec_vendors[-1] if ec_vendors else None
+                ec_buyer = ec_purchasers[-1] if ec_purchasers else None
+
+            if isinstance(ec_seller, str) and isinstance(ec_buyer, str):
+                ec_sellers = [s.strip() for s in re.split(r",|;|\band\b|&", ec_seller) if s.strip()]
+                ec_buyers = [b.strip() for b in re.split(r",|;|\band\b|&", ec_buyer) if b.strip()]
+
+                seller_match = any(any(names_match(t, s) for s in ec_sellers) for t in transferors)
+                buyer_match = any(any(names_match(t, b) for b in ec_buyers) for t in transferees)
+                if seller_match and buyer_match:
+                    matching_txn = txn
+                    break
+
+        if matching_txn:
+            # The deed is correctly recorded in the EC. Check prior transactions for chain verification.
+            prior_acquisition = None
+            deed_date = _parse_date(deed_doc.get("file_metadata", {}).get("execution_date"))
+            
+            for d, txn in dated_txns:
+                if deed_date and d >= deed_date:
+                    continue
+                
+                ec_buyer = txn.get("buyer_or_claimant")
+                if not ec_buyer:
+                    parties = _get(txn, "parties", default={})
+                    ec_purchasers = _get(parties, "purchasers", default=[])
+                    ec_buyer = ec_purchasers[-1] if ec_purchasers else None
+                
+                if isinstance(ec_buyer, str):
+                    ec_buyers = [b.strip() for b in re.split(r",|;|\band\b|&", ec_buyer) if b.strip()]
+                    if any(any(names_match(t, b) for b in ec_buyers) for t in transferors):
+                        prior_acquisition = txn
+                        break
+            
+            ec_start = _parse_date(ec_data.get("file_metadata", {}).get("search_start_date") or ec_data.get("document_metadata", {}).get("search_start_date"))
+            if not prior_acquisition and ec_start and deed_date and ec_start < deed_date:
+                prior_txns = [t for d, t in dated_txns if deed_date and d < deed_date]
+                if prior_txns:
+                    findings.append({"type": "OWNERSHIP_GAP", "severity": "medium",
+                                     "doc_ids": ["ENCUMBRANCE_CERTIFICATE", deed_type],
+                                     "summary": f"OWNERSHIP_CHAIN: the transferor {transferors} of the {deed_type} is not recorded as a transferee/buyer in any prior transaction within the EC search period. This indicates a potential gap in the chain of title before the deed was executed.",
+                                     "suggestion": "Obtain the prior registered deeds or mutation records showing how the transferor acquired title to verify the chain of title."})
+        else:
+            # The deed under review was NOT found in the EC.
+            deed_reg_date = _parse_date(deed_doc.get("file_metadata", {}).get("registration_date") or deed_doc.get("file_metadata", {}).get("execution_date"))
+            ec_start = _parse_date(ec_data.get("file_metadata", {}).get("search_start_date") or ec_data.get("document_metadata", {}).get("search_start_date"))
+            ec_end = _parse_date(ec_data.get("file_metadata", {}).get("search_end_date") or ec_data.get("document_metadata", {}).get("search_end_date"))
+            
+            if deed_reg_date and ec_start and ec_end and ec_start <= deed_reg_date <= ec_end:
+                findings.append({"type": "EC_GAP", "severity": "high",
+                                 "doc_ids": ["ENCUMBRANCE_CERTIFICATE", deed_type],
+                                 "summary": f"OWNERSHIP_CHAIN: the {deed_type} dated {deed_reg_date} is not recorded in the Encumbrance Certificate, even though the search period ({ec_start} to {ec_end}) covers this date. A registered title transfer must be recorded in the EC. Non-recording may indicate: (a) the deed was not properly registered or indexed, or (b) the EC was searched under the wrong property identifiers.",
+                                 "suggestion": "Cross-verify the deed registration details on the Kaveri portal. Verify if the EC was issued for the correct survey number and boundaries. If needed, apply for a fresh EC with correct parameters."})
+            else:
+                # Outside EC period, check latest prior transaction in the EC
+                prior_txns = []
+                if deed_reg_date:
+                    prior_txns = [(d, t) for d, t in dated_txns if d < deed_reg_date]
+                else:
+                    prior_txns = dated_txns
+                
+                if prior_txns:
+                    last_prior_txn = prior_txns[-1][1]
+                    ec_last_buyer = last_prior_txn.get("buyer_or_claimant")
+                    if not ec_last_buyer:
+                        parties = _get(last_prior_txn, "parties", default={})
+                        ec_purchasers = _get(parties, "purchasers", default=[])
+                        ec_last_buyer = ec_purchasers[-1] if ec_purchasers else None
+                    
+                    if isinstance(ec_last_buyer, str):
+                        ec_buyers = [b.strip() for b in re.split(r",|;|\band\b|&", ec_last_buyer) if b.strip()]
+                        if not any(any(names_match(t, b) for b in ec_buyers) for t in transferors):
+                            findings.append({"type": "OWNERSHIP_MISMATCH", "severity": "high",
+                                             "doc_ids": ["ENCUMBRANCE_CERTIFICATE", deed_type],
+                                             "summary": f"OWNERSHIP_CHAIN: the latest EC transaction buyer '{ec_last_buyer}' before the deed execution date does not match the {deed_type} transferor(s) {transferors}. The chain of title is broken between the EC's last transaction and the current deed.",
+                                             "suggestion": "Obtain intermediate deeds or mutation records to bridge the gap between the EC's last buyer and the current deed's transferor."})
+
+    if prc_id and transferees:
         prc = documents.get(prc_id, {})
         holders = _get(prc, "holders", default=[])
-        holder_names = [norm(h.get("name", "")) for h in holders if isinstance(h, dict) and h.get("name")]
+        holder_names = [h.get("name", "") for h in holders if isinstance(h, dict) and h.get("name")]
 
         if holder_names:
-            if not any(h in transferee_norm for h in holder_names):
+            if not any(any(names_match(t, hn) for hn in holder_names) for t in transferees):
                 findings.append({"type": "MUTATION_PENDING", "severity": "medium",
                                  "doc_ids": [deed_type, "PROPERTY_REGISTER_CARD"],
-                                 "summary": f"OWNERSHIP_CHAIN: PRC holder(s) do not match {deed_type} transferee(s). PRC holders: {[h.get('name','') for h in holders if isinstance(h, dict)]}. Deed transferees: {transferees}. Under Section 128 of the Karnataka Land Revenue Act, 1964, mutation of records must be applied for after every transfer of ownership. If the PRC still shows the previous holder, mutation is pending.",
+                                 "summary": f"OWNERSHIP_CHAIN: PRC holder(s) do not match {deed_type} transferee(s). PRC holders: {holder_names}. Deed transferees: {transferees}. Under Section 128 of the Karnataka Land Revenue Act, 1964, mutation of records must be applied for after every transfer of ownership. If the PRC still shows the previous holder, mutation is pending.",
                                  "suggestion": "Apply for mutation at the Sub-Registrar's office (Form 12 under the Karnataka Land Revenue Rules) to update the PRC with the current owner's name. A mutated PRC is essential for establishing current title."})
 
     return findings
@@ -646,9 +752,14 @@ def check_red_flags(documents: dict[str, dict], doc_type_map: dict[str, str]) ->
                          "suggestion": "Upload a recent property tax paid receipt or a No Dues Certificate from the municipal corporation."})
 
     for doc_id, dtype in doc_type_map.items():
+        if dtype not in ("SALE_DEED", "GIFT_DEED"):
+            continue
         data = documents.get(doc_id, {})
         desc = json.dumps(data).lower()
-        if any(w in desc for w in ("agriculture", "agricultural", "farm", "cultivation", "agri")):
+        desc_clean = desc
+        for phrase in ("non-agricultural", "non agricultural", "nonagricultural", "non-agriculture", "non agriculture", "nonagriculture", "non-agri", "non agri", "nonagri"):
+            desc_clean = desc_clean.replace(phrase, "")
+        if any(w in desc_clean for w in ("agriculture", "agricultural", "farm", "cultivation", "agri")):
             if "CONVERSION_ORDER" not in doc_types:
                 findings.append({"type": "CONVERSION_MISSING", "severity": "high", "doc_ids": [dtype],
                                  "summary": f"RED FLAGS: property is described as agricultural in '{dtype}' but no Conversion Order (NA Order) is present in the bundle. Under Section 95 of the Karnataka Land Revenue Act, 1964, agricultural land must be converted to non-agricultural (NA) use before it can be sold for non-agricultural purposes. Sale of agricultural land without conversion is void.",
@@ -666,7 +777,7 @@ def check_red_flags(documents: dict[str, dict], doc_type_map: dict[str, str]) ->
         exec_dt = _parse_date(_get(deed_doc, "file_metadata", "execution_date", default=""))
         if exec_dt:
             ec_data = documents.get(ec_id, {})
-            ec_end = _parse_date(_get(ec_data, "file_metadata", "search_end_date", default=""))
+            ec_end = _parse_date(_get(ec_data, "file_metadata", "search_end_date", default="") or _get(ec_data, "document_metadata", "search_end_date", default=""))
             if ec_end and exec_dt > ec_end:
                 findings.append({"type": "EC_GAP", "severity": "medium", "doc_ids": [deed_type, "ENCUMBRANCE_CERTIFICATE"],
                                  "summary": f"RED FLAGS: {deed_type} execution date ({exec_dt}) is AFTER the EC search period ended ({ec_end}). The Encumbrance Certificate does not cover the period up to the current deed execution, meaning any encumbrances created between the EC end date and the deed date are not reflected in this EC. The current deed transaction itself is also not recorded.",
