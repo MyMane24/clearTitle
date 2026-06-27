@@ -3,7 +3,7 @@
 function $(id) { return document.getElementById(id); }
 
 function escHtml(s) {
-  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 }
 
 function syntaxHighlight(json) {
@@ -84,6 +84,7 @@ function buildSummaryTable(structured) {
 function buildDocPanel(res) {
   const structured = res.structured || {};
   const jsonPretty = syntaxHighlight(JSON.stringify(structured, null, 2));
+
   return `
     <div class="doc-panel-inner">
       <div class="doc-info-bar">
@@ -91,6 +92,7 @@ function buildDocPanel(res) {
         <span class="badge badge-blue">${escHtml(res.doc_type || "")}</span>
         <span style="color:var(--gray)">Pages: <strong>${escHtml(res.total_pages ?? "?")}</strong></span>
         <span style="color:var(--gray)">Chunks: <strong>${escHtml(res.chunks_used ?? "?")}</strong></span>
+        ${res.input_tokens ? `<span style="color:var(--gray)">Tokens: <strong>${res.input_tokens} in / ${res.output_tokens} out</strong></span>` : ""}
         <span class="badge badge-green">✓ complete</span>
       </div>
       <div class="view-toggle">

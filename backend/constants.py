@@ -19,16 +19,8 @@ POSSESSION_CERTIFICATE = "POSSESSION_CERTIFICATE"
 CONVERSION_ORDER = "CONVERSION_ORDER"
 UNKNOWN_DOC = "UNKNOWN"
 
-ALL_DOC_TYPES = frozenset({
-    SALE_DEED, GIFT_DEED, ENCUMBRANCE_CERTIFICATE, RTC_PAHANI,
-    KHATA, MUTATION, PROPERTY_REGISTER_CARD, PROPERTY_TAX_ASSESSMENT,
-    E_PAYMENT_RECEIPT, TAX_RECEIPT, LEGAL_HEIR_CERTIFICATE, PARTITION_DEED,
-    COURT_ORDER, POSSESSION_CERTIFICATE, CONVERSION_ORDER,
-})
-
 # ── Pipeline statuses ───────────────────────────────────────────────────────
 
-STATUS_UPLOADED = "uploaded"
 STATUS_PROCESSING = "processing"
 STATUS_PREPROCESSING = "preprocessing"
 STATUS_PREPROCESSED = "preprocessed"
@@ -44,7 +36,6 @@ STATUS_FAILED = "failed"
 STATUS_COMPLETE = "complete"
 STATUS_PARTIAL = "partial"
 STATUS_PENDING_RETRY = "pending_retry"
-STATUS_SKIPPED = "skipped"
 
 # ── Pipeline step names ─────────────────────────────────────────────────────
 

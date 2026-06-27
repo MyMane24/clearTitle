@@ -14,6 +14,7 @@ async function apiError(response, fallback = "Request failed") {
 const API = {
   async health() {
     const r = await fetch("/health");
+    if (!r.ok) return { status: "error" };
     return r.json();
   },
 
@@ -21,6 +22,14 @@ const API = {
     const fd = new FormData();
     files.forEach(f => fd.append("files", f));
     const r = await fetch("/api/upload", { method: "POST", body: fd });
+    if (!r.ok) throw new Error(await apiError(r));
+    return r.json();
+  },
+
+  async uploadMore(caseId, files) {
+    const fd = new FormData();
+    files.forEach(f => fd.append("files", f));
+    const r = await fetch(`/api/case/${caseId}/upload`, { method: "POST", body: fd });
     if (!r.ok) throw new Error(await apiError(r));
     return r.json();
   },
@@ -33,6 +42,7 @@ const API = {
 
   async status(caseId) {
     const r = await fetch(`/api/status/${caseId}`);
+    if (!r.ok) return { status: "unknown" };
     return r.json();
   },
 
@@ -43,7 +53,8 @@ const API = {
   },
 
   async clearAll() {
-    await fetch("/api/clear", { method: "POST" });
+    const r = await fetch("/api/clear", { method: "POST" });
+    if (!r.ok) throw new Error(await apiError(r));
   },
 
   async skipDoc(caseId, docId) {
@@ -57,12 +68,6 @@ const API = {
     fd.append("file", file);
     const r = await fetch(`/api/case/${caseId}/doc/${docId}/replace`, { method: "POST", body: fd });
     if (!r.ok) throw new Error(await apiError(r));
-    return r.json();
-  },
-
-  async result(caseId, docId) {
-    const r = await fetch(`/api/result/${caseId}/${docId}`);
-    if (!r.ok) throw new Error("Result not ready");
     return r.json();
   },
 
@@ -90,6 +95,12 @@ const API = {
     return r.json();
   },
 
+  async caseDocs(caseId) {
+    const r = await fetch(`/api/case/${caseId}/documents`);
+    if (!r.ok) return { documents: [] };
+    return r.json();
+  },
+
   async listCases() {
     const r = await fetch("/api/cases");
     if (!r.ok) return { cases: [] };
@@ -99,6 +110,28 @@ const API = {
   async verify(caseId) {
     const r = await fetch(`/api/verify/${caseId}`, { method: "POST" });
     if (!r.ok) throw new Error(await apiError(r, "Verification failed"));
+    return r.json();
+  },
+
+  async getVerifyReport(caseId) {
+    const r = await fetch(`/api/verify/${caseId}/report`);
+    if (!r.ok) {
+      if (r.status === 404) return null;
+      throw new Error(await apiError(r, "Failed to retrieve verification report"));
+    }
+    return r.json();
+  },
+
+  async verifyPerDoc(caseId) {
+    const r = await fetch(`/api/verify/${caseId}/per-doc`);
+    if (!r.ok) return { documents: [] };
+    return r.json();
+  },
+
+  async tokenUsage(caseId) {
+    const q = caseId ? `?case_id=${caseId}` : "";
+    const r = await fetch(`/api/analytics/token-usage${q}`);
+    if (!r.ok) return null;
     return r.json();
   },
 
@@ -112,8 +145,9 @@ const API = {
     return r.json();
   },
 
-  async learningsStats() {
+  async getLearningStats() {
     const r = await fetch("/api/verify/learnings/stats");
+    if (!r.ok) return { total_learnings: 0 };
     return r.json();
   },
 };

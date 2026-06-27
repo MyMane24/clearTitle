@@ -16,14 +16,19 @@ if TYPE_CHECKING:
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 
+_redis_client = None
+
 def _get_client() -> "Redis":
-    try:
-        import redis as redis_module
-    except ImportError as exc:
-        raise RuntimeError(
-            "redis-py is not installed. Run pip install -r requirements.txt"
-        ) from exc
-    return redis_module.from_url(REDIS_URL, decode_responses=True)
+    global _redis_client
+    if _redis_client is None:
+        try:
+            import redis as redis_module
+        except ImportError as exc:
+            raise RuntimeError(
+                "redis-py is not installed. Run pip install -r requirements.txt"
+            ) from exc
+        _redis_client = redis_module.from_url(REDIS_URL, decode_responses=True)
+    return _redis_client
 
 
 # ── Key helpers ──────────────────────────────────────────────────────────────────
@@ -54,7 +59,47 @@ def _done_count_key(case_id: str) -> str:
 
 def case_exists(case_id: str) -> bool:
     r = _get_client()
-    return r.exists(_meta_key(case_id)) > 0
+    if r.exists(_meta_key(case_id)) > 0:
+        return True
+
+    # Fallback to MySQL V2
+    try:
+        from backend.services.mysql_store_v2 import _get_conn as get_v2_conn
+        with get_v2_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT status, total_docs FROM cases WHERE id = %s", (case_id,))
+            row = cursor.fetchone()
+            if row:
+                status, total_docs = row
+                pipe = r.pipeline()
+                pipe.hset(_meta_key(case_id), "status", status)
+                pipe.hset(_meta_key(case_id), "total_docs", str(total_docs))
+                pipe.execute()
+                # Trigger file caching too
+                get_case_files(case_id)
+                return True
+    except Exception as e:
+        print(f"Fallback check in MySQL V2 failed for case_exists: {e}")
+
+    # Fallback to MySQL V1
+    try:
+        from backend.services.mysql_store import _get_conn as get_v1_conn
+        with get_v1_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT status, total_docs FROM cases WHERE id = %s", (case_id,))
+            row = cursor.fetchone()
+            if row:
+                status, total_docs = row
+                pipe = r.pipeline()
+                pipe.hset(_meta_key(case_id), "status", status)
+                pipe.hset(_meta_key(case_id), "total_docs", str(total_docs))
+                pipe.execute()
+                get_case_files(case_id)
+                return True
+    except Exception as e:
+        print(f"Fallback check in MySQL V1 failed for case_exists: {e}")
+
+    return False
 
 
 def init_case(case_id: str, files_data: list[dict]) -> None:
@@ -92,9 +137,58 @@ def set_case_status(case_id: str, status: str) -> None:
 def get_case_files(case_id: str) -> list[dict]:
     r = _get_client()
     data = r.get(_files_key(case_id))
-    if not data:
-        return []
-    return json.loads(data)
+    if data:
+        return json.loads(data)
+
+    # Reconstruct from MySQL V2
+    try:
+        from backend.services.mysql_store_v2 import _get_conn as get_v2_conn
+        with get_v2_conn() as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("SELECT doc_id, filename, file_paths FROM documents WHERE case_id = %s ORDER BY doc_index ASC", (case_id,))
+            rows = cursor.fetchall()
+            if rows:
+                files_data = []
+                for row in rows:
+                    paths = row.get("file_paths")
+                    if isinstance(paths, str):
+                        paths = json.loads(paths)
+                    saved_path = paths.get("raw") if isinstance(paths, dict) else None
+                    files_data.append({
+                        "doc_id": row["doc_id"],
+                        "original_name": row["filename"],
+                        "saved_path": saved_path,
+                    })
+                r.set(_files_key(case_id), json.dumps(files_data))
+                return files_data
+    except Exception as e:
+        print(f"Fallback to MySQL V2 failed for get_case_files: {e}")
+
+    # Reconstruct from MySQL V1
+    try:
+        from backend.services.mysql_store import _get_conn as get_v1_conn
+        with get_v1_conn() as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("SELECT doc_id, filename, file_paths FROM case_documents WHERE case_id = %s ORDER BY doc_index ASC", (case_id,))
+            rows = cursor.fetchall()
+            if rows:
+                files_data = []
+                for row in rows:
+                    paths = row.get("file_paths")
+                    if isinstance(paths, str):
+                        paths = json.loads(paths)
+                    saved_path = paths.get("raw") if isinstance(paths, dict) else None
+                    files_data.append({
+                        "doc_id": row["doc_id"],
+                        "original_name": row["filename"],
+                        "saved_path": saved_path,
+                    })
+                r.set(_files_key(case_id), json.dumps(files_data))
+                return files_data
+    except Exception as e:
+        print(f"Fallback to MySQL V1 failed for get_case_files: {e}")
+
+    return []
 
 
 def update_file_in_case(case_id: str, doc_id: str, saved_path: str, filename: str) -> None:
@@ -110,8 +204,71 @@ def update_file_in_case(case_id: str, doc_id: str, saved_path: str, filename: st
 
 def get_doc_file_path(case_id: str, doc_id: str) -> str | None:
     for f in get_case_files(case_id):
-        if f["doc_id"] == doc_id:
+        if f["doc_id"] == doc_id and f.get("saved_path"):
             return f["saved_path"]
+
+    # Fallback to MySQL V2
+    try:
+        from backend.services.mysql_store_v2 import _get_conn as get_v2_conn
+        with get_v2_conn() as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("SELECT file_paths FROM documents WHERE case_id = %s AND doc_id = %s", (case_id, doc_id))
+            row = cursor.fetchone()
+            if row and row.get("file_paths"):
+                paths = row["file_paths"]
+                if isinstance(paths, str):
+                    paths = json.loads(paths)
+                if isinstance(paths, dict) and "raw" in paths:
+                    raw_path = paths["raw"]
+                    try:
+                        update_file_in_case(case_id, doc_id, raw_path, get_doc_filename(case_id, doc_id) or doc_id)
+                    except Exception:
+                        pass
+                    return raw_path
+    except Exception as e:
+        print(f"Fallback to MySQL V2 failed for get_doc_file_path: {e}")
+
+    # Fallback to MySQL V1
+    try:
+        from backend.services.mysql_store import _get_conn as get_v1_conn
+        with get_v1_conn() as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("SELECT file_paths FROM case_documents WHERE case_id = %s AND doc_id = %s", (case_id, doc_id))
+            row = cursor.fetchone()
+            if row and row.get("file_paths"):
+                paths = row["file_paths"]
+                if isinstance(paths, str):
+                    paths = json.loads(paths)
+                if isinstance(paths, dict) and "raw" in paths:
+                    raw_path = paths["raw"]
+                    # Sync to MySQL V2
+                    try:
+                        from backend.services.mysql_store_v2 import _get_conn as get_v2_conn
+                        with get_v2_conn() as conn_v2:
+                            cursor_v2 = conn_v2.cursor(dictionary=True)
+                            cursor_v2.execute("SELECT file_paths FROM documents WHERE case_id = %s AND doc_id = %s", (case_id, doc_id))
+                            row_v2 = cursor_v2.fetchone()
+                            v2_paths = {}
+                            if row_v2 and row_v2.get("file_paths"):
+                                v2_paths = row_v2["file_paths"]
+                                if isinstance(v2_paths, str):
+                                    v2_paths = json.loads(v2_paths)
+                            if isinstance(v2_paths, dict):
+                                v2_paths["raw"] = raw_path
+                                cursor_v2.execute("UPDATE documents SET file_paths = %s WHERE case_id = %s AND doc_id = %s",
+                                                (json.dumps(v2_paths), case_id, doc_id))
+                                conn_v2.commit()
+                    except Exception as ex:
+                        print(f"Failed to sync raw path to V2 DB: {ex}")
+                    # Sync to Redis cache
+                    try:
+                        update_file_in_case(case_id, doc_id, raw_path, get_doc_filename(case_id, doc_id) or doc_id)
+                    except Exception:
+                        pass
+                    return raw_path
+    except Exception as e:
+        print(f"Fallback to MySQL V1 failed for get_doc_file_path: {e}")
+
     return None
 
 
@@ -119,6 +276,31 @@ def get_doc_filename(case_id: str, doc_id: str) -> str | None:
     for f in get_case_files(case_id):
         if f["doc_id"] == doc_id:
             return f["original_name"]
+
+    # Fallback to MySQL V2
+    try:
+        from backend.services.mysql_store_v2 import _get_conn as get_v2_conn
+        with get_v2_conn() as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("SELECT filename FROM documents WHERE case_id = %s AND doc_id = %s", (case_id, doc_id))
+            row = cursor.fetchone()
+            if row and row.get("filename"):
+                return row["filename"]
+    except Exception as e:
+        print(f"Fallback to MySQL V2 failed for get_doc_filename: {e}")
+
+    # Fallback to MySQL V1
+    try:
+        from backend.services.mysql_store import _get_conn as get_v1_conn
+        with get_v1_conn() as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("SELECT filename FROM case_documents WHERE case_id = %s AND doc_id = %s", (case_id, doc_id))
+            row = cursor.fetchone()
+            if row and row.get("filename"):
+                return row["filename"]
+    except Exception as e:
+        print(f"Fallback to MySQL V1 failed for get_doc_filename: {e}")
+
     return None
 
 
@@ -245,3 +427,19 @@ def get_case_job(case_id: str) -> dict:
         "progress": progress,
         "log": log,
     }
+
+
+def add_files_to_case(case_id: str, new_files: list[dict]) -> None:
+    r = _get_client()
+    meta = get_case_meta(case_id)
+    old_total = meta.get("total_docs", 0)
+    new_total = old_total + len(new_files)
+
+    pipe = r.pipeline()
+    pipe.hset(_meta_key(case_id), "total_docs", str(new_total))
+    pipe.hset(_meta_key(case_id), "status", "uploaded")
+
+    files = get_case_files(case_id)
+    files.extend(new_files)
+    pipe.set(_files_key(case_id), json.dumps(files))
+    pipe.execute()

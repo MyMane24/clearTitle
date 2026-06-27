@@ -112,13 +112,13 @@
   <!-- ═══════════ STAGE 4: VERIFICATION ═══════════ -->
   <div id="stage-verify" class="hidden">
 
-    <div class="card">
-      <div class="card-title">🤖 Agentic Verification</div>
-      <p style="font-size:13px;color:var(--gray);margin-bottom:16px">
-        Gemini AI verifies all documents for this property: cross-checks ownership chain, dates,
-        financials, property identifiers, and red flags — using LangGraph state machine +
-        vector database of past corrections.
-      </p>
+      <div class="card">
+        <div class="card-title">🤖 Document Verification</div>
+        <p style="font-size:13px;color:var(--gray);margin-bottom:16px">
+          Each document is verified during structuring (single-pass LLM check). Cross-document
+          verification then checks consistency across all docs: ownership chain, dates, financials,
+          property identifiers, and red flags.
+        </p>
       <div id="verify-before">
         <button class="btn btn-primary" id="start-verify-btn">
           🧪 Run Verification
@@ -130,7 +130,7 @@
           <div class="progress-bar" id="verify-progress-bar" style="width:0%"></div>
         </div>
         <div class="log-box" id="verify-log-box" style="max-height:120px">
-          <span class="log-info">Initializing LangGraph workflow...</span>
+          <span class="log-info">Running cross-document verification...</span>
         </div>
       </div>
       <div id="verify-results" class="hidden">

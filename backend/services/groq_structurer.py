@@ -1,240 +1,172 @@
 """
-Groq Structurer Service
-Takes merged OCR output and a doc_type, calls Groq LLM,
-returns structured JSON matching the target schema.
-
-Models tried in order:
-  1. llama-3.3-70b-versatile  (best quality)
-  2. openai/gpt-oss-120b       (strong production fallback)
-  3. qwen/qwen3-32b            (large-context fallback)
-  4. llama-3.1-8b-instant      (fast fallback)
+Groq Structurer Service — primary LLM for document structuring.
+System prompt + verification instructions are consolidated into the system role
+so byte-identical requests benefit from Groq's implicit prompt caching.
 """
 
-import os
+from __future__ import annotations
+
 import json
-from groq import Groq
+import os
+import re
+import time
+from copy import deepcopy
+
+import httpx
 from dotenv import load_dotenv
+from groq import Groq
+
+from backend.logger import get_logger
+from backend.services.rate_limiter import groq_limiter, LLMCallTracker
 
 load_dotenv()
 
-GROQ_API_KEY  = os.getenv("GROQ_API_KEY", "")
-GROQ_MODELS   = [
+logger = get_logger(__name__)
+
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODELS = [
     "llama-3.3-70b-versatile",
-    "openai/gpt-oss-120b",
-    "qwen/qwen3-32b",
     "llama-3.1-8b-instant",
 ]
 
+# Import shared schemas and verification instructions
+from backend.services.gemini_structurer import (
+    VERIFICATION_NOTES_SCHEMA,
+    SCHEMA_MAP,
+    _get_verification_instructions,
+    _generic_schema,
+)
 
-# ── Schema definitions ─────────────────────────────────────────────────────────
+SYSTEM_PROMPT_BASE = """You are an expert Karnataka property document analyst.
 
-SALE_DEED_SCHEMA = {
-    "document_type": "SALE_DEED",
-    "file_metadata": {
-        "registration_number": None,
-        "execution_date":      None,
-        "registration_date":   None,
-        "issuing_office":      None,
-        "scanned_sheet_count": None,
-    },
-    "financial_summary": {
-        "declared_consideration_amount": None,
-        "stamp_duty_paid_amount":        None,
-        "total_registration_fees":       None,
-        "payment_dd_reference":          None,
-    },
-    "parties": {
-        "vendors": [
-            {
-                "entity_name":     None,
-                "represented_by":  None,
-                "address":         None,
-            }
-        ],
-        "purchasers": [
-            {
-                "entity_name":     None,
-                "represented_by":  None,
-                "address":         None,
-            }
-        ],
-    },
-    "property_schedule": {
-        "cts_number":              None,
-        "survey_number":           None,
-        "apartment_or_shop_number": None,
-        "floor_location":          None,
-        "project_name":            None,
-        "full_schedule_description": None,
-        "measurements": {
-            "super_built_up_area_sqft":  None,
-            "undivided_share_land_sqft": None,
-            "total_land_area_sqmtr":     None,
-        },
-        "boundaries": {
-            "north": None,
-            "east":  None,
-            "west":  None,
-            "south": None,
-        },
-        "intended_usage": None,
-    },
-    "statutory_valuation_endorsement": {
-        "estimated_market_value":          None,
-        "prevention_of_undervaluation_referred": False,
-        "form_1a_communication_date":      None,
-    },
-}
-
-EC_SCHEMA = {
-    "document_type": "ENCUMBRANCE_CERTIFICATE",
-    "file_metadata": {
-        "application_number": None,
-        "reference_number":   None,
-        "search_start_date":  None,
-        "search_end_date":    None,
-        "digital_signature_by": None,
-        "issuing_office":     None,
-    },
-    "search_criteria": {
-        "target_village": None,
-        "target_hobli":   None,
-        "target_identifiers": {
-            "cts_number":              None,
-            "survey_number":           None,
-            "converted_survey_number": None,
-            "plot_number":             None,
-        },
-    },
-    "historical_ledger": [
-        {
-            "transaction_index":    1,
-            "execution_date":       None,
-            "registration_reference": None,
-            "transaction_type":     None,
-            "financials": {
-                "consideration_amount": None,
-                "market_value":         None,
-            },
-            "parties": {
-                "vendors":    [],
-                "purchasers": [],
-            },
-            "property_details": {
-                "plot_no":    None,
-                "pid_no":     None,
-                "cts_no":     None,
-                "description": None,
-                "measurements": {},
-                "boundaries": {
-                    "north": None,
-                    "east":  None,
-                    "west":  None,
-                    "south": None,
-                },
-                "location":   None,
-            },
-        }
-    ],
-}
-
-SCHEMA_MAP = {
-    "SALE_DEED": SALE_DEED_SCHEMA,
-    "ENCUMBRANCE_CERTIFICATE": EC_SCHEMA,
-}
-
-
-# ── Prompts ────────────────────────────────────────────────────────────────────
-
-SYSTEM_PROMPT = """You are an expert property document extraction AI for Karnataka, India.
-You receive OCR text from scanned property documents (Kannada + English) and extract structured data.
+TASK 1 — EXTRACT: Fill the JSON schema from the OCR text below.
+TASK 2 — VERIFY: While reading, check for document issues and populate the verification_notes array.
 
 Rules:
-1. Return ONLY valid JSON matching the provided schema exactly — no markdown, no preamble.
+1. Return ONLY valid JSON matching the provided schema exactly.
 2. Use null for fields not found in the document.
-3. Dates must be in YYYY-MM-DD format. If only month/year known, use YYYY-MM-01.
+3. Dates must be YYYY-MM-DD format. If only month/year known, use YYYY-MM-01.
 4. Numbers must be numeric types (not strings).
 5. For Karnataka documents: CTS = City Survey number, RS = Rural Survey number.
 6. Extract ALL transactions from EC historical ledger, not just the first one.
 7. If Kannada text is present alongside English, use the English equivalent value.
 8. Do not hallucinate values — only extract what is explicitly present in the text.
-"""
+9. verification_notes should be an empty array [] if no issues found.
+10. Each verification_note MUST have: type, severity, confidence, summary, legal_detail, evidence, suggestion."""
 
-USER_PROMPT_TEMPLATE = """Extract structured data from this {doc_type} document.
 
-TARGET JSON SCHEMA:
-{schema}
+def _build_system_message(doc_type: str) -> str:
+    """Build a byte-identical system message per doc_type for implicit caching."""
+    verification_instructions = _get_verification_instructions(doc_type)
+    schema = deepcopy(SCHEMA_MAP.get(doc_type, _generic_schema(doc_type)))
+    schema_json = json.dumps(schema, indent=2)
 
-OCR TEXT FROM DOCUMENT:
-{ocr_text}
+    return (
+        f"{SYSTEM_PROMPT_BASE}\n\n"
+        f"{verification_instructions}\n\n"
+        f"TARGET JSON SCHEMA:\n{schema_json}"
+    )
 
-Return ONLY the filled JSON. No explanation."""
 
-def structure_document(merged_ocr: dict, doc_type: str) -> dict:
+def structure_document(merged_ocr: dict, doc_type: str,
+                        model_override: str | None = None,
+                        retry_count: int = 0) -> dict:
     """
-    Call Groq LLM to extract structured fields from merged OCR output.
-    Returns structured dict.
+    Call Groq LLM to extract structured fields AND generate verification notes.
+    Returns dict with structured_data, verification_notes, _analytics.
     """
     if not GROQ_API_KEY:
         raise ValueError("GROQ_API_KEY not set in .env")
 
-    schema = SCHEMA_MAP.get(doc_type, _generic_schema(doc_type))
-
+    schema = deepcopy(SCHEMA_MAP.get(doc_type, _generic_schema(doc_type)))
     ocr_text = merged_ocr.get("full_text", "")
+    page_count = merged_ocr.get("total_pages", 0)
 
-    user_prompt = USER_PROMPT_TEMPLATE.format(
-        doc_type  = doc_type,
-        schema    = json.dumps(schema, indent=2),
-        ocr_text  = ocr_text,
+    system_msg = _build_system_message(doc_type)
+
+    user_prompt = (
+        f"OCR TEXT FROM DOCUMENT:\n{ocr_text}\n\n"
+        f"Return ONLY the filled JSON. No explanation."
     )
 
-    client = Groq(api_key=GROQ_API_KEY)
+    _http_client = httpx.Client(timeout=httpx.Timeout(120.0, connect=30.0))
+    client = Groq(api_key=GROQ_API_KEY, http_client=_http_client)
     errors = []
+    start = time.time()
+    actual_retry_count = retry_count
+    models_to_try = [model_override] if model_override else GROQ_MODELS
 
-    for model in GROQ_MODELS:
+    for model in models_to_try:
+        if model is None:
+            continue
         try:
+            # Acquire rate limit token
+            acquired = groq_limiter.wait_and_acquire(tokens=max(1, len(ocr_text) // 100000))
+            if not acquired:
+                logger.warning("Rate limit wait timeout for Groq %s", doc_type)
+
             resp = client.chat.completions.create(
-                model    = model,
-                messages = [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user",   "content": user_prompt},
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_prompt},
                 ],
-                temperature = 0.0,
-                max_tokens  = 32000,
+                temperature=0.0,
+                max_tokens=32000,
             )
+            latency_ms = int((time.time() - start) * 1000)
             raw = resp.choices[0].message.content.strip()
-            result = json.loads(raw)
+
+            try:
+                result = json.loads(raw)
+            except json.JSONDecodeError:
+                m = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', raw)
+                if m:
+                    result = json.loads(m.group(1))
+                else:
+                    raise
             if "document_type" not in result:
                 result["document_type"] = doc_type
-            if "file_metadata" in result and merged_ocr.get("total_pages"):
-                result["file_metadata"]["scanned_sheet_count"] = merged_ocr["total_pages"]
-            return result
+            if "file_metadata" in result and page_count:
+                result["file_metadata"]["scanned_sheet_count"] = page_count
+
+            verification_notes = result.pop("verification_notes", [])
+            usage = resp.usage
+            input_tokens = usage.prompt_tokens if usage else len(system_msg + user_prompt) // 4
+            output_tokens = usage.completion_tokens if usage else len(raw) // 4
+            cost_usd = (input_tokens / 1_000_000 * 0.59) + (output_tokens / 1_000_000 * 0.79)
+
+            analytics = {
+                "model": model,
+                "provider": "groq",
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cached_tokens": 0,  # Groq doesn't expose cached token count
+                "latency_ms": latency_ms,
+                "cost_usd": round(cost_usd, 6),
+                "retry_count": actual_retry_count,
+                "cache_used": False,
+            }
+
+            LLMCallTracker.record(
+                provider="groq", model=model, doc_type=doc_type,
+                input_tokens=input_tokens, output_tokens=output_tokens,
+                cached_tokens=0, latency_ms=latency_ms,
+                cost_usd=cost_usd, retry_count=actual_retry_count, status="success",
+            )
+
+            return {
+                "structured_data": result,
+                "verification_notes": verification_notes,
+                "_analytics": analytics,
+            }
 
         except Exception as e:
+            error_msg = str(e).lower()
             errors.append(f"{model}: {e}")
-            # Try next model on rate limit or error
+            if any(x in error_msg for x in ["429", "quota", "exhausted", "rate"]):
+                logger.warning("Groq rate limited on %s: %s", model, e)
+                actual_retry_count += 1
             continue
 
     raise RuntimeError("All Groq models failed. " + " | ".join(errors))
-
-
-def _generic_schema(doc_type: str) -> dict:
-    """Fallback schema for unrecognised document types."""
-    return {
-        "document_type":  doc_type,
-        "file_metadata":  {
-            "registration_number": None,
-            "execution_date":      None,
-            "registration_date":   None,
-            "issuing_office":      None,
-        },
-        "parties": {
-            "vendors":    [],
-            "purchasers": [],
-        },
-        "property_details": {
-            "survey_number": None,
-            "location":      None,
-        },
-        "raw_notes": "Schema not defined for this document type. Key fields extracted.",
-    }

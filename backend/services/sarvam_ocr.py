@@ -42,6 +42,23 @@ class ChunkResult:
     error:       str  = ""
 
 
+_sarvam_client = None
+
+def _get_sarvam_client():
+    global _sarvam_client
+    if _sarvam_client is None:
+        if not SARVAM_API_KEY:
+            raise ValueError("SARVAM_API_KEY not set in .env")
+        client = SarvamAI(api_subscription_key=SARVAM_API_KEY)
+        if not hasattr(client, "document_intelligence"):
+            raise RuntimeError(
+                "Installed sarvamai SDK does not include document_intelligence. "
+                "Install sarvamai>=0.1.28."
+            )
+        _sarvam_client = client
+    return _sarvam_client
+
+
 def run_sarvam_ocr(pdf_path: Path, out_dir: Path) -> List[ChunkResult]:
     """
     Main entry point.
@@ -49,15 +66,7 @@ def run_sarvam_ocr(pdf_path: Path, out_dir: Path) -> List[ChunkResult]:
     """
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if not SARVAM_API_KEY:
-        raise ValueError("SARVAM_API_KEY not set in .env")
-
-    client = SarvamAI(api_subscription_key=SARVAM_API_KEY)
-    if not hasattr(client, "document_intelligence"):
-        raise RuntimeError(
-            "Installed sarvamai SDK does not include document_intelligence. "
-            "Install sarvamai>=0.1.28."
-        )
+    client = _get_sarvam_client()
 
     # Detect page count
     doc        = fitz.open(str(pdf_path))

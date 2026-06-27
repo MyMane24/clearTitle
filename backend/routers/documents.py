@@ -12,9 +12,16 @@ from backend.services.file_service import (
     list_case_outputs,
 )
 from backend.services.mysql_store import (
-    get_case_bundle,
+    get_case_bundle as get_case_bundle_v1,
     get_case_documents,
     update_case_status,
+)
+from backend.services.mysql_store_v2 import (
+    get_case_bundle as get_case_bundle_v2,
+    get_case_documents as get_case_documents_v2,
+    replace_document as db_replace_document_v2,
+    skip_document as db_skip_document_v2,
+    update_case_status as update_case_status_v2,
 )
 from backend.services.mysql_store import (
     replace_document as db_replace_document,
@@ -46,7 +53,7 @@ async def get_result(case_id: str, doc_id: str):
 
 @router.get("/case/{case_id}/bundle")
 async def get_case_bundle_endpoint(case_id: str):
-    docs = get_case_bundle(case_id)
+    docs = get_case_bundle_v1(case_id) or get_case_bundle_v2(case_id)
     if not docs:
         raise HTTPException(status_code=404, detail="No structured results found")
     return {
@@ -63,7 +70,7 @@ async def replace_doc(case_id: str, doc_id: str, file: UploadFile = File(...)):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Replacement must be a PDF")
 
-    docs = get_case_documents(case_id)
+    docs = get_case_documents_v2(case_id) or get_case_documents(case_id)
     if not any(d["doc_id"] == doc_id for d in docs):
         raise HTTPException(status_code=404, detail="Document not found in this case")
 
@@ -72,12 +79,27 @@ async def replace_doc(case_id: str, doc_id: str, file: UploadFile = File(...)):
 
     update_file_in_case(case_id, doc_id, str(dest), file.filename)
 
-    db_replace_document(
-        case_id=case_id,
-        doc_id=doc_id,
-        filename=file.filename,
-        file_paths={"raw": str(dest)},
-    )
+    # V1 DB
+    try:
+        db_replace_document(
+            case_id=case_id,
+            doc_id=doc_id,
+            filename=file.filename,
+            file_paths={"raw": str(dest)},
+        )
+    except Exception as e:
+        pass
+
+    # V2 DB
+    try:
+        db_replace_document_v2(
+            case_id=case_id,
+            doc_id=doc_id,
+            filename=file.filename,
+            file_paths={"raw": str(dest)},
+        )
+    except Exception as e:
+        pass
 
     remove_error_for_doc(case_id, doc_id)
 
@@ -96,7 +118,7 @@ async def skip_doc(case_id: str, doc_id: str):
     if not redis_case_exists(case_id):
         raise HTTPException(status_code=404, detail="Case not found")
 
-    docs = get_case_documents(case_id)
+    docs = get_case_documents_v2(case_id) or get_case_documents(case_id)
     doc = next((d for d in docs if d["doc_id"] == doc_id), None)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found in this case")
@@ -107,8 +129,19 @@ async def skip_doc(case_id: str, doc_id: str):
                    "Only classification-failed documents can be skipped.",
         )
 
-    db_skip_document(case_id=case_id, doc_id=doc_id)
-    update_case_status(case_id=case_id)
+    # V1 DB
+    try:
+        db_skip_document(case_id=case_id, doc_id=doc_id)
+        update_case_status(case_id=case_id)
+    except Exception as e:
+        pass
+
+    # V2 DB
+    try:
+        db_skip_document_v2(case_id=case_id, doc_id=doc_id)
+        update_case_status_v2(case_id=case_id)
+    except Exception as e:
+        pass
 
     remove_error_for_doc(case_id, doc_id)
 
@@ -141,3 +174,13 @@ async def get_case_files_endpoint(case_id: str):
     """List the output directory tree for a case."""
     entries = list_case_outputs(case_id)
     return {"case_id": case_id, "entries": entries}
+
+
+@router.get("/case/{case_id}/documents")
+async def get_case_documents_endpoint(case_id: str):
+    """Return all document records (including metadata and status) for a case from MySQL V2/V1."""
+    if not redis_case_exists(case_id):
+        raise HTTPException(status_code=404, detail="Case not found")
+    docs = get_case_documents_v2(case_id) or get_case_documents(case_id)
+    return {"case_id": case_id, "documents": docs}
+

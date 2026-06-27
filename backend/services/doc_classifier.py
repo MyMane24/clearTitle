@@ -137,8 +137,7 @@ FILENAME_PATTERNS = {
 }
 
 
-ALL_DOC_TYPES: set = set(DOC_TYPE_KEYWORDS.keys())
-VALID_DOC_TYPES: set = ALL_DOC_TYPES
+VALID_DOC_TYPES: set = set(DOC_TYPE_KEYWORDS.keys())
 
 
 def classify_document(filename: str, sample_text: str = "") -> str:

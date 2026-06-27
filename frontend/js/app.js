@@ -28,7 +28,7 @@ function handleFiles(files) {
   });
   renderFileList();
 }
-window.handleFiles = handleFiles;
+
 
 function renderFileList() {
   const list = document.getElementById("file-list");
@@ -47,7 +47,7 @@ function removeFile(i) {
   selectedFiles.splice(i, 1);
   renderFileList();
 }
-window.removeFile = removeFile;
+
 
 function clearFiles() {
   selectedFiles = [];
@@ -55,14 +55,14 @@ function clearFiles() {
   sessionStorage.removeItem("currentCaseId");
   currentCaseId = null;
 }
-window.clearFiles = clearFiles;
+
 
 async function clearAllData() {
   if (!confirm("This will clear ALL Redis data and purge pending Celery tasks. The page will reload. Continue?")) return;
   try { await API.clearAll(); } catch { /* ignore */ }
   location.reload();
 }
-window.clearAllData = clearAllData;
+
 
 // ── Start processing (upload + pipeline) ──────────────────────────────────────
 async function startProcessing() {
@@ -97,7 +97,7 @@ async function startProcessing() {
 
   pollInterval(currentCaseId);
 }
-window.startProcessing = startProcessing;
+
 
 function pollInterval(caseId) {
   if (polling) clearInterval(polling);
@@ -144,11 +144,27 @@ async function showResults(data) {
   const results = data.results || [];
   const errors = data.errors || [];
 
+  const totalTokens = results.reduce((s, r) => s + (r.input_tokens || 0) + (r.output_tokens || 0), 0);
+  const totalCost = results.reduce((s, r) => s + (r.cost_usd || 0), 0);
+
+  // Fetch per-doc verification notes from V2 DB
+  let perDocNotes = {};
+  if (currentCaseId && results.length > 0) {
+    try {
+      const pn = await API.verifyPerDoc(currentCaseId);
+      if (pn.documents) {
+        pn.documents.forEach(d => { perDocNotes[d.doc_id] = d.verification_notes || []; });
+      }
+    } catch (e) { /* non-fatal */ }
+  }
+
   document.getElementById("metrics-row").innerHTML = `
     <div class="metric-box"><div class="val">${results.length}</div><div class="lbl">Documents complete</div></div>
     <div class="metric-box"><div class="val">${errors.length}</div><div class="lbl">Failed</div></div>
     <div class="metric-box"><div class="val">${results.reduce((s, r) => s + (r.total_pages || 0), 0)}</div><div class="lbl">Total pages</div></div>
     <div class="metric-box"><div class="val">${results.reduce((s, r) => s + (r.chunks_used || 1), 0)}</div><div class="lbl">Sarvam calls</div></div>
+    <div class="metric-box"><div class="val">${(totalTokens || 0).toLocaleString()}</div><div class="lbl">LLM tokens</div></div>
+    <div class="metric-box"><div class="val">$${(totalCost || 0).toFixed(5)}</div><div class="lbl">LLM cost</div></div>
     <div class="metric-box"><div class="val"><span class="badge ${data.status === "complete" ? "badge-green" : "badge-amber"}">${escHtml(data.status)}</span></div><div class="lbl">Case status</div></div>
   `;
 
@@ -202,7 +218,7 @@ async function showResults(data) {
     const panel = document.createElement("div");
     panel.id = `panel-${res.doc_id}`;
     panel.style.display = i === 0 ? "block" : "none";
-    panel.innerHTML = buildDocPanel(res);
+    panel.innerHTML = buildDocPanel(res, perDocNotes[res.doc_id] || []);
     panelsEl.appendChild(panel);
   });
 
@@ -218,7 +234,7 @@ function switchTab(docId, results) {
     document.getElementById(`tab-${r.doc_id}`).classList.toggle("active", r.doc_id === docId);
   });
 }
-window.switchTab = switchTab;
+
 
 // ── Document actions ───────────────────────────────────────────────────────────
 async function skipDoc(caseId, docId) {
@@ -231,7 +247,7 @@ async function skipDoc(caseId, docId) {
     if (el) el.innerHTML = `<span style="color:var(--red)">✗ Skip failed: ${escHtml(e.message)}</span>`;
   }
 }
-window.skipDoc = skipDoc;
+
 
 async function replaceDoc(caseId, docId, input) {
   const file = input.files[0];
@@ -249,7 +265,7 @@ async function replaceDoc(caseId, docId, input) {
     statusEl.innerHTML = `<span style="color:var(--red)">✗ Failed: ${escHtml(e.message)}</span>`;
   }
 }
-window.replaceDoc = replaceDoc;
+
 
 async function retryFailed(caseId) {
   try {
@@ -262,7 +278,7 @@ async function retryFailed(caseId) {
     refreshStatus(caseId);
   }
 }
-window.retryFailed = retryFailed;
+
 
 async function refreshStatus(caseId) {
   try {
@@ -270,14 +286,14 @@ async function refreshStatus(caseId) {
     showResults(s);
   } catch { /* ignore */ }
 }
-window.refreshStatus = refreshStatus;
+
 
 // ── Verification Engine ─────────────────────────────────────────────────────────
 function showStage4() {
   showStage("verify");
   setStep(4);
 }
-window.showStage4 = showStage4;
+
 
 async function startVerification() {
   if (!currentCaseId) return;
@@ -286,7 +302,7 @@ async function startVerification() {
   document.getElementById("verify-results").classList.add("hidden");
   document.getElementById("verify-feedback-area").classList.add("hidden");
 
-  addVerifyLog("Starting LangGraph workflow...", "info");
+  addVerifyLog("Running cross-document verification (single-pass LLM)...", "info");
   document.getElementById("verify-progress-bar").style.width = "10%";
 
   try {
@@ -298,7 +314,7 @@ async function startVerification() {
     document.getElementById("verify-before").classList.remove("hidden");
   }
 }
-window.startVerification = startVerification;
+
 
 function showVerificationResults(data) {
   document.getElementById("verify-loading").classList.add("hidden");
@@ -315,15 +331,22 @@ function showVerificationResults(data) {
     ? '<span class="badge badge-green">PASS ✓</span>'
     : '<span class="badge badge-red">FLAGGED ⚠</span>';
 
+  const metadata = data.metadata || {};
+
   document.getElementById("verify-summary").innerHTML = `
     <div class="metric-box"><div class="val">${data.total_findings || 0}</div><div class="lbl">Total Findings</div></div>
+    <div class="metric-box"><div class="val">${data.per_doc_findings || 0}</div><div class="lbl">Per-Doc</div></div>
+    <div class="metric-box"><div class="val">${data.cross_doc_findings || 0}</div><div class="lbl">Cross-Doc</div></div>
     <div class="metric-box"><div class="val">${data.high_severity || 0}</div><div class="lbl">High Severity</div></div>
     <div class="metric-box"><div class="val">${verdictBadge}</div><div class="lbl">Verdict</div></div>
+    ${metadata.model ? `<div class="metric-box" style="min-width:100px"><div class="val" style="font-size:13px">${escHtml(metadata.model)}</div><div class="lbl">Model</div></div>` : ""}
+    ${metadata.total_cost_usd ? `<div class="metric-box"><div class="val">$${Number(metadata.total_cost_usd).toFixed(5)}</div><div class="lbl">Cost</div></div>` : ""}
   `;
 
   if (findings.length === 0) {
     document.getElementById("verify-findings").innerHTML = `
       <div style="padding:20px;text-align:center;color:var(--green);font-weight:600">✅ No issues found — all documents are consistent</div>`;
+    document.getElementById("verify-feedback-area").classList.add("hidden");
     return;
   }
 
@@ -342,10 +365,10 @@ function showVerificationResults(data) {
     tableHtml += `<tr style="border-bottom:1px solid var(--border)">
       <td style="padding:8px 10px;font-weight:600;white-space:nowrap">${escHtml(f.type)}</td>
       <td style="padding:8px 10px"><span class="badge ${sevCls}">${f.severity}</span></td>
-      <td style="padding:8px 10px;font-family:monospace;font-size:11px">${(f.doc_ids || []).join(", ")}</td>
+      <td style="padding:8px 10px;font-family:monospace;font-size:11px">${escHtml((f.doc_ids && f.doc_ids.length ? f.doc_ids : f.source_doc_id ? [f.source_doc_id] : []).join(", "))}</td>
       <td style="padding:8px 10px">
         <strong>${escHtml(f.summary)}</strong>
-        <div style="font-size:11px;color:var(--gray);margin-top:2px">${escHtml(f.details)}</div>
+        <div style="font-size:11px;color:var(--gray);margin-top:2px">${escHtml(f.details || f.legal_detail || "")}</div>
         ${f.suggestion ? `<div style="font-size:11px;color:var(--blue);margin-top:2px">💡 ${escHtml(f.suggestion)}</div>` : ""}
       </td>
     </tr>`;
@@ -412,17 +435,17 @@ async function submitFeedback() {
     statusEl.innerHTML = `<span style="color:var(--red)">✗ ${e.message}</span>`;
   }
 }
-window.submitFeedback = submitFeedback;
+
 
 async function showLearningsStats() {
   try {
-    const d = await API.learningsStats();
+    const d = await API.getLearningStats();
     document.getElementById("verify-learnings-card").classList.remove("hidden");
     document.getElementById("learnings-stats").innerHTML =
       `📊 ${d.total_learnings} past corrections stored in vector database (Qdrant in-memory)`;
   } catch { /* ignore */ }
 }
-window.showLearningsStats = showLearningsStats;
+
 
 function addVerifyLog(msg, type) {
   const box = document.getElementById("verify-log-box");

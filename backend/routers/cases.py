@@ -5,6 +5,7 @@ Case-level endpoints: upload, process, retry, status
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
@@ -19,10 +20,18 @@ from backend.services.file_service import list_output_cases
 from backend.services.mysql_store import (
     get_classification_failed_documents,
     get_failed_documents,
-    init_case,
-    init_document,
-    list_cases,
-    update_document_status,
+    init_case as init_case_v1,
+    init_document as init_document_v1,
+    list_cases as list_cases_v1,
+    update_document_status as update_doc_status_v1,
+)
+from backend.services.mysql_store_v2 import (
+    init_case as init_case_v2,
+    init_document as init_document_v2,
+    list_cases as list_cases_v2,
+    get_failed_documents as get_failed_documents_v2,
+    get_classification_failed_documents as get_classification_failed_documents_v2,
+    update_document_status as update_doc_status_v2,
 )
 from backend.services.pipeline_orchestrator import (
     start_case_pipeline,
@@ -34,6 +43,7 @@ from backend.services.redis_store import (
     get_case_job,
     reset_for_retry,
     set_case_status,
+    add_files_to_case,
 )
 from backend.services.redis_store import (
     case_exists as redis_case_exists,
@@ -49,18 +59,47 @@ logger = get_logger(__name__)
 
 @router.get("/cases")
 async def get_all_cases(limit: int = 50, offset: int = 0):
-    """List historical cases from MySQL plus output folders."""
-    try:
-        cases = list_cases(limit=limit, offset=offset)
-        for case in cases:
-            case.setdefault("source", "db")
-    except Exception as e:  # noqa: BLE001 - history should still work if MySQL is down
-        logger.warning("Failed to list DB cases: %s", e)
-        cases = []
+    """List historical cases from V1 + V2 databases plus output folders."""
+    seen = set()
+    merged = []
 
-    seen = {case["id"] for case in cases}
-    output_cases = [case for case in list_output_cases() if case["id"] not in seen]
-    merged = cases + output_cases
+    # Try V2 database first (new cases)
+    try:
+        v2_cases = list_cases_v2(limit=limit, offset=offset)
+        for case in v2_cases:
+            case["source"] = "v2"
+            case["db_version"] = "v2"
+            seen.add(case["id"])
+            merged.append(case)
+    except Exception as e:
+        logger.warning("Failed to list V2 cases: %s", e)
+
+    # Try V1 database (old cases)
+    try:
+        v1_cases = list_cases_v1(limit=limit, offset=offset)
+        for case in v1_cases:
+            if case["id"] not in seen:
+                case["source"] = "v1"
+                case["db_version"] = "v1"
+                seen.add(case["id"])
+                merged.append(case)
+    except Exception as e:
+        logger.warning("Failed to list V1 cases: %s", e)
+
+    # Add file-system only cases (no DB record)
+    output_cases = [c for c in list_output_cases() if c["id"] not in seen]
+    merged.extend(output_cases)
+
+    # Sort by created_at DESC (handle datetime, str, and None)
+    def _sort_key(c):
+        v = c.get("created_at")
+        if isinstance(v, datetime):
+            return v.timestamp()
+        if isinstance(v, (int, float)):
+            return v
+        return 0
+
+    merged.sort(key=_sort_key, reverse=True)
     return {"cases": merged, "total": len(merged)}
 
 
@@ -88,10 +127,11 @@ async def upload_documents(files: list[UploadFile] = File(...)):
 
     redis_init_case(case_id, saved)
 
+    # Init in V1 database (backward compat)
     try:
-        init_case(case_id=case_id, total_docs=len(saved))
+        init_case_v1(case_id=case_id, total_docs=len(saved))
         for s in saved:
-            init_document(
+            init_document_v1(
                 case_id=case_id,
                 doc_id=s["doc_id"],
                 doc_index=int(s["doc_id"].split("_")[1]),
@@ -99,7 +139,21 @@ async def upload_documents(files: list[UploadFile] = File(...)):
                 file_paths={"raw": s["saved_path"]},
             )
     except Exception as e:
-        append_log(case_id, f"⚠ DB init failed (non-fatal): {e}")
+        append_log(case_id, f"⚠ V1 DB init failed (non-fatal): {e}")
+
+    # Init in V2 database (new pipeline)
+    try:
+        init_case_v2(case_id=case_id, total_docs=len(saved))
+        for s in saved:
+            init_document_v2(
+                case_id=case_id,
+                doc_id=s["doc_id"],
+                doc_index=int(s["doc_id"].split("_")[1]),
+                filename=s["original_name"],
+                file_paths={"raw": s["saved_path"]},
+            )
+    except Exception as e:
+        append_log(case_id, f"⚠ V2 DB init failed (non-fatal): {e}")
 
     return {"case_id": case_id, "files": saved}
 
@@ -183,8 +237,9 @@ async def retry_failed(case_id: str):
     if meta["status"] == STATUS_PROCESSING:
         raise HTTPException(status_code=409, detail="Already processing")
 
-    failed = get_failed_documents(case_id)
-    classification_failed = get_classification_failed_documents(case_id)
+    # Check V2 first (new pipeline), then fall back to V1 (old cases)
+    failed = get_failed_documents_v2(case_id) or get_failed_documents(case_id)
+    classification_failed = get_classification_failed_documents_v2(case_id) or get_classification_failed_documents(case_id)
 
     if not failed:
         msg = "No failed documents to retry."
@@ -196,11 +251,25 @@ async def retry_failed(case_id: str):
         raise HTTPException(status_code=400, detail=msg)
 
     for doc in failed:
-        update_document_status(
-            case_id=case_id,
-            doc_id=doc["doc_id"],
-            status=STATUS_PENDING_RETRY,
-        )
+        # Update V1
+        try:
+            update_doc_status_v1(
+                case_id=case_id,
+                doc_id=doc["doc_id"],
+                status=STATUS_PENDING_RETRY,
+            )
+        except Exception as e:
+            logger.warning("Failed to update V1 status: %s", e)
+
+        # Update V2
+        try:
+            update_doc_status_v2(
+                case_id=case_id,
+                doc_id=doc["doc_id"],
+                status=STATUS_PENDING_RETRY,
+            )
+        except Exception as e:
+            logger.warning("Failed to update V2 status: %s", e)
 
     reset_for_retry(case_id)
     append_log(case_id, f"Retrying {len(failed)} failed document(s)")
@@ -215,17 +284,126 @@ async def retry_failed(case_id: str):
     return {"case_id": case_id, "retrying": len(failed)}
 
 
+@router.post("/case/{case_id}/upload")
+async def upload_more_documents(case_id: str, files: list[UploadFile] = File(...)):
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+    if not redis_case_exists(case_id):
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    # Get case details to determine next doc index
+    meta = get_case_job(case_id)
+    existing_files = meta.get("files", [])
+    start_idx = len(existing_files)
+
+    case_dir = get_case_dir(case_id)
+
+    saved = []
+    for i, f in enumerate(files):
+        if not f.filename.lower().endswith(".pdf"):
+            raise HTTPException(status_code=400,
+                                detail=f"{f.filename} is not a PDF")
+        dest = await save_upload(f, case_dir / "raw")
+        doc_id = f"DOC_{str(start_idx + i + 1).zfill(3)}"
+        saved.append({
+            "doc_id":        doc_id,
+            "original_name": f.filename,
+            "saved_path":    str(dest),
+            "size_kb":       round(dest.stat().st_size / 1024, 1),
+        })
+
+    # Update total count in MySQL database
+    new_total = start_idx + len(saved)
+
+    # Update MySQL V2
+    try:
+        from backend.services.mysql_store_v2 import _get_conn as get_v2_conn
+        with get_v2_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE cases SET total_docs = %s, status = 'uploaded', "
+                "verification_status = NULL, verdict = NULL WHERE id = %s",
+                (new_total, case_id)
+            )
+            # Delete stale cross-document verification report
+            cursor.execute("DELETE FROM cross_doc_verifications WHERE case_id = %s", (case_id,))
+            conn.commit()
+    except Exception as e:
+        logger.warning("Failed to update V2 cases total_docs: %s", e)
+
+    # Update MySQL V1
+    try:
+        from backend.services.mysql_store import _get_conn as get_v1_conn
+        with get_v1_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE cases SET total_docs = %s, status = 'uploaded' WHERE id = %s", (new_total, case_id))
+            conn.commit()
+    except Exception as e:
+        logger.warning("Failed to update V1 cases total_docs: %s", e)
+
+    # Initialize new documents in MySQL V2 and V1
+    try:
+        for s in saved:
+            init_document_v2(
+                case_id=case_id,
+                doc_id=s["doc_id"],
+                doc_index=int(s["doc_id"].split("_")[1]),
+                filename=s["original_name"],
+                file_paths={"raw": s["saved_path"]},
+            )
+    except Exception as e:
+        logger.warning("Failed to init documents in MySQL V2: %s", e)
+
+    try:
+        for s in saved:
+            init_document_v1(
+                case_id=case_id,
+                doc_id=s["doc_id"],
+                doc_index=int(s["doc_id"].split("_")[1]),
+                filename=s["original_name"],
+                file_paths={"raw": s["saved_path"]},
+            )
+    except Exception as e:
+        logger.warning("Failed to init documents in MySQL V1: %s", e)
+
+    # Sync to Redis cache
+    add_files_to_case(case_id, saved)
+    append_log(case_id, f"Uploaded {len(saved)} additional file(s) — total docs is now {new_total}")
+
+    return {"case_id": case_id, "files": saved, "total_docs": new_total}
+
+
 @router.post("/clear")
 async def clear_all_data():
-    """Flush Redis case keys and purge Celery queue for a fresh start."""
+    """Flush Redis, stop active Celery tasks, purge Celery queue, truncate MySQL tables, wipe vector store, and delete local files."""
+    # 1. Stop active Celery tasks
+    revoked_count = 0
+    try:
+        inspect = celery_app.control.inspect()
+        active = inspect.active()
+        if active:
+            for worker, tasks in active.items():
+                for task in tasks:
+                    task_id = task.get("id")
+                    if task_id:
+                        celery_app.control.revoke(task_id, terminate=True)
+                        revoked_count += 1
+    except Exception as e:
+        logger.warning("Failed to revoke active Celery tasks: %s", e)
+
+    # 2. Flush Redis
     redis_deleted = flush_all_cases()
+
+    # 3. Purge Celery Queue
     try:
         purged = celery_app.control.purge()
     except Exception as e:
         logger.warning("Failed to purge Celery queue: %s", e)
         purged = 0
+
     return {
         "redis_keys_deleted": redis_deleted,
         "celery_tasks_purged": purged,
-        "message": "All data cleared. You can now upload fresh documents.",
+        "celery_tasks_revoked": revoked_count,
+        "message": "Redis state cleared and active/pending Celery tasks revoked successfully.",
     }

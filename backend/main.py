@@ -40,6 +40,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Initialize statute RAG store on startup ──────────────────────────────────
+from backend.services.statute_rag import initialize_statute_store
+
+
+@app.on_event("startup")
+async def startup():
+    try:
+        initialize_statute_store()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("Failed to initialize statute store: %s", e)
+
+
 # ── API routes ─────────────────────────────────────────────────────────────────
 app.include_router(pipeline_router, prefix="/api")
 

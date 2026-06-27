@@ -11,19 +11,40 @@ from backend.services.mysql_store import get_failed_documents
 
 
 def start_case_pipeline(case_id: str):
-    """Fire individual doc tasks as a Celery chord. Returns immediately."""
+    """Fire individual doc tasks as a Celery chord for unprocessed docs only."""
     files_data = get_case_files(case_id)
     if not files_data:
         raise ValueError(f"No files found for case {case_id}")
 
-    doc_tasks = [process_document_task.s(case_id, f["doc_id"]) for f in files_data]
+    # Fetch document statuses from MySQL V2
+    from backend.services.mysql_store_v2 import get_case_documents
+    try:
+        db_docs = get_case_documents(case_id)
+        status_by_id = {d["doc_id"]: d["status"] for d in db_docs}
+    except Exception as e:
+        status_by_id = {}
+
+    # Filter documents that are NOT structured and NOT skipped
+    todo_files = [
+        f for f in files_data
+        if status_by_id.get(f["doc_id"]) not in ("structured", "skipped")
+    ]
+
     callback = finalize_case_task.s(case_id)
-    chord(doc_tasks)(callback)
+    if todo_files:
+        doc_tasks = [process_document_task.s(case_id, f["doc_id"]) for f in todo_files]
+        chord(doc_tasks)(callback)
+    else:
+        # If no documents need processing, trigger the callback immediately
+        finalize_case_task.delay([], case_id)
 
 
 def start_retry_pipeline(case_id: str):
     """Fire tasks for failed docs only, as a Celery chord."""
-    failed = get_failed_documents(case_id)
+    from backend.services.mysql_store_v2 import get_failed_documents as get_failed_v2
+    from backend.services.mysql_store import get_failed_documents as get_failed_v1
+
+    failed = get_failed_v2(case_id) or get_failed_v1(case_id)
     if not failed:
         raise ValueError(f"No failed documents for case {case_id}")
 

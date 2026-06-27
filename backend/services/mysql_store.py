@@ -45,16 +45,30 @@ def _ensure_database(connector) -> None:
         connection.close()
 
 
+_connection_pool = None
+
+def _get_pool():
+    global _connection_pool
+    if _connection_pool is None:
+        connector = _mysql_connector()
+        _ensure_database(connector)
+        try:
+            from mysql.connector.pooling import MySQLConnectionPool
+        except ImportError as exc:
+            raise RuntimeError("mysql-connector-python not installed") from exc
+        _connection_pool = MySQLConnectionPool(
+            pool_name="property_ocr_pool",
+            pool_size=10,
+            pool_reset_session=True,
+            host=MYSQL_HOST, port=MYSQL_PORT, user=MYSQL_USER,
+            password=MYSQL_PASSWORD, database=MYSQL_DATABASE,
+        )
+    return _connection_pool
+
+
 def _get_conn():
-    connector = _mysql_connector()
-    _ensure_database(connector)
-    return connector.connect(
-        host=MYSQL_HOST,
-        port=MYSQL_PORT,
-        user=MYSQL_USER,
-        password=MYSQL_PASSWORD,
-        database=MYSQL_DATABASE,
-    )
+    pool = _get_pool()
+    return pool.get_connection()
 
 
 # ── Table creation ──────────────────────────────────────────────────────────────
@@ -282,22 +296,6 @@ def update_document_status(
         conn.commit()
 
 
-def increment_retry(*, case_id: str, doc_id: str, error: str) -> None:
-    with _get_conn() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            UPDATE case_documents SET
-                retry_count = retry_count + 1,
-                status = 'failed',
-                error = %s
-            WHERE case_id = %s AND doc_id = %s
-            """,
-            (error, case_id, doc_id),
-        )
-        conn.commit()
-
-
 def _get_doc_file_paths(cursor, case_id: str, doc_id: str) -> dict | None:
     cursor.execute(
         "SELECT file_paths FROM case_documents WHERE case_id = %s AND doc_id = %s",
@@ -422,196 +420,22 @@ def skip_document(*, case_id: str, doc_id: str) -> None:
         conn.commit()
 
 
-# ── Verification operations ────────────────────────────────────────────────
-
-def create_verification_report(*, case_id: str, report_json: dict) -> int:
+def clear_all_tables() -> None:
     with _get_conn() as conn:
         cursor = conn.cursor()
-        cursor.execute(
-            """
-            INSERT INTO verification_reports
-                (case_id, status, report_json, findings_json)
-            VALUES (%s, 'completed', %s, %s)
-            ON DUPLICATE KEY UPDATE
-                status = 'completed',
-                report_json = VALUES(report_json),
-                findings_json = VALUES(findings_json),
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            (case_id,
-             json.dumps(report_json, ensure_ascii=False),
-             json.dumps(report_json.get("findings", []), ensure_ascii=False)),
-        )
-        conn.commit()
-        return cursor.lastrowid or 0
-
-
-def get_verification_report(case_id: str) -> dict | None:
-    with _get_conn() as conn:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            """
-            SELECT id, case_id, status, report_json, findings_json,
-                   human_feedback, created_at, updated_at
-            FROM verification_reports
-            WHERE case_id = %s
-            ORDER BY id DESC LIMIT 1
-            """,
-            (case_id,),
-        )
-        row = cursor.fetchone()
-        if not row:
-            return None
-        result = dict(row)
-        for field in ("report_json", "findings_json", "human_feedback"):
-            if result.get(field) and isinstance(result[field], str):
-                result[field] = json.loads(result[field])
-        return result
-
-
-def update_verification_report(case_id: str, report_json: dict, *,
-                                status: str = "reviewed") -> None:
-    with _get_conn() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            UPDATE verification_reports SET
-                report_json = %s,
-                status = %s,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE case_id = %s
-            """,
-            (json.dumps(report_json, ensure_ascii=False), status, case_id),
-        )
+        cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
+        for table in (
+            "case_documents",
+            "cases",
+            "verification_reports",
+            "verification_feedback",
+            "verification_training_data",
+        ):
+            try:
+                cursor.execute(f"TRUNCATE TABLE {table}")
+            except Exception:
+                pass
+        cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
         conn.commit()
 
 
-def store_feedback(*, case_id: str, report_id: int,
-                   feedback_list: list[dict]) -> list[int]:
-    ids = []
-    with _get_conn() as conn:
-        cursor = conn.cursor()
-        for fb in feedback_list:
-            cursor.execute(
-                """
-                INSERT INTO verification_feedback
-                    (case_id, report_id, doc_id, original_flag,
-                     human_correction, reason, accepted, finding_type)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (case_id, report_id,
-                 fb.get("doc_id", ""),
-                 fb.get("original_flag", ""),
-                 fb.get("human_correction", ""),
-                 fb.get("reason", ""),
-                 1 if fb.get("accepted", True) else 0,
-                 fb.get("finding_type", "")),
-            )
-            ids.append(cursor.lastrowid or 0)
-        conn.commit()
-    return ids
-
-
-def mark_feedback_embedded(feedback_id: int) -> None:
-    with _get_conn() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE verification_feedback SET embedded = 1 WHERE id = %s",
-            (feedback_id,),
-        )
-        conn.commit()
-
-
-# ── Training data operations ──────────────────────────────────────────────
-
-def create_training_record(*, case_id: str, input_documents: dict,
-                            agent_report: dict) -> int:
-    with _get_conn() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            INSERT INTO verification_training_data
-                (case_id, input_documents, agent_report)
-            VALUES (%s, %s, %s)
-            """,
-            (case_id,
-             json.dumps(input_documents, ensure_ascii=False),
-             json.dumps(agent_report, ensure_ascii=False)),
-        )
-        conn.commit()
-        return cursor.lastrowid or 0
-
-
-def update_training_record_with_feedback(
-    *, case_id: str, human_feedback: list[dict],
-    corrected_report: dict | None = None,
-) -> None:
-    with _get_conn() as conn:
-        cursor = conn.cursor()
-        if corrected_report:
-            cursor.execute(
-                """
-                UPDATE verification_training_data SET
-                    human_feedback = %s,
-                    corrected_report = %s,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE case_id = %s
-                ORDER BY id DESC LIMIT 1
-                """,
-                (json.dumps(human_feedback, ensure_ascii=False),
-                 json.dumps(corrected_report, ensure_ascii=False),
-                 case_id),
-            )
-        else:
-            cursor.execute(
-                """
-                UPDATE verification_training_data SET
-                    human_feedback = %s,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE case_id = %s
-                ORDER BY id DESC LIMIT 1
-                """,
-                (json.dumps(human_feedback, ensure_ascii=False), case_id),
-            )
-        conn.commit()
-
-
-def get_training_record(case_id: str) -> dict | None:
-    with _get_conn() as conn:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            """
-            SELECT id, case_id, input_documents, agent_report,
-                   human_feedback, corrected_report, created_at, updated_at
-            FROM verification_training_data
-            WHERE case_id = %s
-            ORDER BY id DESC LIMIT 1
-            """,
-            (case_id,),
-        )
-        row = cursor.fetchone()
-        if not row:
-            return None
-        result = dict(row)
-        for field in ("input_documents", "agent_report", "human_feedback", "corrected_report"):
-            if result.get(field) and isinstance(result[field], str):
-                result[field] = json.loads(result[field])
-        return result
-
-
-def list_training_records(limit: int = 50, offset: int = 0) -> list[dict]:
-    with _get_conn() as conn:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            """
-            SELECT id, case_id, created_at, updated_at,
-                   JSON_EXTRACT(agent_report, '$.verdict') AS verdict,
-                   JSON_EXTRACT(agent_report, '$.summary.total_findings') AS total_findings,
-                   CASE WHEN human_feedback IS NOT NULL THEN 1 ELSE 0 END AS has_feedback
-            FROM verification_training_data
-            ORDER BY created_at DESC
-            LIMIT %s OFFSET %s
-            """,
-            (limit, offset),
-        )
-        return [dict(row) for row in cursor.fetchall()]

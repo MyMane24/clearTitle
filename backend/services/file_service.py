@@ -56,7 +56,9 @@ def list_output_cases() -> list[dict]:
             "source": "outputs",
             "sort_ts": updated_ts,
         })
-    cases.sort(key=lambda case: case.pop("sort_ts", 0), reverse=True)
+    cases.sort(key=lambda case: case.get("sort_ts", 0), reverse=True)
+    for c in cases:
+        c.pop("sort_ts", None)
     return cases
 
 

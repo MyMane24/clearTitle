@@ -1,10 +1,13 @@
-"""
-Celery application for distributed document processing.
-Run worker:   celery -A backend.celery_app worker --loglevel=info --concurrency=4
-Monitor:      celery -A backend.celery_app flower --port=5555
-"""
-
+import os
 from celery import Celery
+
+# Codex/sandbox launches can inject a dead local proxy (127.0.0.1:9).
+# The Sarvam and Groq SDKs use httpx, which honors these env vars by default.
+# If left in place, external API calls fail with WinError 10061 or Lookup timed out.
+for proxy_var in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+    if os.getenv(proxy_var, "").startswith("http://127.0.0.1:9"):
+        os.environ.pop(proxy_var, None)
+
 
 celery_app = Celery(
     "property_ocr",

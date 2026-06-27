@@ -1,293 +1,221 @@
-# Property OCR Pipeline
+# Property OCR & Verification Pipeline
 
-End-to-end document processing pipeline for Karnataka property documents. Extracts structured data from scanned PDFs using Sarvam OCR, LLM-based structuring (Groq + Gemini), and an agentic verification engine (LangGraph + Gemini).
+An end-to-end document processing and intelligent verification pipeline for Karnataka property documents. The system extracts structured JSON from scanned PDFs using Sarvam OCR, performs single-pass LLM structuring and per-document verification (Groq / Gemini), and executes a single-pass cross-document legal verification.
 
-## Architecture
-
-### Layered System Overview
+## 🏗️ V2 System Architecture
 
 ```mermaid
-flowchart TB
-    subgraph Frontend["Frontend Layer"]
-        UI["📄 Single-Page HTML<br/>index.html"]
+flowchart TD
+    subgraph Frontend["Frontend Layer (Single-Page App)"]
+        UI["📄 web_ui (index.html)<br/>jQuery / TailwindCSS"]
     end
 
-    subgraph API["API Layer (FastAPI)"]
-        R_CASES["/api/upload<br/>/api/process<br/>/api/status<br/>/api/retry<br/>/api/clear"]
-        R_DOCS["/api/result<br/>/api/case/*/doc/*/replace<br/>/api/case/*/doc/*/skip<br/>/api/case/*/bundle"]
-        R_VERIFY["/api/verify/*<br/>/api/verify/*/feedback<br/>/api/verify/*/report<br/>/api/verify/learnings/stats<br/>/api/verify/training-data"]
+    subgraph API["API Gateway Layer (FastAPI)"]
+        R_CASES["📁 Cases Router<br/>/api/upload<br/>/api/process<br/>/api/status<br/>/api/retry"]
+        R_DOCS["📄 Documents Router<br/>/api/result<br/>/api/case/*/bundle<br/>/api/case/*/doc/*/{replace,skip}"]
+        R_VERIFY["⚖️ Verification Router<br/>/api/verify/*<br/>/api/verify/*/feedback<br/>/api/analytics/token-usage"]
     end
 
-    subgraph Orchestration["Orchestration Layer"]
-        CELERY["Celery Worker<br/>backend/tasks/pipeline_tasks.py"]
-        REDIS_BROKER[(Redis<br/>Message Broker)]
-        ORCHESTRATOR["Pipeline Orchestrator<br/>backend/services/pipeline_orchestrator.py"]
+    subgraph Orchestration["Async Task Queue"]
+        CELERY["Celery Workers<br/>backend/tasks/pipeline_tasks.py"]
+        REDIS_BROKER[(Redis Broker / State Store)]
     end
 
-    subgraph Pipeline["Document Processing Pipeline"]
-        PREPROC["① Preprocess<br/>contrast / denoise / deskew<br/>backend/services/preprocessor.py"]
-        OCR["② Sarvam OCR<br/>chunked page processing<br/>with 3× retry<br/>backend/services/sarvam_ocr.py"]
-        MERGE["③ Merge Chunks<br/>combine OCR results<br/>backend/services/ocr_merger.py"]
-        CLASSIFY["④ Classify<br/>keyword matching<br/>EN + Kannada<br/>backend/services/doc_classifier.py"]
-        STRUCTURE["⑤ Structure"]
-        GROQ["Groq LLM<br/>(primary, cheaper)"]
-        GEMINI_STRUCT["Gemini LLM<br/>(fallback with retry)"]
-        EC_PARSER["EC Parser<br/>(deterministic)"]
-        PTA_PARSER["Property Tax Parser<br/>(deterministic)"]
+    subgraph Pipeline["V2 Linear Processing Pipeline"]
+        PREPROC["① Preprocess<br/>(Denoise & Hough Deskew)<br/>backend/services/preprocessor.py"]
+        OCR["② Sarvam OCR<br/>(Scanned PDF ➔ Raw Text)<br/>backend/services/sarvam_ocr.py"]
+        CLASSIFY["③ Classify<br/>(Keyword classification)<br/>backend/services/doc_classifier.py"]
+        STRUCTURE["④ Single-Pass Structurer & Per-Doc Verifier<br/>(Groq primary, Gemini fallback)<br/>backend/services/{groq,gemini}_structurer.py"]
     end
 
-    subgraph Verification["Agentic Verification Layer"]
-        LANGGRAPH["LangGraph State Machine<br/>backend/services/verification_engine.py"]
-        GEMINI_AGENT["Gemini Agent<br/>Senior Verification Officer"]
-        TOOLS["Deterministic Tools<br/>backend/services/verification_tools.py"]
-        VECTOR_DB[("Qdrant<br/>Vector Store<br/>past learnings")]
-        TOOL_SALE["verify_sale_deed()"]
-        TOOL_GIFT["verify_gift_deed()"]
-        TOOL_EC["verify_encumbrance_certificate()"]
-        TOOL_PRC["verify_property_register_card()"]
-        TOOL_TAX["verify_tax_receipt()"]
-        TOOL_PROP["verify_property_identity()"]
-        TOOL_OWNER["verify_ownership_chain()"]
-        TOOL_REDFLAG["check_red_flags()"]
+    subgraph Verification["Intelligent Verification Layer"]
+        V_ENG["Verification Orchestrator<br/>backend/services/verification_engine.py"]
+        CROSS_DOC["Cross-Doc Verifier<br/>(Groq Llama-3.3-70b-versatile)<br/>backend/services/cross_doc_verifier.py"]
+        VECTOR_DB[("Qdrant Vector Store<br/>Persistent human feedback")]
     end
 
     subgraph Storage["Storage Layer"]
-        MYSQL[("MySQL<br/>cases / documents<br/>verification reports<br/>training data")]
-        REDIS_STATE[("Redis<br/>pipeline state<br/>status / results / errors")]
-        FS[("File System<br/>raw PDFs / preprocessed<br/>OCR chunks / structured JSON")]
+        MYSQL[("MySQL (property_ocr_v2)<br/>Cases, Documents & Reports")]
+        FS[("File System<br/>Raw uploads & OCR outputs")]
     end
 
-    subgraph External["External APIs"]
-        SARVAM_API["Sarvam API<br/>Vision OCR"]
-        GROQ_API["Groq API<br/>LLM Structuring"]
-        GEMINI_API["Gemini API<br/>Structuring + Verification"]
-    end
-
-    %% ── Frontend → API ──
-    UI -->|"HTTP /fetch"| R_CASES
-    UI -->|"HTTP /fetch"| R_DOCS
-    UI -->|"HTTP /fetch"| R_VERIFY
-
-    %% ── API → Orchestration ──
-    R_CASES -->|"triggers chord"| ORCHESTRATOR
-    ORCHESTRATOR -->|"sends tasks"| REDIS_BROKER
-    REDIS_BROKER -->|"delivers"| CELERY
-    CELERY -->|"result"| REDIS_BROKER
-    ORCHESTRATOR -->|"finalize callback"| CELERY
-
-    %% ── Pipeline flow ──
-    CELERY -->|"per-document task"| PREPROC
-    PREPROC -->|"enhanced PDF"| OCR
-    OCR -->|"chunk results"| MERGE
-    MERGE -->|"merged text"| CLASSIFY
-    CLASSIFY -->|"doc_type"| STRUCTURE
-
-    %% ── Structure branching ──
-    STRUCTURE -->|"EC"| EC_PARSER
-    STRUCTURE -->|"Property Tax"| PTA_PARSER
-    STRUCTURE -->|"all others"| GROQ
-    GROQ -->|"on failure"| GEMINI_STRUCT
-
-    %% ── External API calls ──
-    OCR -->|"HTTP"| SARVAM_API
-    GROQ -->|"HTTP"| GROQ_API
-    GEMINI_STRUCT -->|"HTTP"| GEMINI_API
-
-    %% ── Storage writes ──
-    PREPROC -->|"saves"| FS
-    OCR -->|"saves"| FS
-    MERGE -->|"saves"| FS
-    STRUCTURE -->|"saves structured JSON"| FS
-    STRUCTURE -->|"writes"| MYSQL
-    CELERY -->|"writes status/progress"| REDIS_STATE
-
-    %% ── API → Storage reads ──
-    R_CASES -.->|"reads"| REDIS_STATE
-    R_DOCS -.->|"reads"| MYSQL
-    R_DOCS -.->|"reads"| FS
-
-    %% ── Verification flow ──
-    R_VERIFY -->|"POST /verify"| LANGGRAPH
-    LANGGRAPH -->|"invokes"| GEMINI_AGENT
-    GEMINI_AGENT -->|"calls tools"| TOOLS
-    TOOLS -->|"verify_sale_deed"| TOOL_SALE
-    TOOLS -->|"verify_gift_deed"| TOOL_GIFT
-    TOOLS -->|"verify_encumbrance_certificate"| TOOL_EC
-    TOOLS -->|"verify_property_register_card"| TOOL_PRC
-    TOOLS -->|"verify_tax_receipt"| TOOL_TAX
-    TOOLS -->|"verify_property_identity"| TOOL_PROP
-    TOOLS -->|"verify_ownership_chain"| TOOL_OWNER
-    TOOLS -->|"check_red_flags"| TOOL_REDFLAG
-    GEMINI_AGENT -->|"queries"| VECTOR_DB
-    LANGGRAPH -->|"saves report"| MYSQL
-    LANGGRAPH -->|"saves training record"| MYSQL
-
-    %% ── Human feedback loop ──
-    R_VERIFY -->|"POST /feedback"| VECTOR_DB
-    VECTOR_DB -.->|"learns for next run"| LANGGRAPH
-
-    %% ── Styling ──
-    classDef api fill:#2563eb,color:#fff,stroke:none;
-    classDef pipeline fill:#16a34a,color:#fff,stroke:none;
-    classDef storage fill:#6b7280,color:#fff,stroke:none;
-    classDef external fill:#9333ea,color:#fff,stroke:none;
-    classDef verify fill:#d97706,color:#fff,stroke:none;
-    classDef frontend fill:#1e3a5f,color:#fff,stroke:none;
-    classDef tool fill:#fef3c7,color:#92400e,stroke:#d97706;
-
-    class R_CASES,R_DOCS,R_VERIFY api;
-    class PREPROC,OCR,MERGE,CLASSIFY,GROQ,GEMINI_STRUCT,EC_PARSER,PTA_PARSER pipeline;
-    class FS,MYSQL,REDIS_STATE storage;
-    class SARVAM_API,GROQ_API,GEMINI_API external;
-    class LANGGRAPH,GEMINI_AGENT,TOOLS verify;
-    class UI frontend;
-    class TOOL_SALE,TOOL_GIFT,TOOL_EC,TOOL_PRC,TOOL_TAX,TOOL_PROP,TOOL_OWNER,TOOL_REDFLAG tool;
+    %% Flow lines
+    UI -->|"HTTP API Requests"| API
+    R_CASES -->|"Dispatches tasks"| CELERY
+    CELERY -->|"Reads/writes status"| REDIS_BROKER
+    
+    %% Processing chain
+    CELERY --> PREPROC --> OCR --> CLASSIFY --> STRUCTURE
+    
+    %% DB writes
+    STRUCTURE -->|"Saves structured data & notes"| MYSQL
+    STRUCTURE -->|"Saves OCR output"| FS
+    
+    %% Verification flow
+    R_VERIFY --> V_ENG
+    V_ENG -->|"1. Fetches case bundle"| MYSQL
+    V_ENG -->|"2. Generates report"| CROSS_DOC
+    CROSS_DOC -->|"Queries learnings"| VECTOR_DB
+    V_ENG -->|"3. Stores final report"| MYSQL
+    
+    %% Feedback flow
+    R_VERIFY -->|"Post-verification corrections"| VECTOR_DB
 ```
 
-### Component Roles
+### Key Component Architecture
 
-| Layer | Component | Role |
+| Component | Technology | Description |
 |---|---|---|
-| **API** | FastAPI Routers | HTTP endpoints for upload, pipeline control, document CRUD, verification |
-| **Orchestration** | Celery + Redis Broker | Distributed task queue — parallel per-document processing with chord callback |
-| **Pipeline** | Preprocessor | CLAHE contrast enhancement, NL-means denoising, Hough deskew, Otsu binarization |
-| **Pipeline** | Sarvam OCR | Vision-based OCR with automatic page chunking and 3× retry |
-| **Pipeline** | OCR Merger | Reassembles chunked OCR outputs into unified page text |
-| **Pipeline** | Doc Classifier | Keyword matching (English + Kannada) on filename and text sample |
-| **Pipeline** | Groq / Gemini | LLM-based structuring of raw OCR → structured JSON (Groq primary, Gemini fallback) |
-| **Pipeline** | EC / Tax Parsers | Deterministic parsers for Encumbrance Certificate and Property Tax tables |
-| **Storage** | MySQL | Persistent store: cases, documents, verification reports, training data |
-| **Storage** | Redis | Ephemeral pipeline state: status, progress, results, errors, logs |
-| **Storage** | File System | Raw PDFs, preprocessed copies, OCR chunks, structured JSON output |
-| **Verification** | LangGraph | State machine orchestrating AI agent tool calls |
-| **Verification** | Gemini Agent | "Senior Verification Officer" — decides which checks to run |
-| **Verification** | Deterministic Tools | 8 Python functions for deed/EC/tax/receipt verification + cross-checks |
-| **Verification** | Qdrant | In-memory vector store for human feedback corrections (learning loop) |
+| **Frontend** | HTML5, Vanilla JS, CSS | Interactive single-page UI for case uploads, real-time pipeline status tracking, structured data viewing, and interactive verification reports. |
+| **API Layer** | FastAPI, Uvicorn | High-performance async REST API routing case uploads, document actions, analytics, and verification triggers. |
+| **Async Tasks** | Celery, Redis | Manages asynchronous background processing (preprocessing, OCR, classification, and structuring) in parallel for high throughput. |
+| **OCR Service** | Sarvam AI Vision OCR | High-accuracy OCR for mixed English/Kannada text, including table structure extraction. |
+| **Structuring** | Groq (Llama-3) / Gemini | Single-pass extraction of key fields into JSON schemas, while simultaneously generating per-document verification notes. |
+| **Verification Engine** | Groq (Llama 3.3 70B) | Simple, linear orchestrator that pulls the structured case bundle and runs a single LLM call for cross-doc checks. |
+| **Vector DB** | Qdrant (Persistent) | Stores human corrections to align the system and adjust verification rules on-the-fly. |
+| **Relational Database** | MySQL (V2 Schema) | Unified database tables for cases, documents, cross-doc reports, and human feedback. |
 
-## Document Types
+---
 
-- SALE_DEED, GIFT_DEED, ENCUMBRANCE_CERTIFICATE
-- RTC_PAHANI, KHATA, MUTATION
-- PROPERTY_REGISTER_CARD, PROPERTY_TAX_ASSESSMENT
-- E_PAYMENT_RECEIPT, TAX_RECEIPT
-- LEGAL_HEIR_CERTIFICATE, PARTITION_DEED
-- COURT_ORDER, POSSESSION_CERTIFICATE, CONVERSION_ORDER
+## 📄 Supported Document Types
 
-## Prerequisites
+- **Ownership & Transfer**: `SALE_DEED`, `GIFT_DEED`, `PARTITION_DEED`
+- **Government Registry**: `ENCUMBRANCE_CERTIFICATE` (EC), `PROPERTY_REGISTER_CARD` (PRC)
+- **Municipal & Tax**: `KHATA`, `PROPERTY_TAX_ASSESSMENT`, `TAX_RECEIPT` / `E_PAYMENT_RECEIPT`
+- **Revenues & Clearances**: `MUTATION`, `CONVERSION_ORDER`, `POSSESSION_CERTIFICATE`
+- **Others**: `RTC_PAHANI`, `LEGAL_HEIR_CERTIFICATE`, `COURT_ORDER`
+
+---
+
+## 🛠️ Installation & Setup
+
+### Prerequisites
 
 - Python 3.10+
 - MySQL 8.0+
-- Redis 7+
-- API keys: [Sarvam](https://sarvam.ai), [Groq](https://groq.com), [Gemini](https://ai.google.dev)
+- Redis Server
 
-## Setup & Running the Application
-
-### 1. Installation
-Ensure your database is created:
-```bash
-# Create database
-mysql -u root -e "CREATE DATABASE IF NOT EXISTS property_ocr"
-
-# Install python dependencies
-pip install -r requirements.txt
-
-# Configure environment variables
-cp .env.example .env
-# Open .env and insert your database credentials and API keys
+### 1. Database Setup
+Ensure you have MySQL running, then create the V2 database:
+```sql
+CREATE DATABASE IF NOT EXISTS property_ocr_v2 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-### 2. Execution
-Run the following components in separate terminals:
+### 2. Environment Configuration
+Create a `.env` file in the root directory:
+```env
+# API Keys
+SARVAM_API_KEY=your_sarvam_api_key
+GROQ_API_KEY=your_groq_api_key
+GEMINI_API_KEY=your_gemini_api_key
 
-1. **Start the Redis Server:**
+# MySQL V2 Configuration
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=your_mysql_password
+MYSQL_DATABASE_V2=property_ocr_v2
+
+# Redis configuration
+REDIS_URL=redis://localhost:6379/0
+
+# Optional Model Overrides
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+### 3. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## 🚀 Running the Application
+
+For local development, run the following commands in separate terminal sessions:
+
+1. **Redis Server:**
    ```powershell
    & "$env:TEMP\redis\redis-server.exe"
    ```
 
-2. **Start the Celery Worker:**
+2. **Celery Worker:**
    ```powershell
    .\venv\Scripts\celery.exe -A backend.celery_app worker --loglevel=info --pool=solo --concurrency=1
    ```
 
-3. **Start the FastAPI Uvicorn Server:**
+3. **FastAPI Backend (Uvicorn):**
    ```powershell
    .\venv\Scripts\uvicorn.exe backend.main:app --reload --port 8000
    ```
 
+The frontend can be accessed by opening `frontend/index.html` in your browser.
 
-## Environment Variables
+---
 
-| Variable | Default | Required |
-|---|---|---|
-| `SARVAM_API_KEY` | — | Yes |
-| `GROQ_API_KEY` | — | Yes |
-| `GEMINI_API_KEY` | — | Yes (verification) |
-| `MYSQL_HOST` | 127.0.0.1 | No |
-| `MYSQL_PORT` | 3306 | No |
-| `MYSQL_USER` | root | No |
-| `MYSQL_PASSWORD` | (set in .env) | Yes |
-| `MYSQL_DATABASE` | property_ocr | No |
-| `REDIS_URL` | redis://localhost:6379/0 | No |
-| `GEMINI_MODEL` | gemini-2.5-flash | No |
+## 🔌 API Endpoints
 
-## API Endpoints
+### Pipeline & Cases
+* **`POST /api/upload`**: Upload documents and initialize a case.
+* **`POST /api/process/{case_id}`**: Trigger async OCR and structuring pipeline.
+* **`GET /api/status/{case_id}`**: Retrieve real-time case processing status.
+* **`POST /api/retry/{case_id}`**: Retry processing for failed documents.
 
-### Pipeline
-| Method | Path | Description |
-|---|---|---|
-| POST | `/api/upload` | Upload PDF documents |
-| POST | `/api/process/{case_id}` | Start OCR pipeline |
-| GET | `/api/status/{case_id}` | Get pipeline status |
-| POST | `/api/retry/{case_id}` | Retry failed documents |
-| POST | `/api/clear` | Clear all Redis data |
+### Documents & Structured Data
+* **`GET /api/case/{case_id}/bundle`**: Get all processed documents in a case.
+* **`GET /api/result/{case_id}/{doc_id}`**: Retrieve OCR text and structured JSON for a document.
+* **`POST /api/case/{case_id}/doc/{doc_id}/replace`**: Replace a document file.
+* **`POST /api/case/{case_id}/doc/{doc_id}/skip`**: Mark a document to be skipped.
 
-### Documents
-| Method | Path | Description |
-|---|---|---|
-| GET | `/api/result/{case_id}/{doc_id}` | Get structured result |
-| GET | `/api/case/{case_id}/bundle` | Get all structured docs |
-| POST | `/api/case/{case_id}/doc/{doc_id}/replace` | Replace a document |
-| POST | `/api/case/{case_id}/doc/{doc_id}/skip` | Skip a document |
+### Intelligent Verification & Analytics
+* **`POST /api/verify/{case_id}`**: Execute cross-document verification checks.
+* **`GET /api/verify/{case_id}/report`**: Retrieve the latest cross-document verification report.
+* **`GET /api/verify/{case_id}/per-doc`**: Retrieve per-document verification notes.
+* **`POST /api/verify/{case_id}/feedback`**: Submit human feedback (stored in Qdrant).
+* **`GET /api/analytics/token-usage`**: Fetch per-case token, latency, and cost stats.
 
-### Verification
-| Method | Path | Description |
-|---|---|---|
-| POST | `/api/verify/{case_id}` | Run agentic verification |
-| GET | `/api/verify/{case_id}/report` | Get verification report |
-| POST | `/api/verify/{case_id}/feedback` | Submit human feedback |
-| GET | `/api/verify/learnings/stats` | Vector DB stats |
-| GET | `/api/verify/training-data` | List training records |
+---
 
-## Project Structure
+## 📂 Project Structure
 
 ```
-backend/
-├── main.py                    # FastAPI app entry point
-├── celery_app.py              # Celery config
-├── logger.py                  # Logging configuration
-├── routers/
-│   ├── cases.py               # Upload, process, status, retry
-│   ├── documents.py           # Replace, skip, result
-│   └── verification.py        # Verify, feedback, training data
-├── services/
-│   ├── pipeline_orchestrator.py   # Celery chord orchestration
-│   ├── preprocessor.py            # PDF image enhancement
-│   ├── sarvam_ocr.py              # Sarvam OCR integration
-│   ├── ocr_merger.py              # Chunk merging
-│   ├── doc_classifier.py          # Keyword-based classification
-│   ├── groq_structurer.py         # Groq LLM structuring
-│   ├── gemini_structurer.py       # Gemini LLM structuring
-│   ├── ec_parser.py               # Deterministic EC parser
-│   ├── property_tax_assessment_parser.py
-│   ├── mysql_store.py             # MySQL persistence
-│   ├── redis_store.py             # Redis state store
-│   ├── verification_engine.py     # LangGraph verification
-│   ├── verification_tools.py      # Deterministic check tools
-│   └── vector_store.py            # Qdrant vector store
-├── tasks/
-│   └── pipeline_tasks.py      # Celery task definitions
-└── utils/
-    └── file_utils.py           # File I/O helpers
-frontend/
-└── index.html                  # Single-page UI
+property_ocr/
+│
+├── backend/
+│   ├── main.py                    # FastAPI entrypoint
+│   ├── celery_app.py              # Celery configuration
+│   ├── logger.py                  # Logger utility
+│   │
+│   ├── routers/
+│   │   ├── cases.py               # Pipeline & upload handlers
+│   │   ├── documents.py           # Document retrieval & edits
+│   │   └── verification.py        # Verification & analytics endpoints
+│   │
+│   ├── services/
+│   │   ├── pipeline_orchestrator.py   # Celery task coordination
+│   │   ├── preprocessor.py            # Image enhancement & deskewing
+│   │   ├── sarvam_ocr.py              # Sarvam AI OCR client
+│   │   ├── ocr_merger.py              # OCR chunk consolidation
+│   │   ├── doc_classifier.py          # Document type classifier
+│   │   ├── groq_structurer.py         # Primary Groq JSON structurer
+│   │   ├── gemini_structurer.py       # Fallback Gemini JSON structurer
+│   │   ├── cross_doc_verifier.py      # Groq cross-document checker
+│   │   ├── verification_engine.py     # Verification orchestrator
+│   │   ├── vector_store.py            # Qdrant learning repository
+│   │   ├── mysql_store_v2.py          # MySQL V2 store wrapper
+│   │   └── mysql_store.py             # MySQL V1 backward compatibility store
+│   │
+│   └── tasks/
+│       └── pipeline_tasks.py      # Celery task executors
+│
+├── frontend/                      # Web interface files
+│   ├── index.html                 # Single-page dashboard
+│   └── js/
+│       ├── api.js                 # API call handlers
+│       ├── app.js                 # App event bindings
+│       ├── history.js             # Historical cases view
+│       └── ui.js                  # Dynamic rendering methods
+│
+├── requirements.txt               # App dependencies list
+└── README.md                      # System manual
 ```
