@@ -1,5 +1,44 @@
+"""
+Gemini Structurer Service
+=========================
+Two passes are available:
+
+1. structure_document_with_gemini()
+   Per-document pass: reads full OCR, extracts structured data AND generates
+   within-document verification notes (e.g. "this document's own dates are out
+   of order", "this document's own stamp duty % looks wrong"). Uses
+   system_instruction for static content (schema + instructions) and explicit
+   context caching to reduce cost and rate-limit consumption.
+
+   ALL checks — including pure-arithmetic ones (date ordering, stamp duty
+   ratio, the Section 269SS cash-payment check, dimension-vs-area math, EC
+   gap-years, EC mortgage/release matching) — are performed by the LLM itself,
+   per the per-doc-type instructions below. There is no Python-side
+   deterministic check layer. Because LLMs are measurably worse at exact
+   arithmetic than code, every check that involves a computation explicitly
+   instructs the model to show the computation inline in "evidence" (e.g.
+   "30 x 40 = 1200") so the math is auditable from the output alone rather
+   than trusted blindly. Every verification_note is tagged "source": "llm".
+
+2. cross_verify_documents()
+   Cross-document pass: takes the already-extracted structured_data for ALL
+   documents belonging to one property and checks they tell a consistent
+   story — the way a property lawyer lays every document side by side and
+   checks survey numbers, names, dates, valuations, mutation status, and
+   chain of title against each other. This catches things no single document
+   can reveal on its own (e.g. EC shows a mortgage with no release deed
+   anywhere in the set; Property Register Card mutation hasn't caught up to
+   the latest Sale Deed; declared consideration is far below guidance value).
+
+Both passes follow the same OUTPUT QUALITY CONTRACT: every finding must cite
+the literal field values that triggered it. A finding that only names a
+*category* of problem ("CTS mismatch") without quoting the actual conflicting
+values is not acceptable output and the prompt explicitly forbids it.
+"""
+
 import json
 import os
+import re
 import time
 from copy import deepcopy
 from datetime import date, datetime
@@ -27,6 +66,8 @@ EC_GAP_FLAG_YEARS = 3
 # Acceptable band for stamp duty as a % of declared consideration before flagging.
 STAMP_DUTY_PCT_MIN = 4.5
 STAMP_DUTY_PCT_MAX = 8.5
+# Section 269SS cash threshold limit
+CASH_PAYMENT_269SS_THRESHOLD = 20000
 
 # ── Schema definitions with verification_notes ────────────────────────────
 
@@ -58,6 +99,9 @@ SALE_DEED_SCHEMA = {
         "stamp_duty_paid_amount": None,
         "total_registration_fees": None,
         "payment_dd_reference": None,
+        "payment_breakdown": [
+            {"amount": None, "mode": None, "instrument_reference": None, "instrument_date": None, "bank_branch": None}
+        ],
     },
     "parties": {
         "vendors": [{"entity_name": None, "represented_by": None, "address": None}],
@@ -71,6 +115,7 @@ SALE_DEED_SCHEMA = {
         "project_name": None,
         "full_schedule_description": None,
         "measurements": {
+            "dimensions_text": None,
             "super_built_up_area_sqft": None,
             "undivided_share_land_sqft": None,
             "total_land_area_sqmtr": None,
@@ -115,6 +160,11 @@ EC_SCHEMA = {
             "execution_date": None,
             "registration_reference": None,
             "transaction_type": None,
+            "parent_survey_number_raw": None,
+            "locality_raw": None,
+            "share_fraction": None,
+            "is_agreement_to_sell": False,
+            "minor_or_legal_heir_party": False,
             "financials": {"consideration_amount": None, "market_value": None},
             "parties": {"vendors": [], "purchasers": []},
             "property_details": {
@@ -417,20 +467,29 @@ def _ensure_context_cache(doc_type: str) -> str | None:
     Returns the cache name (e.g. "cachedContents/abc123") or None if caching fails.
     """
     try:
+        import hashlib
         static_content = _build_static_content(doc_type)
+        content_hash = hashlib.md5(static_content.encode("utf-8")).hexdigest()
         cache_client = _get_cache_client()
 
         existing = _context_caches.get(doc_type)
         if existing:
-            try:
-                # Refresh TTL on existing cache
-                cache_client.caches.update(
-                    name=existing["cache_name"],
-                    config={"ttl": f"{CACHE_TTL_SECONDS}s"},
-                )
-                return existing["cache_name"]
-            except Exception:
-                pass
+            if existing.get("hash") == content_hash:
+                try:
+                    # Refresh TTL on existing cache
+                    cache_client.caches.update(
+                        name=existing["cache_name"],
+                        config={"ttl": f"{CACHE_TTL_SECONDS}s"},
+                    )
+                    return existing["cache_name"]
+                except Exception:
+                    pass
+            else:
+                # Delete stale cache on server
+                try:
+                    cache_client.caches.delete(name=existing["cache_name"])
+                except Exception:
+                    pass
 
         # Create new cache — SDK expects Content objects; wrap appropriately
         response = cache_client.caches.create(
@@ -448,6 +507,7 @@ def _ensure_context_cache(doc_type: str) -> str | None:
         cache_name = response.name
         _context_caches[doc_type] = {
             "cache_name": cache_name,
+            "hash": content_hash,
             "created_at": time.time(),
         }
         logger.info("Created context cache for %s: %s", doc_type, cache_name)
@@ -466,242 +526,16 @@ def _build_user_content(ocr_text: str, page_count: int, doc_type: str) -> str:
     )
 
 
-# ── Deterministic (non-LLM, pure-Python) checks ───────────────────────────
-# These cover anything that's pure arithmetic/date logic. Computing them in code
-# instead of asking the LLM means they cannot hallucinate — the numbers are taken
-# straight from the parsed JSON and compared with real Python date/number ops.
-
-def _parse_date(value) -> date | None:
-    if not value or not isinstance(value, str):
-        return None
-    try:
-        return datetime.strptime(value[:10], "%Y-%m-%d").date()
-    except ValueError:
-        return None
-
-
-def _det_note(type_, severity, confidence, summary, legal_detail, evidence, suggestion) -> dict:
-    return {
-        "type": type_,
-        "severity": severity,
-        "confidence": confidence,
-        "summary": summary,
-        "legal_detail": legal_detail,
-        "evidence": evidence,
-        "suggestion": suggestion,
-        "source": "deterministic",
-    }
-
-
-def _check_execution_before_registration(result: dict, exec_field="execution_date",
-                                          reg_field="registration_date") -> list[dict]:
-    fm = result.get("file_metadata", {}) or {}
-    exec_raw, reg_raw = fm.get(exec_field), fm.get(reg_field)
-    exec_d, reg_d = _parse_date(exec_raw), _parse_date(reg_raw)
-    if exec_d and reg_d and exec_d > reg_d:
-        return [_det_note(
-            type_="DATE_INCONSISTENCY", severity="high", confidence=0.95,
-            summary=f"file_metadata.{exec_field} ({exec_raw}) is AFTER file_metadata.{reg_field} ({reg_raw}).",
-            legal_detail=(
-                "Section 23 read with Section 32 of the Registration Act, 1908 requires "
-                "presentation for registration to follow execution; an execution date "
-                "later than the registration date is not legally possible for a validly "
-                "executed and registered document."
-            ),
-            evidence=f"file_metadata.{exec_field}: {exec_raw} | file_metadata.{reg_field}: {reg_raw}",
-            suggestion=(
-                "Re-check the original document for the correct dates — this is likely an "
-                "OCR misread of one of the two dates, but if both are confirmed correct as "
-                "read, ask the registering Sub-Registrar's office to explain the discrepancy "
-                "before relying on this document."
-            ),
-        )]
-    return []
-
-
-def _check_stamp_duty_ratio(result: dict) -> list[dict]:
-    fs = result.get("financial_summary", {}) or {}
-    consideration = fs.get("declared_consideration_amount")
-    stamp_duty = fs.get("stamp_duty_paid_amount")
-    if not (isinstance(consideration, (int, float)) and isinstance(stamp_duty, (int, float))):
-        return []
-    if consideration <= 0:
-        return []
-    pct = stamp_duty / consideration * 100
-    if pct < STAMP_DUTY_PCT_MIN or pct > STAMP_DUTY_PCT_MAX:
-        return [_det_note(
-            type_="FINANCIAL_MISMATCH", severity="medium", confidence=0.85,
-            summary=(
-                f"Stamp duty paid is {pct:.2f}% of declared consideration "
-                f"(₹{stamp_duty:,.0f} stamp duty on ₹{consideration:,.0f} consideration); "
-                f"the typical Karnataka effective band is roughly "
-                f"{STAMP_DUTY_PCT_MIN}%–{STAMP_DUTY_PCT_MAX}% depending on slab/surcharge."
-            ),
-            legal_detail=(
-                "Stamp duty rates and any applicable surcharge/cess under the Karnataka "
-                "Stamp Act, 1957 are charged on the higher of consideration or guidance "
-                "value. A ratio outside the usual band can mean a concessional rate "
-                "applied (e.g. for women purchasers, affordable housing), an extraction "
-                "error, or an underpayment that should be confirmed."
-            ),
-            evidence=(
-                f"financial_summary.declared_consideration_amount: {consideration} | "
-                f"financial_summary.stamp_duty_paid_amount: {stamp_duty} | "
-                f"computed_stamp_duty_pct: {pct:.2f}%"
-            ),
-            suggestion=(
-                "Confirm the stamp duty slab/rate applicable on the registration_date and "
-                "location shown in file_metadata, and check whether a concessional rate "
-                "applies, before treating this as a real underpayment."
-            ),
-        )]
-    return []
-
-
-def _check_ec_search_window(result: dict) -> list[dict]:
-    fm = result.get("file_metadata", {}) or {}
-    years = fm.get("search_period_years")
-    if not isinstance(years, (int, float)):
-        return []
-    if years < EC_MIN_SEARCH_YEARS:
-        return [_det_note(
-            type_="EC_GAP", severity="high", confidence=0.9,
-            summary=(
-                f"EC search period is only {years} years "
-                f"({fm.get('search_start_date')} to {fm.get('search_end_date')}); "
-                f"standard Karnataka title-due-diligence practice expects at least "
-                f"{EC_MIN_SEARCH_YEARS} years (30 preferred)."
-            ),
-            legal_detail=(
-                "An EC only certifies what's registered within its own search window; a "
-                "short window cannot rule out encumbrances created before search_start_date."
-            ),
-            evidence=(
-                f"file_metadata.search_period_years: {years} | "
-                f"file_metadata.search_start_date: {fm.get('search_start_date')} | "
-                f"file_metadata.search_end_date: {fm.get('search_end_date')}"
-            ),
-            suggestion=(
-                f"Apply for an additional EC covering the period before "
-                f"{fm.get('search_start_date')} to extend total coverage to at least "
-                f"{EC_MIN_SEARCH_YEARS} years."
-            ),
-        )]
-    return []
-
-
-def _check_ec_transaction_gaps(result: dict) -> list[dict]:
-    ledger = result.get("historical_ledger") or []
-    dated = []
-    for tx in ledger:
-        d = _parse_date(tx.get("execution_date"))
-        if d:
-            dated.append((d, tx))
-    dated.sort(key=lambda x: x[0])
-
-    notes = []
-    for i in range(1, len(dated)):
-        gap_days = (dated[i][0] - dated[i - 1][0]).days
-        if gap_days > EC_GAP_FLAG_YEARS * 365:
-            prev_d, prev_tx = dated[i - 1]
-            cur_d, cur_tx = dated[i]
-            notes.append(_det_note(
-                type_="EC_GAP", severity="medium", confidence=0.8,
-                summary=(
-                    f"{gap_days // 365}-year gap with no registered transaction between "
-                    f"{prev_d} (transaction #{prev_tx.get('transaction_index')}) and "
-                    f"{cur_d} (transaction #{cur_tx.get('transaction_index')})."
-                ),
-                legal_detail=(
-                    "A long gap between registered transactions isn't itself illegal, but "
-                    "the EC cannot confirm what happened to the property during that "
-                    "window — e.g. unregistered agreements, possession disputes, or "
-                    "succession that never got formally recorded."
-                ),
-                evidence=(
-                    f"historical_ledger[#{prev_tx.get('transaction_index')}].execution_date: {prev_d} | "
-                    f"historical_ledger[#{cur_tx.get('transaction_index')}].execution_date: {cur_d}"
-                ),
-                suggestion=(
-                    "Ask the seller for any documentation of ownership/possession during "
-                    "this gap, and separately check RTC/mutation revenue records for the "
-                    "same window."
-                ),
-            ))
-    return notes
-
-
-def _check_ec_unreleased_mortgages(result: dict) -> list[dict]:
-    ledger = result.get("historical_ledger") or []
-    dated = []
-    for tx in ledger:
-        d = _parse_date(tx.get("execution_date"))
-        dated.append((d, tx))
-    dated.sort(key=lambda x: (x[0] is None, x[0] or date.min))
-
-    open_mortgages: list[tuple] = []
-    for d, tx in dated:
-        ttype = (tx.get("transaction_type") or "").lower()
-        if any(k in ttype for k in ("mortgage", "charge", "lien")):
-            open_mortgages.append((d, tx))
-        elif any(k in ttype for k in ("release", "discharge", "redemption")):
-            if open_mortgages:
-                open_mortgages.pop(0)
-
-    notes = []
-    for d, tx in open_mortgages:
-        notes.append(_det_note(
-            type_="PENDING_MORTGAGE", severity="high", confidence=0.75,
-            summary=(
-                f"Mortgage/charge transaction #{tx.get('transaction_index')} "
-                f"(execution_date {d}, type '{tx.get('transaction_type')}') has no "
-                f"matching release/discharge entry later in this EC's historical_ledger."
-            ),
-            legal_detail=(
-                "An unreleased mortgage/charge remains a valid encumbrance on the "
-                "property; absent a registered release/discharge entry, the property "
-                "cannot be treated as free of that charge."
-            ),
-            evidence=(
-                f"historical_ledger[#{tx.get('transaction_index')}].execution_date: {d} | "
-                f"historical_ledger[#{tx.get('transaction_index')}].transaction_type: "
-                f"{tx.get('transaction_type')} | "
-                f"historical_ledger[#{tx.get('transaction_index')}].registration_reference: "
-                f"{tx.get('registration_reference')}"
-            ),
-            suggestion=(
-                "Obtain the registered release/discharge deed for this specific charge "
-                "directly from the lender or the Sub-Registrar's office, or written "
-                "confirmation that the loan is closed and the charge withdrawn. Note: "
-                "this is a heuristic match (oldest open mortgage matched to next release "
-                "found) — confirm manually if multiple mortgages overlap."
-            ),
-        ))
-    return notes
-
-
-def _apply_deterministic_checks(doc_type: str, result: dict) -> list[dict]:
-    notes: list[dict] = []
-    if doc_type == "SALE_DEED":
-        notes += _check_execution_before_registration(result)
-        notes += _check_stamp_duty_ratio(result)
-    elif doc_type == "GIFT_DEED":
-        notes += _check_execution_before_registration(result)
-    elif doc_type == "ENCUMBRANCE_CERTIFICATE":
-        notes += _check_ec_search_window(result)
-        notes += _check_ec_transaction_gaps(result)
-        notes += _check_ec_unreleased_mortgages(result)
-    return notes
-
-
 # ── Per-document structuring + verification ────────────────────────────────
 
 def structure_document_with_gemini(merged_ocr: dict, doc_type: str,
                                     retry_count: int = 0) -> dict:
     """
-    Extract structured fields AND generate verification notes in a single LLM call,
-    then layer on deterministic (code-computed) checks that don't depend on the LLM.
-    Uses system_instruction for static content + context caching for cost reduction.
+    Extract structured fields AND generate verification notes in a single LLM call.
+    Every check — extraction AND verification, including arithmetic/date checks — is
+    performed by the LLM per the instructions in _get_verification_instructions(); there
+    is no separate Python-side deterministic check layer. Uses system_instruction for
+    static content + context caching for cost reduction.
     """
     if not GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY not set in .env")
@@ -718,7 +552,7 @@ def structure_document_with_gemini(merged_ocr: dict, doc_type: str,
     # Attempt context cache
     cache_name = _ensure_context_cache(doc_type)
 
-    client = _get_cache_client()
+    client = genai.Client(api_key=GEMINI_API_KEY)
     start = time.time()
     actual_retry_count = retry_count
 
@@ -776,10 +610,7 @@ def structure_document_with_gemini(merged_ocr: dict, doc_type: str,
     if "file_metadata" in result and page_count:
         result["file_metadata"]["scanned_sheet_count"] = page_count
 
-    # Layer deterministic checks on top — these run against the same parsed `result`
-    # and cannot hallucinate since they're plain arithmetic/date comparisons.
-    deterministic_notes = _apply_deterministic_checks(doc_type, result)
-    verification_notes = deterministic_notes + llm_notes
+    verification_notes = llm_notes
 
     usage = getattr(response, 'usage_metadata', None)
     input_tokens = usage.prompt_token_count if usage and hasattr(usage, 'prompt_token_count') else len(user_content) // 4
@@ -828,11 +659,21 @@ def _get_verification_instructions(doc_type: str) -> str:
     )
 
     sale_deed_checks = (
+        "SALE_DEED EXTRACTION NOTE: in addition to the schema's top-level fields, extract "
+        "financial_summary.payment_breakdown as one entry PER payment mentioned in the "
+        "'DETAILS OF PAYMENT'/payment section — e.g. a pay order/DD entry and a separate "
+        "cash entry are TWO entries, each with its own amount and mode ('cash', 'cheque', "
+        "'dd', 'pay_order', 'rtgs/neft', 'bank_transfer'). Also extract "
+        "property_schedule.measurements.dimensions_text as the raw dimension string if the "
+        "schedule states one (e.g. \"30' X 40'\"), verbatim, alongside the numeric area.\n\n"
         "SALE_DEED VERIFICATION CHECKS (compare these fields against each other and cite "
         "real values for both sides):\n"
         "- Are both vendors AND purchasers actually named (not just placeholders)?\n"
         "- Is survey_number or cts_number present and does it look like a real survey "
-        "  number format (not a placeholder like '0' or 'NA')?\n"
+        "  number format (not a placeholder like '0' or 'NA')? If the survey number includes "
+        "  a sub-division marker like 'Paiki'/'Part of' (indicating the parent survey number "
+        "  is split among multiple owners), note this explicitly — it's relevant to the "
+        "  cross-document over-sale check described below.\n"
         "- Compare statutory_valuation_endorsement.estimated_market_value against "
         "  financial_summary.declared_consideration_amount. If consideration is below "
         "  market value AND prevention_of_undervaluation_referred is false/null, flag "
@@ -840,14 +681,57 @@ def _get_verification_instructions(doc_type: str) -> str:
         "- If property_schedule.full_schedule_description or intended_usage mentions "
         "  'agricultural'/'farm'/'cultivation' in the SCHEDULE OF PROPERTY itself (not in "
         "  a party's address or a road name used only for location), flag CONVERSION_MISSING "
-        "  and quote the exact phrase found.\n"
+        "  and quote the exact phrase found. If a conversion order IS cited (order number + "
+        "  date), quote it but note in 'suggestion' that the underlying order copy should be "
+        "  independently obtained from the Deputy Commissioner's office — a cited order "
+        "  number is not, by itself, proof the order is genuine or actually covers this land.\n"
         "- Count witnesses if listed elsewhere in the OCR; if fewer than 2, flag "
         "  MISSING_DOCUMENT/SUSPICIOUS_PATTERN citing how many were found.\n"
         "- Does the OCR reference a prior encumbrance/mortgage on this property without a "
         "  corresponding release shown anywhere in this same document? If so, flag "
         "  PENDING_MORTGAGE and quote the referencing sentence.\n"
-        "(Date ordering and stamp duty % are checked deterministically in code — do not "
-        "duplicate those as LLM findings.)\n"
+        "- FRAUD PATTERN — execution via Power of Attorney: if 'represented_by' is populated "
+        "  for the vendor (i.e. someone signed on the seller's behalf under a POA rather than "
+        "  the owner personally), flag SUSPICIOUS_PATTERN at medium-high severity. Quote the "
+        "  POA holder's name and note: under Suraj Lamp & Industries Pvt. Ltd. v. State of "
+        "  Haryana (Supreme Court, 2011/2012), a sale executed merely under a General Power "
+        "  of Attorney — without the principal also executing a registered conveyance — does "
+        "  not by itself transfer valid title; the POA's own registration, validity, and the "
+        "  principal's status at the time of use must be independently verified.\n"
+        "- FRAUD PATTERN — impersonation risk: Karnataka's registration process requires a "
+        "  photograph and biometric thumb-impression of each executant to be captured at "
+        "  registration (introduced specifically to curb impersonation of absentee/NRI "
+        "  owners). If the OCR text gives no indication that a photo/thumb-impression "
+        "  annexure exists anywhere in the document set (look for endorsement language "
+        "  referencing photograph/thumb impression capture), flag MISSING_DOCUMENT at medium "
+        "  severity noting this annexure could not be confirmed from the text alone.\n"
+        "- COMPUTE — date ordering: compare file_metadata.execution_date and "
+        "  file_metadata.registration_date. Under Section 23/32, Registration Act, 1908, "
+        "  execution must precede registration. If execution_date is AFTER "
+        "  registration_date, flag DATE_INCONSISTENCY at high severity, quoting both dates "
+        "  verbatim in evidence.\n"
+        "- COMPUTE — stamp duty ratio: divide financial_summary.stamp_duty_paid_amount by "
+        "  financial_summary.declared_consideration_amount and multiply by 100. SHOW this "
+        "  division as text in 'evidence' (e.g. '168000 / 2500000 x 100 = 6.72%'). Karnataka's "
+        f"  typical effective band is roughly {STAMP_DUTY_PCT_MIN}%-{STAMP_DUTY_PCT_MAX}% "
+        "  depending on slab/surcharge/concession. If the computed ratio falls outside that "
+        "  band, flag FINANCIAL_MISMATCH at medium severity; if within the band, do NOT "
+        "  report anything for this check (passing checks should be silent).\n"
+        "- COMPUTE — cash payment / Section 269SS: scan financial_summary.payment_breakdown "
+        "  for any entry whose mode is 'cash' (not cheque/DD/pay order/RTGS/NEFT/bank "
+        f"  transfer). If a cash entry's amount is >= ₹{CASH_PAYMENT_269SS_THRESHOLD:,}, flag "
+        "  SUSPICIOUS_PATTERN at HIGH severity citing Section 269SS of the Income Tax Act, "
+        "  1961 (cash receipts of ₹20,000+ toward an immovable property transfer are "
+        "  prohibited; violation attracts a penalty under Section 271D equal to the amount "
+        "  received). Quote the exact cash amount and what fraction of the total declared "
+        "  consideration it represents (show the division, e.g. '900000 / 2500000 = 36%').\n"
+        "- COMPUTE — dimension-vs-area math: if property_schedule.measurements."
+        "  dimensions_text contains a 'LENGTH x WIDTH' pattern (e.g. \"30' X 40'\"), multiply "
+        "  the two numbers and SHOW the multiplication in evidence (e.g. '30 x 40 = 1200'). "
+        "  Compare that product to the declared area field (super_built_up_area_sqft or "
+        "  undivided_share_land_sqft, whichever is populated). If they differ by more than "
+        "  ~5%, flag PROPERTY_MISMATCH at medium severity, showing both the computed product "
+        "  and the declared area. If they match, do NOT report anything for this check.\n"
     )
 
     ec_checks = (
@@ -872,20 +756,126 @@ def _get_verification_instructions(doc_type: str) -> str:
         "       and does not explicitly state a different parent survey for the main "
         "       property (e.g. it doesn't say 'out of R S No 677' or 'comprised in RS No "
         "       697/1'), assume it belongs to the target parent survey number and extract "
-        "       it as such.\n"
-        "  LLM-LEVEL LEGAL CHECKS (gaps, search-window length, and mortgage/release "
-        "  matching are ALSO computed deterministically in code afterward — focus your "
-        "  own checks on things code can't compute):\n"
-        "    1. CHAIN OF TITLE CONTINUITY WITHIN THIS EC: does each transaction's "
-        "       purchaser become the next transaction's vendor? If a name doesn't carry "
-        "       forward, quote both transaction indices and both names — this is a real "
-        "       break in the chain, not a formatting issue.\n"
-        "    2. PROPERTY IDENTIFIER CONSISTENCY ACROSS TRANSACTIONS: do plot_no/pid_no/"
-        "       cts_no stay consistent across all transactions for this one EC (excluding "
-        "       boundary mentions per rule (e) above)? Quote any transaction whose own "
-        "       identifier differs from the rest.\n"
-        "- If 'Nil Encumbrance' is stated, set historical_ledger to [] and skip the chain/"
-        "  identifier checks above (there's nothing to compare).\n"
+        "       it as such.\n\n"
+        "  LLM-LEVEL LEGAL & VERIFICATION CHECKS — perform ALL of these yourself, there is "
+        "  no separate code-side checking layer. Show all mathematical or subtraction computations "
+        "  verbatim inside the 'evidence' field:\n\n"
+        "  CHECK 1 — RELEVANCE FILTER (do this FIRST, before any chain-of-title check):\n"
+        "    Compare each row's parent_survey_number_raw + locality_raw against the EC's own "
+        "    search_criteria.target_identifiers (cts_number, survey_number, converted_survey_number, "
+        "    plot_number) and target_village/target_hobli. A row that shares only the Plot No. "
+        "    but has a different survey number AND a different locality than the target is "
+        "    almost certainly an unrelated property swept in by a landmark-based search — "
+        "    explicitly mark it 'not part of target chain' in your reasoning and EXCLUDE it "
+        "    from checks 2-9 below. If a row's survey number is ambiguous or partially "
+        "    overlapping (e.g. shares one digit, or is a sub-division of the target survey "
+        "    number), say so explicitly and treat it as uncertain rather than silently including "
+        "    or excluding it — flag PROPERTY_MISMATCH at low/medium severity recommending "
+        "    manual confirmation rather than guessing.\n\n"
+        "  CHECK 2 — CHAIN OF TITLE CONTINUITY (only on rows that passed Check 1):\n"
+        "    Sort the relevant rows by execution_date. For each consecutive pair, the purchaser(s) "
+        "    of the earlier row should be the vendor(s) of the later row (allowing for natural "
+        "    changes like marriage-name updates, gift/inheritance within family, or GPA "
+        "    representation of the same person). If a later row's vendor is NOT the same as — or "
+        "    traceable to — the prior row's purchaser, with no transaction explaining the change, "
+        "    flag this as a serious chain break: PROPERTY_MISMATCH or SUSPICIOUS_PATTERN at "
+        "    HIGH severity, naming both rows, both party sets, and the gap.\n\n"
+        "  CHECK 3 — DOUBLE-SALE / UNDISCLOSED PRIOR CONVEYANCE:\n"
+        "    For every pair of rows (A, B) on the SAME relevant chain where A is earlier than B: "
+        "    if A conveyed a partial interest (share_fraction is non-null, e.g. '1/2') or a partial "
+        "    extent, and B — by the SAME vendor as A, or a vendor claiming full unencumbered "
+        "    ownership — later conveys the WHOLE property with no row between A and B that "
+        "    cancels/reconveys/releases A's share back, flag SUSPICIOUS_PATTERN at HIGH severity. "
+        "    Name both rows' dates, parties, share/extent conveyed, and consideration, and state "
+        "    explicitly: 'no intervening row undoes [A's] conveyance; confirm the current status "
+        "    of [A's purchaser]'s share before relying on [B] as proof of full, unencumbered "
+        "    ownership.' Apply this check also when row A conveys the full extent to party X and "
+        "    row B (no intervening undoing row) later has a DIFFERENT vendor purporting to sell "
+        "    the same property as if A never happened.\n\n"
+        "  CHECK 4 — AGREEMENT-TO-SELL RESOLUTION TRACKING:\n"
+        "    For every row where is_agreement_to_sell is true, look for EITHER: (a) a LATER row, "
+        "    same parties (vendor -> that agreement's purchaser), that is an actual Sale/Conveyance "
+        "    (completing the agreement), OR (b) a LATER row that is a Cancellation Deed/Reconveyance "
+        "    between the same parties (terminating the agreement). If NEITHER exists anywhere "
+        "    later in the ledger, flag MISSING_DOCUMENT or SUSPICIOUS_PATTERN at MEDIUM severity: "
+        "    name the agreement's date/parties/amount and state that an unresolved agreement to "
+        "    sell does not itself transfer title (Section 54, Transfer of Property Act) but a "
+        "    purchaser who has paid and taken steps in reliance on it may have a part-performance "
+        "    claim under Section 53A — so it should be confirmed as abandoned/settled before "
+        "    treating the property as clear.\n\n"
+        "  CHECK 5 — MORTGAGE / CHARGE RELEASE MATCHING:\n"
+        "    Treat ALL of the following transaction_type values as creating a charge that must "
+        "    later be released: 'Mortgage without Possession', 'Mortgage with Possession', "
+        "    'Simple Mortgage', 'English Mortgage', 'Usufructuary Mortgage', 'Mortgage by "
+        "    Conditional Sale', and 'DTD' / 'Deposit of Title Deeds' (an equitable mortgage under "
+        "    Section 58(f), Transfer of Property Act). For each such row, look for a LATER row "
+        "    of type 'Release Deed' or 'Reconveyance' naming the same parties/property. If none "
+        "    exists, flag PENDING_MORTGAGE at HIGH severity, quoting the row's date, type, "
+        "    parties, and amount.\n\n"
+        "  CHECK 6 — GPA-EXECUTED TRANSACTION VALIDATION:\n"
+        "    For every row where the vendor/executant is described as a GPA holder ('Rep'd by "
+        "    GPA Holder', 'Authorized Signatory' under POA, etc.), check whether the named "
+        "    PRINCIPAL (the actual owner the POA holder claims to represent) matches who the "
+        "    chain-of-title (Check 2) shows as the rightful owner at that point. If the "
+        "    principal's name doesn't match — or can't be confirmed from earlier rows — flag "
+        "    SUSPICIOUS_PATTERN at HIGH severity, citing Suraj Lamp & Industries Pvt. Ltd. v. "
+        "    State of Haryana (Supreme Court, 2011/2012): a transfer executed merely under a "
+        "    General Power of Attorney does not itself convey valid title; the POA's registration, "
+        "    continued validity, and the principal's status must be independently verified.\n\n"
+        "  CHECK 7 — SAME NAME ON BOTH SIDES OF ONE TRANSACTION:\n"
+        "    If any individual or set of named principals appears in BOTH the 'vendors'/executants "
+        "    list AND the 'purchasers'/claimants list of the SAME row (even through different GPA "
+        "    holders representing them on each side), flag SUSPICIOUS_PATTERN at MEDIUM severity "
+        "    and quote both occurrences — this could be partition, data overlap, or a sham transaction.\n\n"
+        "  CHECK 8 — UNDERVALUATION / TOKEN CONSIDERATION:\n"
+        "    For every row where BOTH market_value and consideration_amount are present and "
+        "    non-zero, divide consideration by market value and show the computation. If "
+        "    consideration is substantially below market value (below 70-75% of market value), "
+        "    flag GUIDANCE_VALUE_ISSUE at MEDIUM severity. Separately: if a row's transaction_type "
+        "    is something that should normally involve real payment (e.g. 'Sale') but "
+        "    consideration_amount is 0, Rs 1, or another token amount, flag SUSPICIOUS_PATTERN "
+        "    at MEDIUM severity (nil/token consideration is NORMAL and should NOT be flagged for "
+        "    Gift Deed, Release Deed, Cancellation Deed, or Reconveyance article types).\n\n"
+        "  CHECK 9 — MINOR / LEGAL HEIR PARTY VALIDATION:\n"
+        "    For every row where minor_or_legal_heir_party is true: if a minor's interest is "
+        "    being conveyed (sold/mortgaged) by a natural guardian, flag MISSING_DOCUMENT at "
+        "    MEDIUM severity noting that under Section 8, Hindu Minority and Guardianship Act, "
+        "    1956, a natural guardian needs prior permission of the court to transfer a minor's "
+        "    immovable property. If parties are described as 'legal heirs of [deceased],' check "
+        "    whether the row appears to list ALL heirs; if only some heirs appear to be party to "
+        "    a transaction affecting the whole property, flag MISSING_DOCUMENT at medium severity "
+        "    recommending a succession certificate / legal heir certificate be obtained.\n\n"
+        f"  CHECK 10 — SEARCH WINDOW & GAPS (apply only within the relevant chain identified in Check 1):\n"
+        f"    Read or compute file_metadata.search_period_years. If under {EC_MIN_SEARCH_YEARS} years, "
+        f"    flag EC_GAP at high severity. Sort the relevant chain rows by date and check for "
+        f"    gaps exceeding {EC_GAP_FLAG_YEARS} years between consecutive entries; if found, flag "
+        f"    EC_GAP at medium severity, showing the subtraction (e.g. '2015 - 1998 = 17 years') "
+        "    and naming the two rows/dates either side of the gap. Do NOT compute this gap check "
+        "    across irrelevant rows excluded by Check 1.\n\n"
+        "  ARTICLE-TYPE REFERENCE TABLE:\n"
+        "  Use the following lookup matrix to apply the correct checks based on row transaction_type/article:\n"
+        "  | Article Name (as seen in Karnataka ECs)        | What must be checked                                                                 |\n"
+        "  |-------------------------------------------------|----------------------------------------------------------------------------------------|\n"
+        "  | Sale / Sale-Conveyance                          | Checks 2, 3, 6, 7, 8                                                                   |\n"
+        "  | Agreement of Sale (possession given/not given)  | Check 4 (resolution tracking); do not treat as a transfer of title by itself           |\n"
+        "  | Gift Deed                                       | Checks 2, 6, 7; consideration of 0 is normal, do not flag under Check 8                |\n"
+        "  | Mortgage with/without Possession, Simple/English/Usufructuary Mortgage, Mortgage by Conditional Sale | Check 5 (release matching)                                  |\n"
+        "  | DTD (Deposit of Title Deeds)                    | Check 5 — treat identically to a registered mortgage (Section 58(f), TPA)             |\n"
+        "  | Release Deed                                    | Should be matched AS the resolution for an earlier mortgage/DTD/agreement row (Checks 4, 5) — if it doesn't match anything earlier, note that explicitly |\n"
+        "  | Reconveyance                                    | Same as Release Deed — confirm it matches an earlier mortgage/agreement row            |\n"
+        "  | Cancellation Deed                                | Confirm it matches and fully undoes an earlier row between the same parties (Check 3, 4)|\n"
+        "  | Lease of Immovable Property                     | Note the lessee and term if stated — relevant for vacant-possession due diligence, not itself an encumbrance on title |\n"
+        "  | Mortgage / DTD where mortgagor includes a GPA holder or a name not matching the registered owner | Checks 5 AND 6 together                                          |\n"
+        "  | Partition Deed (if present)                     | Check that all co-sharers named in the partition match the full set of owners from the prior chain |\n"
+        "  | Will / Succession Certificate / Court Decree (if present) | Apply Check 9's heir-completeness logic                                       |\n\n"
+        "  NON-NEGOTIABLE TEST CASE — CRITICAL DOUBLE-SALE FAILURE MODE:\n"
+        "  If the ledger contains a sequence like:\n"
+        "    - Row A: vendor sells a fractional share (e.g. 1/2 undivided common share) of the property to purchaser X\n"
+        "    - Row B (later): the same vendor sells the WHOLE property to purchaser Y as unencumbered, with no intermediate cancellation deed\n"
+        "  You MUST raise a high-severity SUSPICIOUS_PATTERN or PROPERTY_MISMATCH note. Quote both row numbers, dates, parties, and the conflict explicitly.\n"
+        "- If 'Nil Encumbrance' is stated, set historical_ledger to [] and skip checks "
+        "  1, 2, 4, 5, 6, 7, 8, 9 above (there's nothing to compare) — but still run check 10 "
+        "  (search window length), since that applies regardless of ledger content.\n"
     )
 
     prc_checks = (
@@ -899,14 +889,12 @@ def _get_verification_instructions(doc_type: str) -> str:
         "- Are easements or other_encumbrances recorded? Quote them verbatim if present.\n"
         "- Is guidance_value.value present? If null, flag GUIDANCE_VALUE_ISSUE naming "
         "  exactly which downstream check (stamp duty adequacy) becomes impossible without it.\n"
-        "- Are mutation_or_transaction_entries populated and does the most recent entry's "
-        "  date look plausible relative to document_metadata.application_date (i.e. not "
-        "  dated after the card itself was issued)?\n"
-        "- Is tenure one of the standard Karnataka categories (e.g. Freehold/Patta, "
-        "  Leasehold, Government/Inam)? If it's an abbreviation or code you can't expand "
-        "  with confidence (e.g. a single letter), quote it verbatim rather than guessing "
-        "  its meaning, and flag PROPERTY_MISMATCH/SUSPICIOUS_PATTERN noting it needs "
-        "  clarification from the issuing office — do NOT invent what the abbreviation means.\n"
+        "- RESTRICTED TENURE: Check the tenure / classification field. Standard tenure should "
+        "  be Freehold/Patta. If tenure is Government, Leasehold, Inam, or any restricted/service "
+        "  category, flag PROPERTY_MISMATCH at HIGH severity noting transfer of ownership is restricted.\n"
+        "- UN-ATTESTED MUTATION: For each mutation entry inside mutation_or_transaction_entries, "
+        "  verify if the attestation field is populated. If it is blank/null, flag MUTATION_PENDING "
+        "  at MEDIUM severity, quoting the transaction name and date.\n"
         "- Is area_sq_meters a plausible number for the stated property type (not zero, "
         "  not absurdly large)?\n"
     )
@@ -919,18 +907,12 @@ def _get_verification_instructions(doc_type: str) -> str:
         "  34/36=property_tax_payable, 43=total, 44=payment_mode. Capture sub-parts like "
         "  16(A)/16(B) as separate assessment_rows entries, don't merge them.\n"
         "- Identify CHALLAN COPIES separately from the main assessment_rows table.\n"
-        "- Cess components in Karnataka municipal tax are commonly: Health 15%, Library "
-        "  6%, Beggary 3%, Urban Transport 2% (of the base property tax) — if individual "
-        "  cess line items AND a total are both present in assessment_rows, check whether "
-        "  they sum consistently; if they clearly don't (not just a few-rupee rounding "
-        "  difference), flag FINANCIAL_MISMATCH quoting each line item value and the stated "
-        "  total. If you can't find the individual line items, do not guess — skip this check.\n"
         "- Is owner_name present and is it a real name (not a template placeholder)?\n"
         "- Is pid present and does it match the format used elsewhere in this same document "
         "  (e.g. consumer_details.pid vs property_owner.pid)? Quote both if they differ.\n"
-        "- Is transaction_details.status (or equivalent) a clear success/paid state? If it "
-        "  reads as failed/pending/anything other than success, flag TAX_DEFAULT quoting "
-        "  the exact status text.\n"
+        "- TAX DEFAULT: Is transaction_details.status (or equivalent) a clear success/paid state? "
+        "  If it reads as failed, pending, or anything other than success, flag TAX_DEFAULT "
+        "  at HIGH severity quoting the exact status text.\n"
         "- Is assessment_year recent relative to today, or several years stale? Quote the "
         "  actual year found.\n"
     )
@@ -941,18 +923,25 @@ def _get_verification_instructions(doc_type: str) -> str:
         "- Is parties.relationship_between_parties stated, and is it a close-family "
         "  relation (parent/child/spouse/sibling)? If the stated relationship is distant "
         "  or absent, quote what's actually written — this affects whether a concessional "
-        "  gift-deed stamp duty rate properly applies.\n"
+        "  gift-deed stamp duty rate properly applies. If the relationship is not family (or is "
+        "  unspecified/absent) and financial_summary.stamp_duty_amount is less than 5% of "
+        "  the estimated market value, flag FINANCIAL_MISMATCH at HIGH severity.\n"
         "- Is survey_number or cts_number present and does it match the value, if any, "
         "  referenced elsewhere in the same document (e.g. in the building description)?\n"
-        "- Is file_metadata.registration_number present? Gift deeds are compulsorily "
-        "  registrable under Section 17, Registration Act, 1908 — quote 'not found' "
-        "  explicitly if it's genuinely absent rather than skipping the check silently.\n"
-        "- Are witnesses listed (Section 123, Transfer of Property Act requires "
-        "  attestation by at least two witnesses for a gift of immovable property)? Quote "
-        "  how many were actually found.\n"
+        "- COMPULSORY REGISTRATION: Is file_metadata.registration_number present? Under Section 17, "
+        "  Registration Act, 1908, gift deeds of immovable property must be registered. "
+        "  If genuinely absent, quote 'not found' and flag MISSING_DOCUMENT at HIGH severity.\n"
+        "- WITNESS ATTESTATION: Are witnesses listed? Section 123 of the Transfer of Property "
+        "  Act, 1882 requires a gift deed of immovable property to be attested by at least two "
+        "  witnesses. If fewer than two witnesses are found, flag MISSING_DOCUMENT at HIGH severity "
+        "  quoting the count of witnesses found.\n"
         "- Is financial_summary.stamp_duty_amount populated and non-zero?\n"
-        "(Date ordering of execution_date vs registration_date is checked deterministically "
-        "in code — do not duplicate it as an LLM finding.)\n"
+        "- COMPUTE — date ordering: compare file_metadata.execution_date and "
+        "  file_metadata.registration_date. Execution must precede registration under "
+        "  Section 23/32, Registration Act, 1908. If execution_date is AFTER "
+        "  registration_date, flag DATE_INCONSISTENCY at high severity, quoting both dates "
+        "  verbatim in evidence. If execution_date is before or equal to registration_date, "
+        "  do NOT report anything for this check.\n"
     )
 
     generic_checks = (

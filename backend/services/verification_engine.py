@@ -15,7 +15,7 @@ from backend.logger import get_logger
 from backend.services.cross_doc_verifier import run_cross_doc_verification
 from backend.services.self_critique import run_critique
 from backend.services.risk_scorer import compute_risk_score
-from backend.services.mysql_store_v2 import (
+from backend.services.mysql_store import (
     get_case_bundle,
     save_cross_doc_verification,
 )

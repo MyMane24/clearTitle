@@ -7,7 +7,7 @@ from celery import chord
 
 from backend.tasks.pipeline_tasks import process_document_task, finalize_case_task
 from backend.services.redis_store import get_case_files
-from backend.services.mysql_store import get_failed_documents
+from backend.services.mysql_store import get_failed_documents, get_case_documents
 
 
 def start_case_pipeline(case_id: str):
@@ -16,12 +16,11 @@ def start_case_pipeline(case_id: str):
     if not files_data:
         raise ValueError(f"No files found for case {case_id}")
 
-    # Fetch document statuses from MySQL V2
-    from backend.services.mysql_store_v2 import get_case_documents
+    # Fetch document statuses from MySQL
     try:
         db_docs = get_case_documents(case_id)
         status_by_id = {d["doc_id"]: d["status"] for d in db_docs}
-    except Exception as e:
+    except Exception:
         status_by_id = {}
 
     # Filter documents that are NOT structured and NOT skipped
@@ -41,10 +40,7 @@ def start_case_pipeline(case_id: str):
 
 def start_retry_pipeline(case_id: str):
     """Fire tasks for failed docs only, as a Celery chord."""
-    from backend.services.mysql_store_v2 import get_failed_documents as get_failed_v2
-    from backend.services.mysql_store import get_failed_documents as get_failed_v1
-
-    failed = get_failed_v2(case_id) or get_failed_v1(case_id)
+    failed = get_failed_documents(case_id)
     if not failed:
         raise ValueError(f"No failed documents for case {case_id}")
 

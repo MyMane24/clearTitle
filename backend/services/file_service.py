@@ -62,6 +62,36 @@ def list_output_cases() -> list[dict]:
     return cases
 
 
+def get_case_bundle_from_filesystem(case_id: str) -> list[dict] | None:
+    """Read structured result files from outputs/{case_id}/structured/
+    as a fallback when MySQL has no records."""
+    if not _valid_id(case_id):
+        return None
+    structured_dir = BASE_DIR / "outputs" / case_id / "structured"
+    if not structured_dir.exists():
+        return None
+    pattern = re.compile(r"^(DOC_\d+)_(.+)\.json$")
+    docs = []
+    for path in sorted(structured_dir.glob("*.json")):
+        m = pattern.match(path.name)
+        if not m:
+            continue
+        doc_id = m.group(1)
+        doc_type = m.group(2)
+        try:
+            data = read_json(path)
+        except (OSError, TypeError, ValueError):
+            continue
+        docs.append({
+            "doc_id": doc_id,
+            "doc_index": int(doc_id.split("_")[1]),
+            "filename": path.name,
+            "document_type": doc_type,
+            "structured_json": data,
+        })
+    return docs if docs else None
+
+
 def list_case_ocr_raw(case_id: str) -> list[dict]:
     """Return merged OCR files available for a case."""
     if not _valid_id(case_id):

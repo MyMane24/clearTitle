@@ -28,7 +28,7 @@ from backend.services.ocr_merger import merge_chunked_outputs
 from backend.services.groq_structurer import structure_document as structure_document_with_groq
 from backend.services.gemini_structurer import structure_document_with_gemini
 from backend.services.doc_classifier import classify_document, VALID_DOC_TYPES
-from backend.services.mysql_store_v2 import (
+from backend.services.mysql_store import (
     update_document_status,
     increment_retry,
     update_case_status as mysql_update_case_status,
@@ -403,7 +403,7 @@ def finalize_case_task(results: list, case_id: str):
     # Update V2 database case status
     try:
         mysql_update_case_status(case_id=case_id)
-        from backend.services.mysql_store_v2 import _get_conn as get_v2_conn
+        from backend.services.mysql_store import _get_conn as get_v2_conn
         with get_v2_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT status FROM cases WHERE id = %s", (case_id,))

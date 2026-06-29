@@ -255,6 +255,8 @@
     line-height: 1.7;
     max-height: 560px;
     overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
   }
   pre.json-viewer { white-space: pre-wrap; word-break: break-word; }
 
@@ -353,11 +355,35 @@
     background: var(--lblue);
     border-color: var(--blue);
   }
+  .sidebar-item .sidebar-item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
   .sidebar-item .case-id {
     font-weight: 700;
     font-size: 13px;
     color: var(--navy);
     font-family: monospace;
+  }
+  .sidebar-delete-btn {
+    background: none;
+    border: none;
+    color: var(--gray);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+    border-radius: 4px;
+    opacity: 0;
+    transition: opacity .15s, color .15s, background .15s;
+  }
+  .sidebar-item:hover .sidebar-delete-btn {
+    opacity: 1;
+  }
+  .sidebar-delete-btn:hover {
+    color: var(--red);
+    background: var(--lred);
   }
   .sidebar-item .case-meta {
     font-size: 11px;

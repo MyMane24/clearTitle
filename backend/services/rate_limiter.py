@@ -178,7 +178,7 @@ class LLMCallTracker:
             logger.warning("Failed to record LLM call metric: %s", e)
         # Also persist to MySQL for queryable dashboard
         try:
-            from backend.services.mysql_store_v2 import log_llm_call
+            from backend.services.mysql_store import log_llm_call
             log_llm_call(
                 case_id=entry.get("case_id", ""), doc_id=entry.get("doc_id", ""),
                 provider=provider, model=model, doc_type=doc_type,

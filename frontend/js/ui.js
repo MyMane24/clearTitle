@@ -100,7 +100,7 @@ function buildDocPanel(res) {
         <button class="vt-btn"       data-view="summary" onclick="switchView(this,'summary')">📋 Field Summary</button>
       </div>
       <div class="view-json">
-        <div class="json-viewer">${jsonPretty}</div>
+        <pre class="json-viewer">${jsonPretty}</pre>
       </div>
       <div class="view-summary" style="display:none">
         ${buildSummaryTable(structured)}

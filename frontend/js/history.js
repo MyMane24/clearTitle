@@ -45,7 +45,10 @@ window.HistoryPanel = {
       }
 
       return `<div class="sidebar-item${active}" data-case-id="${escHtml(c.id)}">
-        <div class="case-id">${escHtml(c.id)}</div>
+        <div class="sidebar-item-header">
+          <span class="case-id">${escHtml(c.id)}</span>
+          <button class="sidebar-delete-btn" data-case-id="${escHtml(c.id)}" title="Delete case">🗑</button>
+        </div>
         <div class="case-meta">
           <span>${pct}% done</span>
           <span>${c.completed_docs}/${c.total_docs}</span>
@@ -57,7 +60,32 @@ window.HistoryPanel = {
     }).join("");
 
     container.querySelectorAll(".sidebar-item").forEach(el => {
-      el.addEventListener("click", () => this.selectCase(el.dataset.caseId));
+      el.addEventListener("click", (e) => {
+        if (e.target.closest(".sidebar-delete-btn")) return;
+        this.selectCase(el.dataset.caseId);
+      });
+    });
+
+    container.querySelectorAll(".sidebar-delete-btn").forEach(btn => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const caseId = btn.dataset.caseId;
+        if (!confirm(`Delete case ${caseId} and all associated data? This cannot be undone.`)) return;
+        try {
+          btn.disabled = true;
+          btn.textContent = "...";
+          await API.deleteCase(caseId);
+          if (this.activeCaseId === caseId) {
+            this.activeCaseId = null;
+            document.getElementById("history-detail")?.classList.add("hidden");
+          }
+          await this.loadList();
+        } catch (err) {
+          alert("Failed to delete case: " + err.message);
+          btn.disabled = false;
+          btn.textContent = "\u00d7";
+        }
+      });
     });
   },
 

@@ -75,6 +75,12 @@ flowchart TD
 | **Vector DB** | Qdrant (Persistent) | Stores human corrections to align the system and adjust verification rules on-the-fly. |
 | **Relational Database** | MySQL (V2 Schema) | Unified database tables for cases, documents, cross-doc reports, and human feedback. |
 
+### 🧠 Advanced Intelligent Verification Features
+
+*   **100% LLM-Based Per-Document Checks**: Per-document verification checks (including stamp duty ratios, witness counts, GPA authorizations, and date ordering) are executed completely within the LLM prompt layer. All computations (e.g. `"30 x 40 = 1200"` or `"168000 / 2500000 x 100 = 6.72%"`) are shown verbatim inside the `evidence` field for transparency.
+*   **Context Cache Auto-Invalidation**: To reduce latency and API costs, static instructions and schemas are cached. The system automatically computes an MD5 checksum of the static prompt contents and invalidates/rebuilds the cache on Gemini's servers if rules are modified.
+*   **Unified MySQL V2 Database**: All cases, document status indices, and verifications write directly to `mysql_store.py` (which defaults to the `property_ocr_v2` database), supporting both `MYSQL_DATABASE` and `MYSQL_DATABASE_V2` environment flags.
+
 ---
 
 ## 📄 Supported Document Types
@@ -202,8 +208,7 @@ property_ocr/
 │   │   ├── cross_doc_verifier.py      # Groq cross-document checker
 │   │   ├── verification_engine.py     # Verification orchestrator
 │   │   ├── vector_store.py            # Qdrant learning repository
-│   │   ├── mysql_store_v2.py          # MySQL V2 store wrapper
-│   │   └── mysql_store.py             # MySQL V1 backward compatibility store
+│   │   └── mysql_store.py             # Unified MySQL V2 store wrapper
 │   │
 │   └── tasks/
 │       └── pipeline_tasks.py      # Celery task executors

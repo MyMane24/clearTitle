@@ -2,6 +2,7 @@
 
 import json
 import re
+import shutil
 import aiofiles
 from pathlib import Path
 from fastapi import UploadFile
@@ -31,6 +32,15 @@ def write_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def delete_case_dir(case_id: str) -> bool:
+    """Delete the outputs/{case_id} directory and all its contents."""
+    d = BASE_DIR / "outputs" / case_id
+    if d.exists():
+        shutil.rmtree(d)
+        return True
+    return False
 
 
 def read_json(path: Path) -> dict:

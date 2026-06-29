@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.logger import get_logger
-from backend.services.mysql_store_v2 import (
+from backend.services.mysql_store import (
     get_case_documents,
     get_cross_doc_verification,
     store_feedback,
@@ -165,7 +165,7 @@ async def learnings_stats():
 @router.get("/analytics/cost-dashboard")
 async def cost_dashboard(days: int = 7):
     """Get daily cost and quota usage summary for the last N days."""
-    from backend.services.mysql_store_v2 import get_daily_cost_summary
+    from backend.services.mysql_store import get_daily_cost_summary
     try:
         data = get_daily_cost_summary(days=days)
         return {
@@ -181,7 +181,7 @@ async def cost_dashboard(days: int = 7):
 @router.get("/analytics/quota-tracking")
 async def quota_tracking():
     """Get current (last 24h) quota consumption by provider/model."""
-    from backend.services.mysql_store_v2 import get_quota_tracking
+    from backend.services.mysql_store import get_quota_tracking
     try:
         return {"records": get_quota_tracking()}
     except Exception as e:
@@ -193,7 +193,7 @@ async def quota_tracking():
 @router.get("/analytics/token-usage")
 async def token_usage_analytics(case_id: str | None = None):
     """Get token usage and cost analytics. If case_id provided, return per-doc breakdown."""
-    from backend.services.mysql_store_v2 import get_case_documents as v2_get_docs
+    from backend.services.mysql_store import get_case_documents as v2_get_docs
 
     docs = v2_get_docs(case_id) if case_id else []
     if not docs:

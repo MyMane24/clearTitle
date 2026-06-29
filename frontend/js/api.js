@@ -101,6 +101,12 @@ const API = {
     return r.json();
   },
 
+  async deleteCase(caseId) {
+    const r = await fetch(`/api/case/${caseId}`, { method: "DELETE" });
+    if (!r.ok) throw new Error(await apiError(r, "Failed to delete case"));
+    return r.json();
+  },
+
   async listCases() {
     const r = await fetch("/api/cases");
     if (!r.ok) return { cases: [] };
