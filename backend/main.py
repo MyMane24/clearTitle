@@ -28,7 +28,7 @@ for d in ["uploads", "outputs/structured", "outputs/raw_ocr"]:
 
 # ── App ────────────────────────────────────────────────────────────────────────
 app = FastAPI(
-    title="Property OCR Pipeline",
+    title="Property Verification Engine",
     description="Sarvam OCR + Groq Structuring for property documents",
     version="1.0.0",
 )

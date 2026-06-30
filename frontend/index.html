@@ -3,16 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Property OCR Pipeline</title>
+<title>Property Verification Engine</title>
 <link rel="stylesheet" href="/static/css/styles.css">
 </head>
 <body>
 
 <!-- ── Header ── -->
 <div class="header">
-  <div class="header-icon">🏠</div>
+  <button class="vr-sidebar-toggle" id="sidebar-toggle-btn" title="Toggle Case History">☰</button>
+  <img src="/static/logo.png" class="header-logo" alt="Logo">
   <div>
-    <h1>Property OCR Pipeline</h1>
+    <h1>Property Verification Engine</h1>
     <p>Sarvam Vision OCR · Groq LLM Structuring · Karnataka Property Documents</p>
   </div>
   <div class="health-dot" id="health-indicator">
@@ -113,10 +114,10 @@
   <div id="stage-verify" class="hidden">
 
       <div class="card">
-        <div class="card-title">🤖 Document Verification</div>
+        <div class="card-title">🤖 Property Verification Report</div>
         <p style="font-size:13px;color:var(--gray);margin-bottom:16px">
-          Each document is verified during structuring (single-pass LLM check). Cross-document
-          verification then checks consistency across all docs: ownership chain, dates, financials,
+          Each document is verified during structuring. Cross-document
+          verification checks consistency across all docs: ownership chain, dates, financials,
           property identifiers, and red flags.
         </p>
       <div id="verify-before">
@@ -133,22 +134,77 @@
           <span class="log-info">Running cross-document verification...</span>
         </div>
       </div>
+
+      <!-- ── Verification Results ── -->
       <div id="verify-results" class="hidden">
-        <div id="verify-summary" class="metrics-row"></div>
-        <div id="verify-findings"></div>
-        <div id="verify-feedback-area" class="hidden" style="margin-top:16px;padding:16px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px">
-          <strong style="color:#b45309">✏️ Human Review</strong>
-          <p style="font-size:12px;color:var(--gray);margin:8px 0 12px">
-            Review each finding below. Accept if correct, or provide a correction with reason.
-            Your corrections are stored in the vector database so the AI learns for next time.
-          </p>
-          <div id="feedback-items"></div>
-          <div class="btn-row">
-            <button class="btn btn-primary" id="submit-feedback-btn">📤 Submit Review</button>
-          </div>
-          <div id="feedback-status" style="margin-top:10px;font-size:13px"></div>
+        
+        <!-- Sticky Navigation Sub-Tabs -->
+        <div class="vr-nav-tabs" id="vr-nav-tabs">
+          <div class="vr-nav-tab active" data-tab="overview">Overview</div>
+          <div class="vr-nav-tab" data-tab="cross-doc">Cross Verification</div>
+          <div class="vr-nav-tab" data-tab="per-doc">Per Document</div>
+          <div class="vr-nav-tab" data-tab="missing-docs">Missing Documents</div>
+          <div class="vr-nav-tab" data-tab="final-report">Final Report</div>
+          <div class="vr-nav-tab" data-tab="human-review">Human Review</div>
         </div>
+
+        <!-- Global Search and Filters -->
+        <div class="vr-filter-bar">
+          <input type="text" class="vr-search-input" id="vr-global-search" placeholder="Search findings (e.g. 'survey number', 'Jayashree', etc.)...">
+          <select class="vr-filter-select" id="vr-filter-severity">
+            <option value="">All Severities</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+          <select class="vr-filter-select" id="vr-filter-doc">
+            <option value="">All Documents</option>
+          </select>
+        </div>
+
+        <!-- Tab 1: Overview -->
+        <div class="vr-tab-pane active" id="pane-overview">
+          <div id="vr-dashboard"></div>
+        </div>
+
+        <!-- Tab 2: Cross-Document -->
+        <div class="vr-tab-pane" id="pane-cross-doc">
+          <div id="vr-cross-doc-section"></div>
+        </div>
+
+        <!-- Tab 3: Per-Document -->
+        <div class="vr-tab-pane" id="pane-per-doc">
+          <div id="vr-per-doc-section"></div>
+        </div>
+
+        <!-- Tab 4: Missing Documents -->
+        <div class="vr-tab-pane" id="pane-missing-docs">
+          <div id="vr-missing-docs-section"></div>
+        </div>
+
+        <!-- Tab 5: Final Report -->
+        <div class="vr-tab-pane" id="pane-final-report">
+          <div id="vr-final-opinion"></div>
+        </div>
+
+        <!-- Tab 6: Human Review -->
+        <div class="vr-tab-pane" id="pane-human-review">
+          <div id="verify-feedback-area" style="padding:16px;background:#f9fafb;border:1px solid var(--border);border-radius:8px">
+            <strong style="color:#111827">✏️ Human Review</strong>
+            <p style="font-size:12px;color:var(--gray);margin:8px 0 12px">
+              Review each finding. Accept if correct, or provide a correction with reason to update the AI learnings.
+            </p>
+            <div id="feedback-items"></div>
+            <div class="btn-row">
+              <button class="btn btn-primary" id="submit-feedback-btn">📤 Submit Review</button>
+            </div>
+            <div id="feedback-status" style="margin-top:10px;font-size:13px"></div>
+          </div>
+        </div>
+
       </div>
+
     </div>
 
     <div class="card hidden" id="verify-learnings-card">
@@ -160,6 +216,20 @@
 
   <!-- Historical case detail -->
   <div id="history-detail" class="hidden"></div>
+
+  <!-- Side Drawer Overlay Backdrop -->
+  <div class="vr-drawer-overlay" id="vr-drawer-overlay"></div>
+
+  <!-- Side Drawer Panel -->
+  <div class="vr-drawer" id="vr-drawer">
+    <div class="vr-drawer-header">
+      <div class="vr-drawer-title" id="vr-drawer-title">Finding Details</div>
+      <div class="vr-drawer-close" id="vr-drawer-close">✕</div>
+    </div>
+    <div class="vr-drawer-body" id="vr-drawer-body">
+      <!-- Content populated dynamically -->
+    </div>
+  </div>
 
   </div><!-- /main-content -->
 </div><!-- /app-layout -->

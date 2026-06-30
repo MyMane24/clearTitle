@@ -63,23 +63,52 @@ function flattenObj(obj, prefix, depth) {
   return rows;
 }
 
+
 function buildSummaryTable(structured) {
   const rows = flattenObj(structured, "", 0)
-    .filter(r => r.value !== null && r.value !== "" && !Array.isArray(r.raw))
-    .map(r => `<tr>
-      <td style="font-family:monospace;font-size:11px;color:var(--navy);padding:6px 12px;border-bottom:1px solid var(--border);white-space:nowrap">${escHtml(r.key)}</td>
-      <td style="padding:6px 12px;border-bottom:1px solid var(--border);font-size:13px">${escHtml(String(r.value))}</td>
-    </tr>`).join("");
-  return `<div style="overflow:auto;max-height:520px">
-    <table style="width:100%;border-collapse:collapse">
-      <thead><tr>
-        <th style="background:var(--navy);color:var(--white);padding:8px 12px;text-align:left;font-size:12px">Field</th>
-        <th style="background:var(--navy);color:var(--white);padding:8px 12px;text-align:left;font-size:12px">Value</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-  </div>`;
+    .filter(r => r.value !== null && r.value !== "" && !Array.isArray(r.raw));
+
+  if (!rows.length) {
+    return `<div class="vr-sheet-empty">No fields populated for this document.</div>`;
+  }
+
+  // Group rows by top-level key prefix
+  const groups = {};
+  rows.forEach(r => {
+    const parts = r.key.split('.');
+    let category, fieldName;
+    if (parts.length > 1) {
+      category = parts[0].replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      fieldName = parts.slice(1).join(' › ').replace(/\[(\d+)\]/g, ' #$1').replace(/_/g, ' ')
+        .replace(/\b\w/g, c => c.toUpperCase()).trim();
+    } else {
+      category = "General";
+      fieldName = r.key.replace(/\[(\d+)\]/g, ' #$1').replace(/_/g, ' ')
+        .replace(/\b\w/g, c => c.toUpperCase()).trim();
+    }
+    if (!groups[category]) groups[category] = [];
+    groups[category].push({ name: fieldName, value: String(r.value) });
+  });
+
+  const groupsHtml = Object.entries(groups).map(([cat, fields], gi) => `
+    <div class="vr-sheet-group">
+      <div class="vr-sheet-group-title">
+        <span class="vr-sheet-group-dot" style="background:${['#6366f1','#0ea5e9','#10b981','#f59e0b','#ef4444','#8b5cf6'][gi % 6]}"></span>
+        ${escHtml(cat)}
+        <span class="vr-sheet-group-count">${fields.length}</span>
+      </div>
+      <div class="vr-sheet-rows">
+        ${fields.map(f => `
+          <div class="vr-sheet-row">
+            <div class="vr-sheet-key">${escHtml(f.name)}</div>
+            <div class="vr-sheet-val">${escHtml(f.value)}</div>
+          </div>`).join('')}
+      </div>
+    </div>`).join('');
+
+  return `<div class="vr-field-sheet">${groupsHtml}</div>`;
 }
+
 
 function buildDocPanel(res) {
   const structured = res.structured || {};

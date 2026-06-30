@@ -61,18 +61,7 @@ async def start_verification(case_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Verification failed: {e}")
 
-    return {
-        "case_id": case_id,
-        "status": "completed",
-        "verdict": report.get("verdict", "UNKNOWN"),
-        "total_findings": report.get("summary", {}).get("total_findings", 0),
-        "per_doc_findings": report.get("summary", {}).get("per_doc_findings", 0),
-        "cross_doc_findings": report.get("summary", {}).get("cross_doc_findings", 0),
-        "high_severity": report.get("summary", {}).get("high_severity", 0),
-        "findings": report.get("findings", []),
-        "documents": report.get("summary", {}).get("documents", []),
-        "metadata": report.get("metadata", {}),
-    }
+    return report
 
 
 # ── Get report ───────────────────────────────────────────────────────────
@@ -84,15 +73,19 @@ async def get_verification_report_endpoint(case_id: str):
     if not report:
         raise HTTPException(status_code=404, detail="No verification report found")
 
-    return {
-        "case_id": case_id,
-        "status": report["status"],
-        "verdict": report.get("verdict"),
-        "findings": report.get("findings", []),
-        "final_report": report.get("final_report", ""),
-        "created_at": report.get("created_at"),
-        "updated_at": report.get("updated_at"),
-    }
+    from backend.services.verification_engine import generate_verification_report_payload
+
+    enriched = generate_verification_report_payload(
+        case_id=case_id,
+        all_findings=report.get("findings", []) or [],
+        verdict=report.get("verdict", "FLAGGED"),
+        final_report=report.get("final_report", ""),
+        metadata={
+            "created_at": str(report.get("created_at") or ""),
+            "updated_at": str(report.get("updated_at") or ""),
+        }
+    )
+    return enriched
 
 
 # ── Get per-doc verification notes ───────────────────────────────────────

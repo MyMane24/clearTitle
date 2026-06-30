@@ -74,13 +74,17 @@ CASH_PAYMENT_269SS_THRESHOLD = 20000
 VERIFICATION_NOTES_SCHEMA = {
     "verification_notes": [
         {
+            "title": "Specific descriptive title explaining exactly what is wrong (e.g., 'Survey Number differs between Sale Deed and EC')",
+            "severity": "critical | high | medium | low",
             "type": "DATE_INCONSISTENCY | FINANCIAL_MISMATCH | MISSING_DOCUMENT | PROPERTY_MISMATCH | PENDING_MORTGAGE | EC_GAP | MUTATION_PENDING | CONVERSION_MISSING | TAX_DEFAULT | GUIDANCE_VALUE_ISSUE | SUSPICIOUS_PATTERN",
-            "severity": "high | medium | low",
             "confidence": 0.0,
-            "summary": "Short description of the issue — MUST include the actual conflicting values, not just the field name",
-            "legal_detail": "Legal reasoning under relevant Karnataka statutes, applied to THESE SPECIFIC facts (not a general explanation of the law)",
-            "evidence": "Pipe-separated '<field_path>: <exact_value>' pairs taken verbatim from the extracted data",
-            "suggestion": "Actionable recommendation naming who to contact or what document to obtain",
+            "what_was_detected": "Factual description of the issue detected in the document",
+            "evidence": "Human readable exact evidence text from document (e.g., 'Sale Deed Page 3: Survey Number 663/1 Paiki'). Never show JSON paths",
+            "reason": "Practical explanation of why this was flagged. Never write legal essays or general descriptions of the Acts.",
+            "possible_causes": ["Cause 1", "Cause 2"],
+            "impact": "Practical/business impact or risk if this is not resolved",
+            "verification_steps": ["Step 1", "Step 2"],
+            "legal_reference": "Optional collapsible legal statute reference (e.g. 'Section 54, Transfer of Property Act')"
         }
     ],
 }
@@ -343,14 +347,18 @@ SCHEMA_MAP = {
 CROSS_DOC_SCHEMA = {
     "cross_document_findings": [
         {
+            "title": "Specific descriptive title explaining exactly what is wrong (e.g. 'Sale Consideration differs between Sale Deed and EC')",
+            "severity": "critical | high | medium | low",
             "type": "DATE_INCONSISTENCY | FINANCIAL_MISMATCH | MISSING_DOCUMENT | PROPERTY_MISMATCH | PENDING_MORTGAGE | EC_GAP | MUTATION_PENDING | CONVERSION_MISSING | TAX_DEFAULT | GUIDANCE_VALUE_ISSUE | SUSPICIOUS_PATTERN",
-            "severity": "high | medium | low",
             "confidence": 0.0,
-            "summary": "Short description including the actual values from each document being compared",
-            "legal_detail": "Legal reasoning under relevant Karnataka statutes, tied to these specific facts",
-            "evidence": "Pipe-separated '<doc_id> <field_path>: <exact_value>' pairs for every document side of the comparison",
-            "doc_ids_involved": ["DOC_001", "DOC_002"],
-            "suggestion": "Actionable recommendation naming who to contact or what document to obtain",
+            "doc_ids_involved": ["SALE_DEED", "ENCUMBRANCE_CERTIFICATE"],
+            "what_was_detected": "Factual description of the issue detected across these documents",
+            "evidence": "Human readable exact evidence (e.g. 'Sale Deed: Rs 25,00,000 vs EC: Rs 58,00,000'). Never show JSON paths",
+            "reason": "Practical explanation of why this was flagged. Never write legal essays or general descriptions of the Acts.",
+            "possible_causes": ["Cause 1", "Cause 2"],
+            "impact": "Practical/business impact or risk if this is not resolved",
+            "verification_steps": ["Step 1", "Step 2"],
+            "legal_reference": "Optional collapsible legal statute reference (e.g. 'Section 54, Transfer of Property Act')"
         }
     ]
 }
@@ -363,62 +371,51 @@ CROSS_DOC_SCHEMA = {
 OUTPUT_QUALITY_CONTRACT = """
 OUTPUT QUALITY CONTRACT — read this carefully, it fixes a known failure mode.
 
-A real property-document verifier (a lawyer doing title due diligence) never writes a
-finding like "there is an inconsistency in the CTS number" without immediately saying
-WHAT the two conflicting numbers actually are. The reader should be able to resolve the
-issue from your note alone, without re-opening the source document.
+You must behave like a SENIOR PROPERTY DUE DILIGENCE LAWYER. Your job is to produce production-grade due diligence findings for property buyers, advocates, and bank loan verification teams. 
+
+DO NOT write like a Law Professor or a Legal Research Assistant.
+1. NEVER explain the history or general purposes of Acts or Sections.
+2. NEVER write generic descriptions like "Under the Registration Act..." or "Section X states that...". 
+3. Apply all legal rules SILENTLY. Write ONLY practical, business-driven, and evidence-supported risks.
+4. Keep all findings understandable within 10 seconds.
+5. All legal references must be optional, simple citations in the "legal_reference" field only.
 
 BAD finding (do NOT produce output like this):
-  summary: "Inconsistency in CTS number between property address and assessment row."
-  legal_detail: "Accurate property identification is crucial under the Karnataka
-    Municipal Corporations Act, 1976, for proper tax assessment and ownership records.
-    Discrepancies in property identifiers like CTS numbers can lead to misidentification
-    of the property..."
-  evidence: (no actual values quoted)
-  suggestion: "Verify the correct CTS number with official property records."
-This is USELESS — it names the category of problem and recites the law in the abstract,
-but never tells the reader what the two actual numbers are or where they came from.
+  title: "PROPERTY_MISMATCH"
+  what_was_detected: "CTS number mismatch."
+  evidence: "property_details.cts_number vs assessment_rows[2].value"
+  reason: "Accurate property identification is crucial under the Karnataka Municipal Corporations Act, 1976. Section 58 of the Act dictates proper tax assessments. Discrepancies in CTS numbers can lead to ownership disputes and incorrect tax levies by local authorities."
+  possible_causes: ["Incorrect data entry", "Invalid survey"]
+  impact: "Ownership cannot be verified."
+  verification_steps: ["Verify the correct CTS number."]
+  legal_reference: "Karnataka Municipal Corporations Act, 1976 — Section 58"
 
 GOOD finding (same underlying issue, produced correctly):
-  type: "PROPERTY_MISMATCH"
+  title: "CTS Number Mismatch between Address and Tax Assessment"
   severity: "high"
+  type: "PROPERTY_MISMATCH"
   confidence: 0.92
-  summary: "CTS number mismatch: property_details.cts_number = '1918' vs
-    assessment_rows[2] ('CTS No.') = '1928 Bhag 1'."
-  legal_detail: "Property tax under the Karnataka Municipal Corporations Act, 1976 is
-    levied against a specific CTS number; if 1918 and 1928 Bhag 1 are different survey
-    sub-divisions, this assessment may not correspond to the property under review."
-  evidence: "property_details.cts_number: 1918 | assessment_rows[2].label: 'CTS No.' |
-    assessment_rows[2].value: '1928 Bhag 1'"
-  suggestion: "Confirm with the BBMP Revenue Department or City Survey office which CTS
-    number — 1918 or 1928 Bhag 1 — applies to this property before relying on this
-    assessment as proof of ownership."
+  what_was_detected: "CTS number is recorded as '1918' in property details but '1928 Bhag 1' in the tax assessment row."
+  evidence: "Property Details -> CTS No: '1918' | Tax Assessment Row 2: '1928 Bhag 1'"
+  reason: "Property tax is levied against a specific city survey subdivision. If 1918 and 1928 Bhag 1 are different subdivisions, this tax assessment may not belong to the property under review."
+  possible_causes: ["Property subdivision not updated", "Tax record covers adjacent plot", "Typographical error in tax assessment"]
+  impact: "Property tax cannot be verified as paid for the subject property, and ownership transfer may be delayed."
+  verification_steps: [
+    "Confirm with BBMP Revenue Department which CTS number applies",
+    "Obtain latest City Survey Map/CTS sketch to verify the subdivision number",
+    "Request updated tax assessment card from seller"
+  ]
+  legal_reference: "Section 58, Karnataka Municipal Corporations Act, 1976"
 
-RULES for every finding you produce:
-1. "evidence" MUST be a pipe-separated list of "<field_path>: <exact_value>" pairs taken
-   verbatim from the extracted data. If you cannot quote a real value on both sides of a
-   comparison, do NOT raise the finding — silence is better than a vague finding.
-2. "summary" MUST itself contain the actual conflicting/relevant values, not just name
-   which field has a problem.
-3. "legal_detail" must be 1-2 sentences that apply the statute to THESE SPECIFIC facts.
-   Do not write a general explanation of what a law is "for" — only write legal_detail
-   if you can connect it directly to the actual numbers/names/dates in evidence.
-4. "suggestion" must name a concrete next action and, where relevant, WHO to contact
-   (which office/authority) or WHAT specific document to obtain — never "verify with the
-   relevant authority" as a generic placeholder.
-5. "confidence": use 0.9+ only when both compared values are clearly legible and
-   unambiguous; 0.6-0.8 when there is OCR ambiguity (garbled characters, unclear
-   formatting, partial dates); below 0.5 — do not report it at all, treat it as noise.
-6. Do not raise a finding purely because a field is null/missing UNLESS the absence
-   itself is the legally significant fact (e.g. "guidance_value.value is null — without
-   it, adequacy of stamp duty under Section 45B Karnataka Stamp Act cannot be checked
-   for this Rs. <consideration> transaction"). In that case still name the specific
-   transaction/value that's affected by the absence.
-7. Never pad legal_detail with boilerplate about why correct records "are important in
-   general." If you have nothing case-specific to say, leave legal_detail short and
-   factual instead of inventing generic filler.
-8. If everything checked is consistent, return an empty array. Do not manufacture a
-   finding just to have something to report.
+RULES FOR EVERY FINDING:
+1. title: MUST be specific and describe what exactly is wrong (e.g. 'Survey Number differs between Sale Deed and EC'), NOT a generic category like 'PROPERTY_MISMATCH'.
+2. evidence: MUST be human-readable text quoting exact values and where they appeared. NEVER show JSON paths or technical keys (e.g. show 'Sale Deed Page 3: 663/1 Paiki' instead of 'property_schedule.survey_number').
+3. reason: 1-2 practical, direct sentences explaining why this matters. No statute explanations.
+4. possible_causes: Bullet points/list of practical, likely reasons.
+5. impact: Factual business or legal risk of this finding.
+6. verification_steps: Specific, actionable, concrete next checks. No generic placeholders.
+7. legal_reference: Simple citations (e.g., 'Section 54, Transfer of Property Act'), collapsed by default.
+8. If no issues found, return an empty array [].
 """
 
 # ── Context cache (per doc_type) ───────────────────────────────────────────
@@ -457,7 +454,7 @@ def _build_static_content(doc_type: str) -> str:
         f"- If Kannada text is present, use the English equivalent.\n"
         f"- Do NOT hallucinate values — only extract what is explicitly present.\n"
         f"- verification_notes should be an empty array [] if no issues found.\n"
-        f"- Each verification_note MUST have: type, severity, confidence, summary, legal_detail, evidence, suggestion.\n"
+        f"- Each verification_note MUST have exactly these fields: title, severity, type, confidence, what_was_detected, evidence, reason, possible_causes, impact, verification_steps, legal_reference.\n"
     )
 
 

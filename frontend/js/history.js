@@ -121,11 +121,11 @@ window.HistoryPanel = {
 
     const bundleTabs = bundleDocs.map(d => {
       const type = d.document_type || d.structured_json?.document_type || "Unknown document";
-      return `<button class="history-tab" data-bundle-doc-id="${escHtml(d.doc_id)}">${escHtml(type)}</button>`;
+      return `<button class="doc-tab" data-bundle-doc-id="${escHtml(d.doc_id)}">${escHtml(type)}</button>`;
     }).join("");
 
     const ocrTabs = ocrDocs.map(d =>
-      `<button class="history-tab" data-ocr-doc-id="${escHtml(d.doc_id)}">${escHtml(d.doc_id)} <small>OCR</small></button>`
+      `<button class="doc-tab" data-ocr-doc-id="${escHtml(d.doc_id)}">${escHtml(d.doc_id)} <small>OCR</small></button>`
     ).join("");
 
     let fileTreeHtml = "";
@@ -134,35 +134,45 @@ window.HistoryPanel = {
     }
 
     panel.innerHTML = `
-      <div class="card" style="margin:0">
-        <div class="card-title"><span>Historical case: ${escHtml(caseId)}</span><button class="btn btn-secondary" id="history-close" style="margin-left:auto;padding:6px 12px">Back to upload</button></div>
-        <div>
-          <div class="history-tabs" id="history-tabs">
-            <button class="history-tab active" data-panel="bundle">Bundle</button>
-            <button class="history-tab" data-panel="ocr">OCR Raw</button>
-            <button class="history-tab" data-panel="files">Files</button>
-            <button class="history-tab" data-panel="verification">Verification</button>
-            <button class="history-tab" data-panel="logs">Logs</button>
+      <div class="hist-case-panel">
+        <div class="hist-case-header">
+          <div class="hist-case-header-left">
+            <span class="hist-case-label">Case ID</span>
+            <span class="hist-case-id">${escHtml(caseId)}</span>
           </div>
+          <button class="btn btn-secondary" id="history-close" style="padding:6px 14px;font-size:12px">← Back to Upload</button>
+        </div>
+        <div class="history-tabs" id="history-tabs">
+          <button class="history-tab active" data-panel="bundle">Bundle</button>
+          <button class="history-tab" data-panel="ocr">OCR Raw</button>
+          <button class="history-tab" data-panel="files">Files</button>
+          <button class="history-tab" data-panel="verification">Verification</button>
+          <button class="history-tab" data-panel="logs">Logs</button>
+        </div>
+        <div class="hist-case-body">
           <div id="history-panel-bundle">
-            ${bundleTabs ? `<div style="margin-bottom:12px"><strong>Documents:</strong><br><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">${bundleTabs}</div></div>` : "<p>No structured bundle results found</p>"}
+            ${bundleTabs
+              ? `<div class="hist-section-header">Documents</div><div class="doc-tabs" style="margin-bottom:16px">${bundleTabs}</div>`
+              : `<p class="hist-empty">No structured bundle results found.</p>`}
             <div id="history-doc-detail"></div>
           </div>
           <div id="history-panel-ocr" style="display:none">
-            ${ocrTabs ? `<div style="margin-bottom:12px"><strong>OCR raw files:</strong><br><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">${ocrTabs}</div></div>` : "<p>No OCR raw files found</p>"}
-            <div class="ocr-viewer" id="ocr-viewer">Select a DOC tab above to view OCR text</div>
+            ${ocrTabs
+              ? `<div class="hist-section-header">OCR Raw Files</div><div class="doc-tabs" style="margin-bottom:16px">${ocrTabs}</div>`
+              : `<p class="hist-empty">No OCR raw files found.</p>`}
+            <div class="ocr-viewer" id="ocr-viewer">Select a document tab above to view OCR text.</div>
           </div>
           <div id="history-panel-files" style="display:none">
-            ${fileTreeHtml || "<p>No files found</p>"}
+            ${fileTreeHtml || `<p class="hist-empty">No files found.</p>`}
           </div>
-          <div id="history-panel-verification" style="display:none">
-          </div>
+          <div id="history-panel-verification" style="display:none"></div>
           <div id="history-panel-logs" style="display:none">
-            <div class="ocr-viewer" id="history-log-box" style="font-family:monospace;white-space:pre-wrap;background:#1e1e1e;color:#d4d4d4;padding:16px;border-radius:8px;max-height:400px;overflow-y:auto">Loading logs...</div>
+            <div id="history-log-box" style="font-family:'JetBrains Mono','Fira Code',monospace;white-space:pre-wrap;background:#0f172a;color:#94a3b8;padding:20px;border-radius:8px;max-height:500px;overflow-y:auto;font-size:12px;line-height:1.7">Loading logs...</div>
           </div>
         </div>
       </div>
     `;
+
 
     const activeCase = this.cases.find(c => c.id === caseId);
     const caseStatus = activeCase ? activeCase.status : "unknown";
@@ -204,9 +214,9 @@ window.HistoryPanel = {
       });
     });
 
-    document.querySelectorAll(".history-tab[data-bundle-doc-id]").forEach(btn => {
+    document.querySelectorAll(".doc-tab[data-bundle-doc-id]").forEach(btn => {
       btn.addEventListener("click", () => {
-        document.querySelectorAll(".history-tab[data-bundle-doc-id]").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".doc-tab[data-bundle-doc-id]").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
         const docId = btn.dataset.bundleDocId;
         const detail = document.getElementById("history-doc-detail");
@@ -226,9 +236,9 @@ window.HistoryPanel = {
       });
     });
 
-    document.querySelectorAll(".history-tab[data-ocr-doc-id]").forEach(btn => {
+    document.querySelectorAll(".doc-tab[data-ocr-doc-id]").forEach(btn => {
       btn.addEventListener("click", async () => {
-        document.querySelectorAll(".history-tab[data-ocr-doc-id]").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".doc-tab[data-ocr-doc-id]").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
         const docId = btn.dataset.ocrDocId;
         const ocrViewer = document.getElementById("ocr-viewer");
@@ -242,10 +252,10 @@ window.HistoryPanel = {
 
 
 
-    const firstBundleBtn = document.querySelector(".history-tab[data-bundle-doc-id]");
+    const firstBundleBtn = document.querySelector(".doc-tab[data-bundle-doc-id]");
     if (firstBundleBtn) firstBundleBtn.click();
 
-    const firstOcrBtn = document.querySelector(".history-tab[data-ocr-doc-id]");
+    const firstOcrBtn = document.querySelector(".doc-tab[data-ocr-doc-id]");
     if (firstOcrBtn) firstOcrBtn.click();
   },
 
@@ -318,130 +328,265 @@ window.HistoryPanel = {
     if (!container) return;
 
     if (verifyReport !== null) {
-      const findings = verifyReport.findings || [];
-      const totalFindings = findings.length;
-      const highSeverity = findings.filter(f => f.severity === "high").length;
-      const verdict = verifyReport.verdict || "UNKNOWN";
-      
-      let verdictBadge = "";
-      if (verdict === "PASS") {
-        verdictBadge = '<span class="badge badge-green" style="font-size:14px;padding:4px 10px">PASS ✓</span>';
-      } else if (verdict === "FLAGGED") {
-        verdictBadge = '<span class="badge badge-red" style="font-size:14px;padding:4px 10px">FLAGGED ⚠</span>';
-      } else {
-        verdictBadge = `<span class="badge badge-amber" style="font-size:14px;padding:4px 10px">${escHtml(verdict)}</span>`;
-      }
+      // Set globals so the global drawer/filters work
+      lastVerificationData = verifyReport;
+      verificationFindings = verifyReport.findings || [];
 
-      // Helper function to build findings tables
-      const buildFindingsTable = (list, isPerDocTable) => {
-        if (!list || list.length === 0) return "";
-        const severityColors = { high: "badge-red", medium: "badge-amber", low: "badge-blue" };
-        
-        let tableHtml = `
-          <div style="overflow-x:auto;margin-top:8px;margin-bottom:16px">
-            <table style="width:100%;border-collapse:collapse;font-size:12px">
-              <thead><tr>
-                <th style="background:var(--navy);color:var(--white);padding:8px 10px;text-align:left;width:20%">Type</th>
-                <th style="background:var(--navy);color:var(--white);padding:8px 10px;text-align:left;width:12%">Severity</th>
-                <th style="background:var(--navy);color:var(--white);padding:8px 10px;text-align:left;width:18%">${isPerDocTable ? "Doc ID" : "Doc(s)"}</th>
-                <th style="background:var(--navy);color:var(--white);padding:8px 10px;text-align:left">Summary & Details</th>
-              </tr></thead>
-              <tbody>
-        `;
-        
-        list.forEach(f => {
-          const sevCls = severityColors[f.severity] || "badge-blue";
-          const docList = isPerDocTable 
-            ? (f.source_doc_id || "") 
-            : (f.doc_ids && f.doc_ids.length ? f.doc_ids : f.source_doc_id ? [f.source_doc_id] : []).join(", ");
-            
-          tableHtml += `
-            <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:8px 10px;font-weight:600;white-space:nowrap">${escHtml(f.type)}</td>
-              <td style="padding:8px 10px"><span class="badge ${sevCls}">${escHtml(f.severity)}</span></td>
-              <td style="padding:8px 10px;font-family:monospace;font-size:11px">${escHtml(docList)}</td>
-              <td style="padding:8px 10px">
-                <strong>${escHtml(f.summary)}</strong>
-                <div style="font-size:11px;color:var(--gray);margin-top:2px">${escHtml(f.details || f.legal_detail || "")}</div>
-                ${f.suggestion ? `<div style="font-size:11px;color:var(--blue);margin-top:2px">💡 ${escHtml(f.suggestion)}</div>` : ""}
-              </td>
-            </tr>
-          `;
-        });
-        
-        tableHtml += `</tbody></table></div>`;
-        return tableHtml;
-      };
-
-      // Grouping
-      const crossDocList = findings.filter(f => f.category !== "PER_DOC");
-      const perDocList = findings.filter(f => f.category === "PER_DOC");
-
-      // Group per-doc findings by document type
-      const perDocGrouped = {};
-      perDocList.forEach(f => {
-        const docType = f.source_doc_type || "Other Documents";
-        if (!perDocGrouped[docType]) {
-          perDocGrouped[docType] = [];
-        }
-        perDocGrouped[docType].push(f);
-      });
-
-      // Build Cross-Doc findings HTML
-      let crossDocHtml = "";
-      if (crossDocList.length === 0) {
-        crossDocHtml = `<div style="padding:15px;color:var(--green);font-weight:600;background:var(--lgreen);border-radius:8px;border:1px solid #bbf7d0;margin-top:8px">✅ No cross-document issues found — all documents are consistent</div>`;
-      } else {
-        crossDocHtml = buildFindingsTable(crossDocList, false);
-      }
-
-      // Build Per-Doc findings HTML
-      let perDocHtml = "";
-      if (perDocList.length === 0) {
-        perDocHtml = `<div style="padding:15px;color:var(--green);font-weight:600;background:var(--lgreen);border-radius:8px;border:1px solid #bbf7d0;margin-top:8px">✅ No per-document issues found</div>`;
-      } else {
-        perDocHtml = Object.keys(perDocGrouped).map(docType => {
-          const groupFindings = perDocGrouped[docType];
-          return `
-            <div style="margin-top:14px;margin-bottom:8px">
-              <div style="font-weight:700;color:var(--navy);font-size:13px;border-left:3px solid var(--blue);padding-left:8px;margin-bottom:6px">
-                ${escHtml(docType)} (${groupFindings.length} issue${groupFindings.length > 1 ? "s" : ""})
-              </div>
-              ${buildFindingsTable(groupFindings, true)}
-            </div>
-          `;
-        }).join("");
-      }
-
+      // Render the same tabbed interactive UI structure inside history panel!
       container.innerHTML = `
         <div style="margin-top:12px">
-          <strong>Metrics Overview:</strong>
-          <div class="metrics-row" style="margin-top:6px">
-            <div class="metric-box"><div class="val">${totalFindings}</div><div class="lbl">Total Findings</div></div>
-            <div class="metric-box"><div class="val">${highSeverity}</div><div class="lbl">High Severity</div></div>
-            <div class="metric-box"><div class="val">${verdictBadge}</div><div class="lbl">Verdict</div></div>
-          </div>
-          
-          <div style="margin-top:18px">
-            <h3 style="font-size:14px;color:var(--navy);border-bottom:1px solid var(--border);padding-bottom:6px;margin-bottom:10px">⚖ Cross-Document Verification Results</h3>
-            ${crossDocHtml}
+          <!-- Sticky Navigation Sub-Tabs -->
+          <div class="vr-nav-tabs" id="vr-hist-nav-tabs">
+            <div class="vr-nav-tab active" data-tab="hist-overview">Overview</div>
+            <div class="vr-nav-tab" data-tab="hist-cross-doc">Cross Verification</div>
+            <div class="vr-nav-tab" data-tab="hist-per-doc">Per Document</div>
+            <div class="vr-nav-tab" data-tab="hist-missing-docs">Missing Documents</div>
+            <div class="vr-nav-tab" data-tab="hist-final-report">Final Report</div>
           </div>
 
-          <div style="margin-top:18px">
-            <h3 style="font-size:14px;color:var(--navy);border-bottom:1px solid var(--border);padding-bottom:6px;margin-bottom:10px">🔍 Per-Document Verification Results</h3>
-            ${perDocHtml}
+          <!-- Global Search and Filters -->
+          <div class="vr-filter-bar">
+            <input type="text" class="vr-search-input" id="vr-hist-global-search" placeholder="Search findings...">
+            <select class="vr-filter-select" id="vr-hist-filter-severity">
+              <option value="">All Severities</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
           </div>
 
-          ${verifyReport.final_report ? `
-            <div style="margin-top:18px">
-              <h3 style="font-size:14px;color:var(--navy);border-bottom:1px solid var(--border);padding-bottom:6px;margin-bottom:10px">📝 Legal Narrative Opinion / Report</h3>
-              <div style="white-space:pre-wrap;font-family:inherit;font-size:13px;line-height:1.6;background:var(--lgray);padding:16px;border-radius:8px;border:1px solid var(--border);margin-top:6px">
-                ${escHtml(verifyReport.final_report)}
-              </div>
-            </div>
-          ` : ""}
+          <!-- Tab 1: Overview -->
+          <div class="vr-tab-pane active" id="pane-hist-overview">
+            <div id="vr-hist-dashboard"></div>
+          </div>
+
+          <!-- Tab 2: Cross-Document -->
+          <div class="vr-tab-pane" id="pane-hist-cross-doc">
+            <div id="vr-hist-cross-doc-section"></div>
+          </div>
+
+          <!-- Tab 3: Per-Document -->
+          <div class="vr-tab-pane" id="pane-hist-per-doc">
+            <div id="vr-hist-per-doc-section"></div>
+          </div>
+
+          <!-- Tab 4: Missing Documents -->
+          <div class="vr-tab-pane" id="pane-hist-missing-docs">
+            <div id="vr-hist-missing-docs-section"></div>
+          </div>
+
+          <!-- Tab 5: Final Report -->
+          <div class="vr-tab-pane" id="pane-hist-final-report">
+            <div id="vr-hist-final-opinion"></div>
+          </div>
         </div>
       `;
+
+      // Helper function to render Overview
+      const renderHistOverview = () => {
+        const db = verifyReport.dashboard || {};
+        const isFlagged = db.overall_status !== "PASS";
+        const riskScore = db.risk_score || 0;
+        const statusIcon = isFlagged ? '🔴 FLAGGED' : '🟢 PASS';
+        const actionClass = riskScore >= 70 ? "danger" : riskScore >= 40 ? "caution" : "safe";
+        const topRisks = (verifyReport.cross_doc_findings || []).slice(0, 5);
+
+        document.getElementById("vr-hist-dashboard").innerHTML = `
+          <div class="vr-overview-grid">
+            <div class="vr-overview-main-card">
+              <h3 class="vr-opinion-title">Property Health Check</h3>
+              <div class="vr-stat-box"><span class="vr-stat-lbl">Overall Title Status</span><span class="vr-stat-val" style="color:${isFlagged ? 'var(--red)' : 'var(--green)'}">${statusIcon}</span></div>
+              <div class="vr-stat-box"><span class="vr-stat-lbl">Risk Score</span><span class="vr-stat-val">${riskScore} / 100 (${escHtml(db.risk_label || 'Low Risk')})</span></div>
+              <div class="vr-stat-box"><span class="vr-stat-lbl">Documents Processed</span><span class="vr-stat-val">${db.documents_processed || 0}</span></div>
+              <div class="vr-stat-box"><span class="vr-stat-lbl">Critical / High Risks</span><span class="vr-stat-val" style="color:var(--red)">${db.critical_findings || 0}</span></div>
+              <div class="vr-stat-box"><span class="vr-stat-lbl">Medium Risks</span><span class="vr-stat-val" style="color:var(--amber)">${verifyReport.dashboard?.medium_findings || 0}</span></div>
+              <div class="vr-stat-box"><span class="vr-stat-lbl">Missing Critical Documents</span><span class="vr-stat-val" style="color:var(--red)">${db.missing_documents_count || 0}</span></div>
+              <div class="vr-action-bar ${actionClass}" style="margin-top:16px">${escHtml(db.recommended_action || '')}</div>
+            </div>
+            <div class="vr-overview-side-card">
+              <h3 class="vr-opinion-title">Top Risks Detected</h3>
+              <ul class="vr-risk-list" style="margin:0">
+                ${topRisks.map(r => `
+                  <li style="display:flex;align-items:center;gap:8px;font-size:12px;border-bottom:1px solid var(--border);padding:8px 0">
+                    <span class="vr-issue-dot ${r.severity}"></span>
+                    <div style="flex:1">
+                      <strong>${escHtml(r.title)}</strong>
+                      <div style="color:var(--gray);font-size:10px">${escHtml(r.what_was_found || '')}</div>
+                    </div>
+                  </li>
+                `).join('')}
+              </ul>
+            </div>
+          </div>`;
+      };
+
+      // Helper to render Missing Docs
+      const renderHistMissingDocs = () => {
+        const missing = verifyReport.missing_documents || [];
+        const importantMissing = ["SALE_DEED", "ENCUMBRANCE_CERTIFICATE", "KHATA", "PROPERTY_REGISTER_CARD", "PROPERTY_TAX_ASSESSMENT", "MUTATION", "OCCUPANCY_CERTIFICATE"];
+
+        let missingDocsList = [...missing];
+        const presentDocs = Object.keys(verifyReport.per_doc_findings || {});
+
+        importantMissing.forEach(doc => {
+          const cleanName = doc.replace(/_/g, ' ') || doc;
+          const isPresent = presentDocs.some(p => p.toUpperCase() === doc.toUpperCase());
+          const alreadyAdded = missingDocsList.some(m => m.toUpperCase().includes(doc.toUpperCase()));
+          if (!isPresent && !alreadyAdded) {
+            missingDocsList.push(cleanName.replace(/_/g, ' ').toUpperCase());
+          }
+        });
+
+        document.getElementById("vr-hist-missing-docs-section").innerHTML = `
+          <h3 class="vr-opinion-title">Due Diligence Document Completeness</h3>
+          <p style="font-size:12px;color:var(--gray);margin-bottom:16px">Tiles show documents required for title clearance. Click on any tile to see why it is important.</p>
+          <div class="vr-missing-tile-grid">
+            ${missingDocsList.map(doc => `
+              <div class="vr-missing-tile" onclick="openMissingDocExplanation('${escHtml(doc)}')">
+                <div class="vr-missing-tile-title">${escHtml(doc.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase()))}</div>
+                <div class="vr-missing-tile-status">Missing</div>
+              </div>`).join('')}
+          </div>`;
+      };
+
+      // Helper to render Final opinion
+      const renderHistFinalReport = () => {
+        const opinion = verifyReport.final_opinion || {};
+        const isUnsafe = opinion.final_recommendation !== "SAFE TO PROCEED";
+        document.getElementById("vr-hist-final-opinion").innerHTML = `
+          <div class="vr-opinion">
+            <div class="vr-opinion-title">📜 Final Legal Opinion Summary</div>
+            <p style="font-size:13px;color:var(--gray);margin-bottom:16px">Executive Summary: ${escHtml(opinion.executive_summary || '')}</p>
+            <div class="vr-opinion-grid">
+              <div class="vr-opinion-stat"><div class="val">${opinion.documents_reviewed || 0}</div><div class="lbl">Documents</div></div>
+              <div class="vr-opinion-stat"><div class="val">${opinion.total_findings || 0}</div><div class="lbl">Total Findings</div></div>
+              <div class="vr-opinion-stat"><div class="val" style="color:var(--red)">${opinion.critical || 0}</div><div class="lbl">Critical</div></div>
+              <div class="vr-opinion-stat"><div class="val" style="color:var(--amber)">${opinion.medium || 0}</div><div class="lbl">Medium</div></div>
+              <div class="vr-opinion-stat"><div class="val" style="color:var(--blue)">${opinion.low || 0}</div><div class="lbl">Low</div></div>
+            </div>
+
+            ${(opinion.major_risks || []).length > 0 ? `
+              <div class="vr-field-label" style="margin-top:16px">Major Risks</div>
+              <ul class="vr-risk-list">${opinion.major_risks.map(r => `<li>${escHtml(r)}</li>`).join('')}</ul>
+            ` : ''}
+
+            ${(opinion.recommended_actions || []).length > 0 ? `
+              <div class="vr-field-label" style="margin-top:16px">Recommended Actions</div>
+              <ul class="vr-checklist">${opinion.recommended_actions.map(a => `<li>${escHtml(a)}</li>`).join('')}</ul>
+            ` : ''}
+
+            <div class="vr-final-rec ${isUnsafe ? 'danger' : 'safe'}" style="margin-top:20px">
+              ${isUnsafe ? '❌' : '✅'} ${escHtml(opinion.final_recommendation || '')}
+              <div class="reason">${escHtml(opinion.final_reason || '')}</div>
+            </div>
+          </div>`;
+      };
+
+      // Dynamic filtering and rendering inside history
+      let histSearchQuery = "";
+      let histFilterSeverity = "";
+      let histActivePerDocType = null;
+
+      const applyHistFiltersAndRender = () => {
+        const search = histSearchQuery.toLowerCase().trim();
+        const matchesHistFilter = (f) => {
+          if (histFilterSeverity && f.severity !== histFilterSeverity) return false;
+          if (search) {
+            const matchText = [f.title, f.what_was_found, f.why_flagged].join(' ').toLowerCase();
+            if (!matchText.includes(search)) return false;
+          }
+          return true;
+        };
+
+        // Cross-doc
+        const cross = (verifyReport.cross_doc_findings || []).filter(matchesHistFilter);
+        let crossHtml = '<h3 class="vr-opinion-title">Cross-Document Inconsistencies</h3>';
+        if (cross.length > 0) {
+          crossHtml += cross.map(f => buildIssueRow(f)).join('');
+        } else {
+          crossHtml += '<p style="color:var(--gray);font-size:13px;padding:12px">No matching cross-document inconsistencies.</p>';
+        }
+        document.getElementById("vr-hist-cross-doc-section").innerHTML = crossHtml;
+
+        // Per-doc
+        const perDocMap = verifyReport.per_doc_findings || {};
+        const perDocKeys = Object.keys(perDocMap);
+        if (perDocKeys.length > 0 && !histActivePerDocType) {
+          histActivePerDocType = perDocKeys[0];
+        }
+
+        let perDocHtml = `
+          <h3 class="vr-opinion-title">Individual Document Verifications</h3>
+          <div class="vr-split-layout">
+            <div class="vr-split-sidebar">
+              ${perDocKeys.map(dt => {
+                const group = perDocMap[dt] || {};
+                const issues = (group.issues || []).filter(matchesHistFilter);
+                const docLabel = dt.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+                const activeClass = dt === histActivePerDocType ? "active" : "";
+                return `
+                  <div class="vr-split-sidebar-item ${activeClass}" id="hist-sidebar-item-${dt}">
+                    <span>${escHtml(docLabel)}</span>
+                    <span class="vr-split-sidebar-badge">${issues.length}</span>
+                  </div>`;
+              }).join('')}
+            </div>
+            <div class="vr-split-content" id="vr-hist-split-content">
+              ${histActivePerDocType ? (() => {
+                const group = perDocMap[histActivePerDocType] || {};
+                const issues = (group.issues || []).filter(matchesHistFilter);
+                if (issues.length > 0) {
+                  return issues.map(f => buildIssueRow(f)).join('');
+                }
+                return '<p style="color:var(--gray);font-size:13px;padding:12px">No issues flagged in this document.</p>';
+              })() : '<p style="color:var(--gray);font-size:13px;padding:12px">No document selected.</p>'}
+            </div>
+          </div>`;
+        document.getElementById("vr-hist-per-doc-section").innerHTML = perDocHtml;
+
+        // Bind sidebar item clicks
+        perDocKeys.forEach(dt => {
+          const el = document.getElementById(`hist-sidebar-item-${dt}`);
+          if (el) {
+            el.addEventListener("click", () => {
+              histActivePerDocType = dt;
+              applyHistFiltersAndRender();
+            });
+          }
+        });
+      };
+
+      // Initial pane rendering
+      renderHistOverview();
+      renderHistMissingDocs();
+      renderHistFinalReport();
+      applyHistFiltersAndRender();
+
+      // Bind Tab Navigation Click events for history
+      document.getElementById("vr-hist-nav-tabs").addEventListener("click", e => {
+        const tabEl = e.target.closest(".vr-nav-tab");
+        if (tabEl) {
+          container.querySelectorAll("#vr-hist-nav-tabs .vr-nav-tab").forEach(t => t.classList.remove("active"));
+          tabEl.classList.add("active");
+          const targetTab = tabEl.dataset.tab;
+          container.querySelectorAll(".vr-tab-pane").forEach(p => p.classList.remove("active"));
+          document.getElementById(`pane-${targetTab}`).classList.add("active");
+        }
+      });
+
+      // Bind Search events
+      document.getElementById("vr-hist-global-search").addEventListener("input", e => {
+        histSearchQuery = e.target.value;
+        applyHistFiltersAndRender();
+      });
+
+      // Bind Severity Select events
+      document.getElementById("vr-hist-filter-severity").addEventListener("change", e => {
+        histFilterSeverity = e.target.value;
+        applyHistFiltersAndRender();
+      });
+
     } else {
       const isComplete = ["complete", "completed", "partial"].includes(caseStatus);
       if (isComplete) {
@@ -451,7 +596,6 @@ window.HistoryPanel = {
             <button class="btn btn-primary" id="run-verification-btn">🧪 Run Verification</button>
           </div>
         `;
-        
         const btn = document.getElementById("run-verification-btn");
         if (btn) {
           btn.addEventListener("click", async () => {
@@ -475,7 +619,6 @@ window.HistoryPanel = {
                   <button class="btn btn-primary" id="run-verification-btn">🧪 Run Verification</button>
                 </div>
               `;
-              HistoryPanel.renderVerificationReport(caseId, null, caseStatus);
             }
           });
         }
