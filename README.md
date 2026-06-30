@@ -1,95 +1,161 @@
-# Property OCR & Verification Pipeline
+# Property Verification Engine
 
-An end-to-end document processing and intelligent verification pipeline for Karnataka property documents. The system extracts structured JSON from scanned PDFs using Sarvam OCR, performs single-pass LLM structuring and per-document verification (Groq / Gemini), and executes a single-pass cross-document legal verification.
+An end-to-end document processing and intelligent legal verification platform for Karnataka property documents. The system extracts structured JSON from scanned PDFs using Sarvam OCR, performs single-pass LLM structuring and per-document verification (Groq / Gemini), executes cross-document legal verification, and presents findings in a premium enterprise-grade admin dashboard UI.
 
-## 🏗️ V2 System Architecture
+---
+
+## 🏗️ System Architecture
 
 ```mermaid
 flowchart TD
-    subgraph Frontend["Frontend Layer (Single-Page App)"]
-        UI["📄 web_ui (index.html)<br/>jQuery / TailwindCSS"]
+    subgraph Frontend["Frontend Layer (Single-Page Admin Dashboard)"]
+        UI["🖥️ Property Verification Engine UI\nindex.html + Vanilla JS + CSS\nCollapsible sidebar · Tab navigation\nVerification dashboard · History panel"]
     end
 
     subgraph API["API Gateway Layer (FastAPI)"]
-        R_CASES["📁 Cases Router<br/>/api/upload<br/>/api/process<br/>/api/status<br/>/api/retry"]
-        R_DOCS["📄 Documents Router<br/>/api/result<br/>/api/case/*/bundle<br/>/api/case/*/doc/*/{replace,skip}"]
-        R_VERIFY["⚖️ Verification Router<br/>/api/verify/*<br/>/api/verify/*/feedback<br/>/api/analytics/token-usage"]
+        R_CASES["📁 Cases Router\n/api/upload\n/api/process\n/api/status\n/api/retry"]
+        R_DOCS["📄 Documents Router\n/api/result\n/api/case/*/bundle\n/api/case/*/doc/*/{replace,skip}"]
+        R_VERIFY["⚖️ Verification Router\n/api/verify/*\n/api/verify/*/feedback\n/api/analytics/token-usage"]
     end
 
     subgraph Orchestration["Async Task Queue"]
-        CELERY["Celery Workers<br/>backend/tasks/pipeline_tasks.py"]
+        CELERY["Celery Workers\nbackend/tasks/pipeline_tasks.py"]
         REDIS_BROKER[(Redis Broker / State Store)]
     end
 
     subgraph Pipeline["V2 Linear Processing Pipeline"]
-        PREPROC["① Preprocess<br/>(Denoise & Hough Deskew)<br/>backend/services/preprocessor.py"]
-        OCR["② Sarvam OCR<br/>(Scanned PDF ➔ Raw Text)<br/>backend/services/sarvam_ocr.py"]
-        CLASSIFY["③ Classify<br/>(Keyword classification)<br/>backend/services/doc_classifier.py"]
-        STRUCTURE["④ Single-Pass Structurer & Per-Doc Verifier<br/>(Groq primary, Gemini fallback)<br/>backend/services/{groq,gemini}_structurer.py"]
+        PREPROC["① Preprocess\n(Denoise & Hough Deskew)\nbackend/services/preprocessor.py"]
+        OCR["② Sarvam OCR\n(Scanned PDF ➔ Raw Text)\nbackend/services/sarvam_ocr.py"]
+        CLASSIFY["③ Classify\n(Keyword classification)\nbackend/services/doc_classifier.py"]
+        STRUCTURE["④ Single-Pass Structurer & Per-Doc Verifier\n(Groq primary, Gemini fallback)\nbackend/services/{groq,gemini}_structurer.py"]
     end
 
     subgraph Verification["Intelligent Verification Layer"]
-        V_ENG["Verification Orchestrator<br/>backend/services/verification_engine.py"]
-        CROSS_DOC["Cross-Doc Verifier<br/>(Groq Llama-3.3-70b-versatile)<br/>backend/services/cross_doc_verifier.py"]
-        VECTOR_DB[("Qdrant Vector Store<br/>Persistent human feedback")]
+        V_ENG["Verification Orchestrator\nbackend/services/verification_engine.py"]
+        CROSS_DOC["Cross-Doc Verifier\n(Groq Llama-3.3-70b-versatile)\nbackend/services/cross_doc_verifier.py"]
+        VECTOR_DB[("Qdrant Vector Store\nPersistent human feedback")]
     end
 
     subgraph Storage["Storage Layer"]
-        MYSQL[("MySQL (property_ocr_v2)<br/>Cases, Documents & Reports")]
-        FS[("File System<br/>Raw uploads & OCR outputs")]
+        MYSQL[("MySQL (property_ocr_v2)\nCases, Documents & Reports")]
+        FS[("File System\nRaw uploads & OCR outputs")]
     end
 
-    %% Flow lines
     UI -->|"HTTP API Requests"| API
     R_CASES -->|"Dispatches tasks"| CELERY
     CELERY -->|"Reads/writes status"| REDIS_BROKER
-    
-    %% Processing chain
     CELERY --> PREPROC --> OCR --> CLASSIFY --> STRUCTURE
-    
-    %% DB writes
     STRUCTURE -->|"Saves structured data & notes"| MYSQL
     STRUCTURE -->|"Saves OCR output"| FS
-    
-    %% Verification flow
     R_VERIFY --> V_ENG
     V_ENG -->|"1. Fetches case bundle"| MYSQL
     V_ENG -->|"2. Generates report"| CROSS_DOC
     CROSS_DOC -->|"Queries learnings"| VECTOR_DB
     V_ENG -->|"3. Stores final report"| MYSQL
-    
-    %% Feedback flow
     R_VERIFY -->|"Post-verification corrections"| VECTOR_DB
 ```
 
-### Key Component Architecture
+### Key Components
 
 | Component | Technology | Description |
 |---|---|---|
-| **Frontend** | HTML5, Vanilla JS, CSS | Interactive single-page UI for case uploads, real-time pipeline status tracking, structured data viewing, and interactive verification reports. |
-| **API Layer** | FastAPI, Uvicorn | High-performance async REST API routing case uploads, document actions, analytics, and verification triggers. |
-| **Async Tasks** | Celery, Redis | Manages asynchronous background processing (preprocessing, OCR, classification, and structuring) in parallel for high throughput. |
-| **OCR Service** | Sarvam AI Vision OCR | High-accuracy OCR for mixed English/Kannada text, including table structure extraction. |
-| **Structuring** | Groq (Llama-3) / Gemini | Single-pass extraction of key fields into JSON schemas, while simultaneously generating per-document verification notes. |
-| **Verification Engine** | Groq (Llama 3.3 70B) | Simple, linear orchestrator that pulls the structured case bundle and runs a single LLM call for cross-doc checks. |
-| **Vector DB** | Qdrant (Persistent) | Stores human corrections to align the system and adjust verification rules on-the-fly. |
-| **Relational Database** | MySQL (V2 Schema) | Unified database tables for cases, documents, cross-doc reports, and human feedback. |
+| **Frontend UI** | HTML5, Vanilla JS, CSS | Premium admin dashboard — collapsible sidebar, tab navigation, verification report panels, historical case viewer, grouped field summary property sheet |
+| **API Layer** | FastAPI, Uvicorn | Async REST API for case uploads, document actions, analytics, and verification triggers |
+| **Async Tasks** | Celery, Redis | Background processing — preprocessing, OCR, classification, and structuring in parallel |
+| **OCR Service** | Sarvam AI Vision OCR | High-accuracy OCR for mixed English/Kannada text including table structure extraction |
+| **Structuring** | Groq (Llama-3) / Gemini | Single-pass JSON field extraction with simultaneous per-document verification notes |
+| **Verification Engine** | Groq (Llama 3.3 70B) | Cross-document legal checker — owner consistency, stamp duty, area, registration date checks |
+| **Vector DB** | Qdrant (Persistent) | Stores human corrections to align the system and adjust verification rules on-the-fly |
+| **Relational DB** | MySQL (V2 Schema) | Unified tables for cases, documents, cross-doc reports, and human feedback |
 
-### 🧠 Advanced Intelligent Verification Features
+---
 
-*   **100% LLM-Based Per-Document Checks**: Per-document verification checks (including stamp duty ratios, witness counts, GPA authorizations, and date ordering) are executed completely within the LLM prompt layer. All computations (e.g. `"30 x 40 = 1200"` or `"168000 / 2500000 x 100 = 6.72%"`) are shown verbatim inside the `evidence` field for transparency.
-*   **Context Cache Auto-Invalidation**: To reduce latency and API costs, static instructions and schemas are cached. The system automatically computes an MD5 checksum of the static prompt contents and invalidates/rebuilds the cache on Gemini's servers if rules are modified.
-*   **Unified MySQL V2 Database**: All cases, document status indices, and verifications write directly to `mysql_store.py` (which defaults to the `property_ocr_v2` database), supporting both `MYSQL_DATABASE` and `MYSQL_DATABASE_V2` environment flags.
+## 🖥️ Frontend UI — Admin Dashboard
+
+The frontend is a single-page admin dashboard (`frontend/index.html`) that provides a complete property verification workspace.
+
+### Layout
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  ☰  [Logo]  Property Verification Engine      ● API keys loaded     │  ← Fixed header
+├──────────────┬──────────────────────────────────────────────────────┤
+│              │                                                       │
+│  CASE        │   [Active content area — scrolls independently]      │
+│  HISTORY     │                                                       │
+│              │   Upload → Processing → OCR → Verification           │
+│  6B435620    │                    OR                                 │
+│  972AC7D9    │   Historical Case Detail Panel                       │
+│  33D320A2    │                                                       │
+│  ...         │                                                       │
+│              │                                                       │
+└──────────────┴──────────────────────────────────────────────────────┘
+```
+
+- **Header** — Pinned to top. Shows logo, app name, API health indicator.
+- **`☰` Sidebar toggle** — Collapses/expands the Case History panel with a smooth cubic-bezier animation. When collapsed, the main content area fills 100% width.
+- **Sidebar** — Case History list with status badges (complete / flagged / processing). Click any case to open its detail panel.
+- **Main content** — Scrolls independently. Shows the upload stage, processing pipeline, or historical case detail depending on context.
+
+### Case History Detail Panel
+
+When you click a case in the sidebar, the detail panel opens full-width with:
+
+```
+CASE ID
+6B435620                                              ← Back to Upload
+
+Bundle  OCR Raw  Files  Verification  Logs           ← Text underline nav
+
+DOCUMENTS
+[SALE_DEED]  [E_PAYMENT_RECEIPT]                      ← Doc tag selectors
+
+243541922.pdf  E_PAYMENT_RECEIPT  Pages:1  ✓ complete ← Doc info bar
+
+  🗄 Structured JSON  |  📋 Field Summary             ← Segment control
+```
+
+**Field Summary** renders a **grouped property sheet** — fields auto-grouped by JSON key prefix (e.g. `Notes`, `Payment Details`, `General`) with:
+- Sticky colored group header with dot indicator and field count badge
+- Each field as a horizontal row: **220px key column** (gray) | **value column** (dark text)
+- Row hover highlights, max 540px scrollable height
+
+**Verification tab** shows a rich dashboard with:
+- Risk score, document count, issue count metric tiles
+- Per-document findings table with severity badges and View drawer
+- Cross-document inconsistencies panel
+- Missing documents section
+- Final Legal Opinion with major risks, recommended actions, and pass/fail verdict
+
+### Navigation Hierarchy
+
+| Level | Style | Used for |
+|---|---|---|
+| Primary tabs | Text underline (GitHub style) | Bundle / OCR Raw / Files / Verification / Logs |
+| Document selectors | Slim bordered tag badges | SALE_DEED / E_PAYMENT_RECEIPT etc. |
+| View toggle | iOS segment control | Structured JSON / Field Summary |
+| Verification sub-tabs | Pill segment control | Overview / Cross-Verification / Per Document / Missing / Final Report |
+
+---
+
+## 🧠 Intelligent Verification Features
+
+- **100% LLM-Based Per-Document Checks** — Stamp duty ratios, witness counts, GPA authorizations, and date ordering are verified entirely within LLM prompts. Computations (e.g. `168000 / 2500000 × 100 = 6.72%`) appear verbatim in the `evidence` field for full transparency.
+- **Context Cache Auto-Invalidation** — Static instructions and schemas are cached. An MD5 checksum of prompt contents triggers automatic cache invalidation/rebuild on Gemini's servers when rules change.
+- **Human Feedback Loop** — Post-verification corrections are stored in Qdrant and queried during future verifications to continuously improve accuracy.
+- **Rich Historical Report Enrichment** — The `GET /api/verify/{case_id}/report` endpoint dynamically formats stored findings into the full dashboard payload (metrics, risk scores, per-doc findings, missing docs) — identical to the live pipeline output.
 
 ---
 
 ## 📄 Supported Document Types
 
-- **Ownership & Transfer**: `SALE_DEED`, `GIFT_DEED`, `PARTITION_DEED`
-- **Government Registry**: `ENCUMBRANCE_CERTIFICATE` (EC), `PROPERTY_REGISTER_CARD` (PRC)
-- **Municipal & Tax**: `KHATA`, `PROPERTY_TAX_ASSESSMENT`, `TAX_RECEIPT` / `E_PAYMENT_RECEIPT`
-- **Revenues & Clearances**: `MUTATION`, `CONVERSION_ORDER`, `POSSESSION_CERTIFICATE`
-- **Others**: `RTC_PAHANI`, `LEGAL_HEIR_CERTIFICATE`, `COURT_ORDER`
+| Category | Types |
+|---|---|
+| **Ownership & Transfer** | `SALE_DEED`, `GIFT_DEED`, `PARTITION_DEED` |
+| **Government Registry** | `ENCUMBRANCE_CERTIFICATE` (EC), `PROPERTY_REGISTER_CARD` (PRC) |
+| **Municipal & Tax** | `KHATA`, `PROPERTY_TAX_ASSESSMENT`, `TAX_RECEIPT`, `E_PAYMENT_RECEIPT` |
+| **Revenue & Clearances** | `MUTATION`, `CONVERSION_ORDER`, `POSSESSION_CERTIFICATE` |
+| **Legal & Others** | `RTC_PAHANI`, `LEGAL_HEIR_CERTIFICATE`, `COURT_ORDER` |
 
 ---
 
@@ -102,13 +168,15 @@ flowchart TD
 - Redis Server
 
 ### 1. Database Setup
-Ensure you have MySQL running, then create the V2 database:
+
 ```sql
 CREATE DATABASE IF NOT EXISTS property_ocr_v2 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
 ### 2. Environment Configuration
+
 Create a `.env` file in the root directory:
+
 ```env
 # API Keys
 SARVAM_API_KEY=your_sarvam_api_key
@@ -122,7 +190,7 @@ MYSQL_USER=root
 MYSQL_PASSWORD=your_mysql_password
 MYSQL_DATABASE_V2=property_ocr_v2
 
-# Redis configuration
+# Redis
 REDIS_URL=redis://localhost:6379/0
 
 # Optional Model Overrides
@@ -130,6 +198,7 @@ GEMINI_MODEL=gemini-2.5-flash
 ```
 
 ### 3. Install Dependencies
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -138,47 +207,55 @@ pip install -r requirements.txt
 
 ## 🚀 Running the Application
 
-For local development, run the following commands in separate terminal sessions:
+Run the following in **three separate terminal sessions**:
 
-1. **Redis Server:**
-   ```powershell
-   & "$env:TEMP\redis\redis-server.exe"
-   ```
+**1. Redis Server:**
+```powershell
+& "$env:TEMP\redis\redis-server.exe"
+```
 
-2. **Celery Worker:**
-   ```powershell
-   .\venv\Scripts\celery.exe -A backend.celery_app worker --loglevel=info --pool=solo --concurrency=1
-   ```
+**2. Celery Worker:**
+```powershell
+.\venv\Scripts\celery.exe -A backend.celery_app worker --loglevel=info --pool=solo --concurrency=1
+```
 
-3. **FastAPI Backend (Uvicorn):**
-   ```powershell
-   .\venv\Scripts\uvicorn.exe backend.main:app --reload --port 8000
-   ```
+**3. FastAPI + Frontend (Uvicorn):**
+```powershell
+.\venv\Scripts\uvicorn.exe backend.main:app --reload --port 8000
+```
 
-The frontend can be accessed by opening `frontend/index.html` in your browser.
+Open **http://localhost:8000** in your browser. The frontend is served as static files by FastAPI.
 
 ---
 
 ## 🔌 API Endpoints
 
 ### Pipeline & Cases
-* **`POST /api/upload`**: Upload documents and initialize a case.
-* **`POST /api/process/{case_id}`**: Trigger async OCR and structuring pipeline.
-* **`GET /api/status/{case_id}`**: Retrieve real-time case processing status.
-* **`POST /api/retry/{case_id}`**: Retry processing for failed documents.
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/upload` | Upload PDFs and initialize a new case |
+| `POST` | `/api/process/{case_id}` | Trigger async OCR + structuring pipeline |
+| `GET` | `/api/status/{case_id}` | Real-time pipeline status |
+| `POST` | `/api/retry/{case_id}` | Retry failed documents |
 
 ### Documents & Structured Data
-* **`GET /api/case/{case_id}/bundle`**: Get all processed documents in a case.
-* **`GET /api/result/{case_id}/{doc_id}`**: Retrieve OCR text and structured JSON for a document.
-* **`POST /api/case/{case_id}/doc/{doc_id}/replace`**: Replace a document file.
-* **`POST /api/case/{case_id}/doc/{doc_id}/skip`**: Mark a document to be skipped.
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/case/{case_id}/bundle` | All processed documents in a case |
+| `GET` | `/api/result/{case_id}/{doc_id}` | OCR text + structured JSON for one document |
+| `GET` | `/api/case/{case_id}/ocr-raw` | List merged OCR files for a case |
+| `GET` | `/api/case/{case_id}/doc/{doc_id}/ocr-raw` | Full OCR text for a specific document |
+| `POST` | `/api/case/{case_id}/doc/{doc_id}/replace` | Replace a document file |
+| `POST` | `/api/case/{case_id}/doc/{doc_id}/skip` | Mark a document as skipped |
 
-### Intelligent Verification & Analytics
-* **`POST /api/verify/{case_id}`**: Execute cross-document verification checks.
-* **`GET /api/verify/{case_id}/report`**: Retrieve the latest cross-document verification report.
-* **`GET /api/verify/{case_id}/per-doc`**: Retrieve per-document verification notes.
-* **`POST /api/verify/{case_id}/feedback`**: Submit human feedback (stored in Qdrant).
-* **`GET /api/analytics/token-usage`**: Fetch per-case token, latency, and cost stats.
+### Verification & Analytics
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/verify/{case_id}` | Run cross-document verification |
+| `GET` | `/api/verify/{case_id}/report` | Latest verification report (full enriched payload) |
+| `GET` | `/api/verify/{case_id}/per-doc` | Per-document verification notes |
+| `POST` | `/api/verify/{case_id}/feedback` | Submit human feedback (stored in Qdrant) |
+| `GET` | `/api/analytics/token-usage` | Per-case token, latency, and cost stats |
 
 ---
 
@@ -188,14 +265,14 @@ The frontend can be accessed by opening `frontend/index.html` in your browser.
 property_ocr/
 │
 ├── backend/
-│   ├── main.py                    # FastAPI entrypoint
-│   ├── celery_app.py              # Celery configuration
-│   ├── logger.py                  # Logger utility
+│   ├── main.py                        # FastAPI entrypoint ("Property Verification Engine")
+│   ├── celery_app.py                  # Celery configuration
+│   ├── logger.py                      # Logging utility
 │   │
 │   ├── routers/
-│   │   ├── cases.py               # Pipeline & upload handlers
-│   │   ├── documents.py           # Document retrieval & edits
-│   │   └── verification.py        # Verification & analytics endpoints
+│   │   ├── cases.py                   # Upload & pipeline handlers
+│   │   ├── documents.py               # Document retrieval, OCR raw, replace/skip
+│   │   └── verification.py            # Verification, feedback & analytics endpoints
 │   │
 │   ├── services/
 │   │   ├── pipeline_orchestrator.py   # Celery task coordination
@@ -205,22 +282,41 @@ property_ocr/
 │   │   ├── doc_classifier.py          # Document type classifier
 │   │   ├── groq_structurer.py         # Primary Groq JSON structurer
 │   │   ├── gemini_structurer.py       # Fallback Gemini JSON structurer
-│   │   ├── cross_doc_verifier.py      # Groq cross-document checker
-│   │   ├── verification_engine.py     # Verification orchestrator
-│   │   ├── vector_store.py            # Qdrant learning repository
+│   │   ├── cross_doc_verifier.py      # Cross-document legal checker
+│   │   ├── verification_engine.py     # Verification orchestrator + payload formatter
+│   │   ├── vector_store.py            # Qdrant human-feedback repository
 │   │   └── mysql_store.py             # Unified MySQL V2 store wrapper
 │   │
 │   └── tasks/
-│       └── pipeline_tasks.py      # Celery task executors
+│       └── pipeline_tasks.py          # Celery task executors
 │
-├── frontend/                      # Web interface files
-│   ├── index.html                 # Single-page dashboard
+├── frontend/
+│   ├── index.html                     # Single-page admin dashboard
+│   ├── logo.png                       # Custom branding logo
+│   ├── css/
+│   │   └── styles.css                 # Full design system (1200+ lines)
 │   └── js/
-│       ├── api.js                 # API call handlers
-│       ├── app.js                 # App event bindings
-│       ├── history.js             # Historical cases view
-│       └── ui.js                  # Dynamic rendering methods
+│       ├── api.js                     # API call handlers
+│       ├── app.js                     # App events, sidebar toggle, filter logic
+│       ├── history.js                 # Historical case panel & polling
+│       └── ui.js                      # Dynamic rendering — doc panels, field summary
 │
-├── requirements.txt               # App dependencies list
-└── README.md                      # System manual
+├── uploads/                           # Uploaded PDF storage
+├── requirements.txt                   # Python dependencies
+└── README.md                          # This file
 ```
+
+---
+
+## 🎨 UI Design System
+
+The frontend uses a custom CSS design system (`frontend/css/styles.css`) with:
+
+- **Color tokens** — `--navy`, `--blue`, `--lblue`, `--green`, `--red`, `--amber`, `--gray`, `--border`, `--lgray`
+- **Typography** — `Segoe UI` / system-ui, `JetBrains Mono` for code/IDs
+- **Components** — Cards, badges, metric tiles, step indicators, drawers, property sheets, finding rows, risk lists
+- **Layout** — 100vh fixed flexbox grid, collapsible sidebar with cubic-bezier transitions, independent scroll panels
+
+---
+
+*Last updated: 30 June 2026*
