@@ -336,12 +336,15 @@ window.HistoryPanel = {
       container.innerHTML = `
         <div style="margin-top:12px">
           <!-- Sticky Navigation Sub-Tabs -->
-          <div class="vr-nav-tabs" id="vr-hist-nav-tabs">
-            <div class="vr-nav-tab active" data-tab="hist-overview">Overview</div>
-            <div class="vr-nav-tab" data-tab="hist-cross-doc">Cross Verification</div>
-            <div class="vr-nav-tab" data-tab="hist-per-doc">Per Document</div>
-            <div class="vr-nav-tab" data-tab="hist-missing-docs">Missing Documents</div>
-            <div class="vr-nav-tab" data-tab="hist-final-report">Final Report</div>
+          <div class="vr-nav-tabs-bar">
+            <div class="vr-nav-tabs" id="vr-hist-nav-tabs">
+              <div class="vr-nav-tab active" data-tab="hist-overview">Overview</div>
+              <div class="vr-nav-tab" data-tab="hist-cross-doc">Cross Verification</div>
+              <div class="vr-nav-tab" data-tab="hist-per-doc">Per Document</div>
+              <div class="vr-nav-tab" data-tab="hist-missing-docs">Missing Documents</div>
+              <div class="vr-nav-tab" data-tab="hist-final-report">Final Report</div>
+            </div>
+            <button class="btn-pdf-download" id="btn-hist-download-pdf" title="Download PDF Report">⬇ PDF Report</button>
           </div>
 
           <!-- Global Search and Filters -->
@@ -586,6 +589,29 @@ window.HistoryPanel = {
         histFilterSeverity = e.target.value;
         applyHistFiltersAndRender();
       });
+
+      // Bind PDF download button
+      const histPdfBtn = document.getElementById("btn-hist-download-pdf");
+      if (histPdfBtn) {
+        histPdfBtn.addEventListener("click", () => {
+          histPdfBtn.textContent = "⏳ Generating…";
+          histPdfBtn.disabled = true;
+          setTimeout(() => {
+            try {
+              if (window.downloadVerificationPDF) {
+                window.downloadVerificationPDF(verifyReport, caseId);
+              } else {
+                alert("PDF library not available. Please refresh the page.");
+              }
+            } catch (e) {
+              console.error("PDF generation failed:", e);
+              alert("PDF generation failed: " + e.message);
+            }
+            histPdfBtn.textContent = "⬇ PDF Report";
+            histPdfBtn.disabled = false;
+          }, 50);
+        });
+      }
 
     } else {
       const isComplete = ["complete", "completed", "partial"].includes(caseStatus);

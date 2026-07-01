@@ -220,8 +220,11 @@ property_ocr/
 │   │   ├── vector_store.py            # Qdrant human-feedback repository
 │   │   └── mysql_store.py             # Unified MySQL V2 store wrapper
 │   │
-│   └── tasks/
-│       └── pipeline_tasks.py          # Celery task executors
+│   ├── tasks/
+│   │   └── pipeline_tasks.py          # Celery task executors
+│   │
+│   └── utils/
+│       └── file_utils.py              # File handling utility helpers
 │
 ├── frontend/
 │   ├── index.html                     # Single-page admin dashboard
@@ -232,6 +235,7 @@ property_ocr/
 │       ├── api.js                     # API call handlers
 │       ├── app.js                     # App events, sidebar toggle, filter logic
 │       ├── history.js                 # Historical case panel & polling
+│       ├── pdf_report.js              # Client-side PDF report generation
 │       └── ui.js                      # Dynamic rendering — doc panels, field summary
 │
 ├── uploads/                           # Uploaded PDF storage
@@ -252,4 +256,4 @@ The frontend uses a custom CSS design system (`frontend/css/styles.css`) with:
 
 ---
 
-*Last updated: 30 June 2026*
+*Last updated: 1 July 2026*

@@ -951,4 +951,27 @@ document.addEventListener("DOMContentLoaded", () => {
   if (window.HistoryPanel) {
     HistoryPanel.init();
   }
+
+  // PDF download button
+  const pdfBtn = document.getElementById("btn-download-pdf");
+  if (pdfBtn) {
+    pdfBtn.addEventListener("click", () => {
+      if (!lastVerificationData) {
+        alert("No verification report loaded. Please run verification first.");
+        return;
+      }
+      pdfBtn.textContent = "⏳ Generating…";
+      pdfBtn.disabled = true;
+      setTimeout(() => {
+        try {
+          window.downloadVerificationPDF(lastVerificationData, currentCaseId || "Unknown");
+        } catch (e) {
+          console.error("PDF generation failed:", e);
+          alert("PDF generation failed: " + e.message);
+        }
+        pdfBtn.textContent = "⬇ PDF Report";
+        pdfBtn.disabled = false;
+      }, 50);
+    });
+  }
 });

@@ -527,18 +527,47 @@
   .file-tree-nested { padding-left: 20px; }
 
   /* ── Right panel ── *//* ── Sticky Navigation Sub-Tabs ── */
-.vr-nav-tabs {
+.vr-nav-tabs-bar {
   display: flex;
-  gap: 4px;
-  background: var(--lgray);
-  border: 1px solid var(--border);
-  padding: 4px;
-  border-radius: 8px;
+  align-items: center;
+  gap: 10px;
   position: sticky;
   top: 0;
   z-index: 100;
   margin-bottom: 20px;
+  background: var(--white);
+  padding: 4px 0;
 }
+.vr-nav-tabs {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  background: var(--lgray);
+  border: 1px solid var(--border);
+  padding: 4px;
+  border-radius: 8px;
+}
+.btn-pdf-download {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 14px;
+  background: var(--navy);
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  transition: background 0.15s, transform 0.1s;
+  white-space: nowrap;
+}
+.btn-pdf-download:hover { background: #1e40af; transform: translateY(-1px); }
+.btn-pdf-download:active { transform: translateY(0); }
+.btn-pdf-download:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
 .vr-nav-tab {
   flex: 1;
   text-align: center;

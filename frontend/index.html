@@ -139,13 +139,16 @@
       <div id="verify-results" class="hidden">
         
         <!-- Sticky Navigation Sub-Tabs -->
-        <div class="vr-nav-tabs" id="vr-nav-tabs">
-          <div class="vr-nav-tab active" data-tab="overview">Overview</div>
-          <div class="vr-nav-tab" data-tab="cross-doc">Cross Verification</div>
-          <div class="vr-nav-tab" data-tab="per-doc">Per Document</div>
-          <div class="vr-nav-tab" data-tab="missing-docs">Missing Documents</div>
-          <div class="vr-nav-tab" data-tab="final-report">Final Report</div>
-          <div class="vr-nav-tab" data-tab="human-review">Human Review</div>
+        <div class="vr-nav-tabs-bar">
+          <div class="vr-nav-tabs" id="vr-nav-tabs">
+            <div class="vr-nav-tab active" data-tab="overview">Overview</div>
+            <div class="vr-nav-tab" data-tab="cross-doc">Cross Verification</div>
+            <div class="vr-nav-tab" data-tab="per-doc">Per Document</div>
+            <div class="vr-nav-tab" data-tab="missing-docs">Missing Documents</div>
+            <div class="vr-nav-tab" data-tab="final-report">Final Report</div>
+            <div class="vr-nav-tab" data-tab="human-review">Human Review</div>
+          </div>
+          <button class="btn-pdf-download" id="btn-download-pdf" title="Download PDF Report">⬇ PDF Report</button>
         </div>
 
         <!-- Global Search and Filters -->
@@ -234,9 +237,12 @@
   </div><!-- /main-content -->
 </div><!-- /app-layout -->
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="/static/js/api.js"></script>
 <script src="/static/js/ui.js"></script>
 <script src="/static/js/history.js"></script>
+<script src="/static/js/pdf_report.js"></script>
 <script src="/static/js/app.js"></script>
 </body>
 </html>

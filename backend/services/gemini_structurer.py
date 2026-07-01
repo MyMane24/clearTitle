@@ -246,22 +246,38 @@ PROPERTY_TAX_ASSESSMENT_SCHEMA = {
         "old_assessment_number": None, "new_assessment_number": None,
         "ward_number": None,
     },
-    "property_details": {
-        "property_address": None, "street_or_area_name": None,
-        "cts_number": None, "property_number": None, "usage": None,
-        "site_total_area_sqft": None, "building_covered_land_area_sqft": None,
-        "total_constructed_area_sqft": None, "building_plinth_area_sqft": None,
-    },
     "assessment_rows": [
         {"row_number": None, "label": None, "value": None}
     ],
     "challan_copies": [
-        {"copy_type": None, "pid": None, "amount_paid": None,
-         "payment_date": None, "payment_mode": None}
+        {
+            "copy_type": None,
+            "pid": None,
+            "challan_number": None,
+            "receipt_number": None,
+            "transaction_id": None,
+            "bank_name": None,
+            "bank_branch": None,
+            "ward_number": None,
+            "assessment_year": None,
+            "owner_name": None,
+            "property_address": None,
+            "property_tax_amount": None,
+            "penalty_amount": None,
+            "service_charge": None,
+            "rebate_amount": None,
+            "total_amount_due": None,
+            "amount_paid": None,
+            "payment_date": None,
+            "payment_mode": None,
+            "payment_status": None,
+            "remarks": None,
+        }
     ],
     "validity": {"valid_for_month": None, "issued_by": None},
     **VERIFICATION_NOTES_SCHEMA,
 }
+
 
 GIFT_DEED_SCHEMA = {
     "document_type": "GIFT_DEED",
