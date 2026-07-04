@@ -412,7 +412,7 @@ function renderOverviewPane(data) {
 
 function renderMissingDocsPane(data) {
   const missing = data.missing_documents || [];
-  const importantMissing = ["SALE_DEED", "ENCUMBRANCE_CERTIFICATE", "KHATA", "PROPERTY_REGISTER_CARD", "PROPERTY_TAX_ASSESSMENT", "MUTATION", "OCCUPANCY_CERTIFICATE"];
+  const importantMissing = ["SALE_DEED", "ENCUMBRANCE_CERTIFICATE", "KHATA", "PROPERTY_REGISTER_CARD", "PROPERTY_TAX_ASSESSMENT", "MUTATION", "OCCUPANCY_CERTIFICATE", "CONVERSION_ORDER", "RTC_PAHANI", "CDP_PLAN"];
   
   // Combine extracted missing and list tiles
   let missingDocsList = [...missing];
@@ -455,7 +455,10 @@ function openMissingDocExplanation(docName) {
     "PROPERTY TAX ASSESSMENT": "Verifies tax records match seller ownership, proving no outstanding municipal tax default.",
     "MUTATION": "Record of transfer of title in government registry records; proves recognition of tax liability.",
     "RELEASE DEED": "Relinquishes co-owners' claims, proving single-owner marketable title.",
-    "BUILDER AGREEMENT": "Proves contract terms and construction specifications in apartment purchases."
+    "BUILDER AGREEMENT": "Proves contract terms and construction specifications in apartment purchases.",
+    "CONVERSION ORDER": "Non-Agricultural Conversion Order issued by the Deputy Commissioner; legally permits agricultural land to be used for non-agricultural development.",
+    "RTC PAHANI": "Record of Rights, Tenancy and Crops; verifies land ownership history, agricultural classifications (Kharab land), and active cultivation or tenancy claims.",
+    "CDP PLAN": "Comprehensive Development Plan or layout approval plan; confirms the property zoning (residential vs. green belt/buffer zone) matches the intended transaction."
   };
 
   const nameUpper = docName.toUpperCase();

@@ -11,7 +11,7 @@ from backend.constants import (
     E_PAYMENT_RECEIPT, TAX_RECEIPT,
     LEGAL_HEIR_CERTIFICATE, PARTITION_DEED,
     COURT_ORDER, POSSESSION_CERTIFICATE, CONVERSION_ORDER,
-    UNKNOWN_DOC,
+    CDP_PLAN, UNKNOWN_DOC,
 )
 
 DOC_TYPE_KEYWORDS = {
@@ -100,7 +100,11 @@ DOC_TYPE_KEYWORDS = {
     ],
     CONVERSION_ORDER: [
         "conversion order", "non-agricultural", "non agri",
-        "converted to na", "rb.lna",
+        "converted to na", "rb.lna", "na order", "n a order",
+    ],
+    CDP_PLAN: [
+        "cdp plan", "cdp", "development plan", "master plan",
+        "zoning classification", "planning authority",
     ],
 }
 
@@ -134,6 +138,10 @@ FILENAME_PATTERNS = {
     "court":         COURT_ORDER,
     "possession":    POSSESSION_CERTIFICATE,
     "conversion":    CONVERSION_ORDER,
+    "naorder":       CONVERSION_ORDER,
+    "cdp":           CDP_PLAN,
+    "masterplan":    CDP_PLAN,
+    "zoning":        CDP_PLAN,
 }
 
 

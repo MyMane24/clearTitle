@@ -43,8 +43,8 @@ EXPECTED_DOCUMENTS_BY_PROPERTY_TYPE = {
         "MUTATION",
     ],
     "land": [
-        "SALE_DEED", "ENCUMBRANCE_CERTIFICATE", "PROPERTY_REGISTER_CARD",
-        "KHATA", "RTC_PAHANI", "MUTATION", "CONVERSION_ORDER",
+        "SALE_DEED", "ENCUMBRANCE_CERTIFICATE", "RTC_PAHANI",
+        "MUTATION", "CONVERSION_ORDER", "CDP_PLAN",
     ],
     "commercial": [
         "SALE_DEED", "ENCUMBRANCE_CERTIFICATE", "PROPERTY_REGISTER_CARD",
@@ -72,7 +72,10 @@ Given the structured data from ALL documents in this case, along with PER-DOCUME
    - Encumbrance / Pending Mortgages analysis
    - EC Transaction Gaps > 3 years
    - EC Search Coverage < 13 years
-   - Survey Number / CTS Number consistency
+   - Survey Number / CTS Number consistency (especially matching partitioned / hissa subdivisions like 590/*/3, 591/*/1 across Sale Deeds, EC, RTC, Mutation, and Conversion Orders)
+   - Land Ownership Tracing (verifying that the latest purchaser in the Sale Deed is recorded as the owner in RTC Column 9 and Mutation Register. If not, flag MUTATION_PENDING)
+   - Land Extent & Area Consistency (verifying that the area sold in the Sale Deed does not exceed the converted extent in the Conversion Order or the owner's share in the RTC)
+   - Zoning & Conversion Alignment (verifying that the converted purpose in the Conversion Order matches the zoning in the CDP Plan and the intended use)
    - Name transliteration variations (Kannada vs English)
    - Stamp duty consistency
    - Missing critical documents
@@ -1069,6 +1072,61 @@ def _compact_fields(sd: dict) -> dict:
         if gv:
             compact["guidance_value"] = gv.get("value")
             compact["guidance_value_order_date"] = gv.get("order_date")
+
+        # ── Land-specific extractions for cross-document checks ──
+        
+        # Extent from RTC
+        ld = sd.get("land_details") or {}
+        ext = ld.get("extent_details") or {}
+        if ext.get("net_area_acres_gunthas"):
+            compact["rtc_net_area"] = ext.get("net_area_acres_gunthas")
+            compact["rtc_total_extent"] = ext.get("total_extent_acres_gunthas")
+            compact["survey_number"] = ld.get("survey_number")
+            compact["hissa_number"] = ld.get("hissa_number")
+        
+        # Owners from RTC Column 9
+        owners = sd.get("owners_column_9") or []
+        if owners:
+            compact["rtc_owners"] = [o.get("owner_name") for o in owners if isinstance(o, dict)]
+            compact["rtc_owner_extents"] = [o.get("extent_owned_acres_gunthas") for o in owners if isinstance(o, dict)]
+            compact["rtc_owner_acquisitions"] = [o.get("acquisition_mode_column_10") for o in owners if isinstance(o, dict)]
+
+        # Liabilities from RTC Column 11
+        rights_liab = sd.get("other_rights_and_liabilities_column_11") or {}
+        if rights_liab.get("liabilities_loans"):
+            compact["rtc_liabilities"] = rights_liab.get("liabilities_loans")
+        if rights_liab.get("conditions_notes"):
+            compact["rtc_conditions"] = rights_liab.get("conditions_notes")
+
+        # NA Conversion Details (CONVERSION_ORDER)
+        prop_det = sd.get("property_details") or {}
+        if prop_det.get("converted_extent_acres_gunthas"):
+            compact["converted_extent"] = prop_det.get("converted_extent_acres_gunthas")
+            compact["converted_purpose"] = prop_det.get("converted_purpose")
+            compact["conversion_order_number"] = fm.get("order_number")
+            compact["conversion_order_date"] = fm.get("order_date")
+            compact["survey_number"] = prop_det.get("survey_number")
+
+        # Mutation Details (MUTATION)
+        tx_details = sd.get("transaction_details") or []
+        if tx_details:
+            compact["mutated_transactions"] = [
+                {
+                    "new_survey": tx.get("new_survey_number"),
+                    "new_extent": tx.get("new_extent_acres_gunthas"),
+                    "owner": tx.get("owner_name"),
+                }
+                for tx in tx_details if isinstance(tx, dict)
+            ]
+            compact["mutation_number"] = fm.get("mutation_number")
+            compact["mutation_acquisition_mode"] = fm.get("acquisition_mode")
+
+        # CDP Plan Details (CDP_PLAN)
+        if sd.get("zoning_classification"):
+            compact["cdp_zoning"] = sd.get("zoning_classification")
+            compact["cdp_approval_number"] = fm.get("approval_number")
+            compact["cdp_approval_date"] = fm.get("approval_date")
+            compact["cdp_surveys_covered"] = fm.get("survey_numbers_covered")
 
     return compact
 

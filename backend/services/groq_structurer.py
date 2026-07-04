@@ -35,6 +35,7 @@ from backend.services.gemini_structurer import (
     SCHEMA_MAP,
     _get_verification_instructions,
     _generic_schema,
+    merge_dict_list,
 )
 
 SYSTEM_PROMPT_BASE = """You are an expert Karnataka property document analyst.
@@ -125,6 +126,8 @@ def structure_document(merged_ocr: dict, doc_type: str,
                     result = json.loads(m.group(1))
                 else:
                     raise
+            if isinstance(result, list):
+                result = merge_dict_list(result)
             if "document_type" not in result:
                 result["document_type"] = doc_type
             if "file_metadata" in result and page_count:

@@ -42,6 +42,7 @@ DEFAULT_ROUTING_MAP = {
     "COURT_ORDER": {"provider": "gemini", "model": "gemini-2.5-flash"},
     "POSSESSION_CERTIFICATE": {"provider": "groq", "model": "llama-3.1-8b-instant"},
     "CONVERSION_ORDER": {"provider": "groq", "model": "llama-3.1-8b-instant"},
+    "CDP_PLAN": {"provider": "groq", "model": "llama-3.1-8b-instant"},
 }
 
 FALLBACK_CHAIN = [

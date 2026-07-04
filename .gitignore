@@ -17,3 +17,5 @@ dump.rdb
 # Database & runtime stores
 data/
 
+# Scratch directory
+scratch/

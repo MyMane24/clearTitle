@@ -333,6 +333,147 @@ GIFT_DEED_SCHEMA = {
     **VERIFICATION_NOTES_SCHEMA,
 }
 
+RTC_PAHANI_SCHEMA = {
+    "document_type": "RTC_PAHANI",
+    "land_details": {
+        "survey_number": None,          # Column 1
+        "hissa_number": None,           # Column 2
+        "village": None,
+        "hobli": None,
+        "taluk": None,
+        "district": None,
+        "extent_details": {             # Column 3
+            "total_extent_acres_gunthas": None,
+            "kharab_land_a_acres_gunthas": None,
+            "kharab_land_b_acres_gunthas": None,
+            "net_area_acres_gunthas": None,
+        },
+        "revenue_details": {            # Column 4
+            "land_revenue": None,
+            "jodi": None,
+            "cess": None,
+            "water_rate": None,
+            "total_revenue": None,
+        },
+        "soil_type": None,              # Column 5 (e.g. Masari)
+        "tenure_type": None,            # Column 6 (e.g. Government/Freehold)
+        "trees_count": [],              # Column 7 (e.g. Name + Count)
+    },
+    "owners_column_9": [                # Column 9 and 10
+        {
+            "owner_name": None,
+            "father_husband_name": None,
+            "extent_owned_acres_gunthas": None,
+            "khata_number": None,
+            "acquisition_mode_column_10": None, # e.g. "MR H551/2012-2013"
+            "acquisition_date": None,
+        }
+    ],
+    "other_rights_and_liabilities_column_11": { # Column 11
+        "conditions_notes": None,               # ಷರತ್ತುಗಳು (e.g. NA conversion)
+        "liabilities_loans": [],                 # ಋಣಗಳು (e.g. Bank mortgages)
+    },
+    "cultivator_crop_details_column_12": [      # Columns 12 to 16
+        {
+            "year": None,                       # e.g. 2023-2024
+            "season": None,                     # e.g. Mungaru / Hingaru
+            "cultivator_name": None,
+            "cultivation_type": None,
+            "cultivated_area_acres_gunthas": None,
+            "crop_name": None,
+            "crop_area": None,
+        }
+    ],
+    "certification_metadata": {
+        "signed_by": None,
+        "signed_date": None,
+        "rtc_unique_number": None,              # RTC UniqueNumber
+        "bhoomi_land_id": None,                 # Bhoomi Land ID
+    },
+    **VERIFICATION_NOTES_SCHEMA,
+}
+
+CONVERSION_ORDER_SCHEMA = {
+    "document_type": "CONVERSION_ORDER",
+    "file_metadata": {
+        "order_number": None,                   # ಸಂಖ್ಯೆ (e.g. 386986)
+        "order_date": None,                     # ದಿನಾಂಕ
+        "issuing_office": None,                 # e.g. DC Office Dharwad
+        "dc_name": None,                        # e.g. Gurudatta Narayana Hegde
+        "applicant_name": None,                 # e.g. Chavan Ramesh
+        "affidavit_number": None,
+        "affidavit_date": None,
+    },
+    "financials": {
+        "conversion_fee": None,                 # ಭೂ ಪರಿವರ್ತನಾ ಶುಲ್ಕ
+        "podi_fee": None,                       # ಪೋಡಿ ಶುಲ್ಕ
+        "kharab_fee": None,
+        "penalty_fee": None,                    # ದಂಡ ಶುಲ್ಕ
+        "total_fee_paid": None,
+        "payment_challans": [                   # Challan references
+            {"challan_number": None, "challan_date": None, "amount": None}
+        ],
+    },
+    "property_details": {
+        "survey_number": None,
+        "total_extent_acres_gunthas": None,
+        "converted_extent_acres_gunthas": None,
+        "converted_purpose": None,              # e.g. Apartment - Residential
+        "boundaries": {                         # ಚಕ್ಕುಬಂದಿ
+            "east": None,
+            "west": None,
+            "north": None,
+            "south": None,
+        },
+    },
+    "conditions": [],                           # Conditions 1-9 & Additional Conditions 1-4
+    **VERIFICATION_NOTES_SCHEMA,
+}
+
+MUTATION_SCHEMA = {
+    "document_type": "MUTATION",
+    "file_metadata": {
+        "mutation_number": None,                # M.R. ನಂಬರ್
+        "mutation_year": None,                  # ವಹಿವಾಟು ವರ್ಷ
+        "village": None,
+        "hobli": None,
+        "taluk": None,
+        "district": None,
+        "acquisition_mode": None,               # e.g. ವಿಭಜನೆ (Partition)
+        "order_date": None,
+    },
+    "transaction_details": [                    # Division of survey numbers
+        {
+            "old_survey_number": None,
+            "old_extent_acres_gunthas": None,
+            "old_revenue": None,
+            "new_survey_number": None,
+            "new_extent_acres_gunthas": None,
+            "new_revenue": None,
+            "owner_name": None,
+        }
+    ],
+    "attestation": {
+        "attested_by": None,
+        "attested_date": None,
+        "status": None,
+    },
+    **VERIFICATION_NOTES_SCHEMA,
+}
+
+CDP_PLAN_SCHEMA = {
+    "document_type": "CDP_PLAN",
+    "file_metadata": {
+        "approval_number": None,
+        "approval_date": None,
+        "approving_authority": None,
+        "survey_numbers_covered": [],
+    },
+    "zoning_classification": None,
+    "road_width_meters": None,
+    **VERIFICATION_NOTES_SCHEMA,
+}
+
 GENERIC_SCHEMA_TEMPLATE = {
     "document_type": None,
     "file_metadata": {
@@ -355,6 +496,10 @@ SCHEMA_MAP = {
     "PROPERTY_TAX_ASSESSMENT": PROPERTY_TAX_ASSESSMENT_SCHEMA,
     "TAX_RECEIPT": E_PAYMENT_RECEIPT_SCHEMA,
     "GIFT_DEED": GIFT_DEED_SCHEMA,
+    "RTC_PAHANI": RTC_PAHANI_SCHEMA,
+    "CONVERSION_ORDER": CONVERSION_ORDER_SCHEMA,
+    "MUTATION": MUTATION_SCHEMA,
+    "CDP_PLAN": CDP_PLAN_SCHEMA,
 }
 
 # Schema for the cross-document pass — note the extra "doc_ids_involved" field,
@@ -539,6 +684,66 @@ def _build_user_content(ocr_text: str, page_count: int, doc_type: str) -> str:
     )
 
 
+def merge_dict_list(dict_list: list) -> dict:
+    """
+    Recursively merges a list of dictionaries into a single dictionary.
+    - Concatenates lists.
+    - Recursively merges nested dictionaries.
+    - Combines primitive values (deduplicates, joins strings with comma, etc.).
+    """
+    if not dict_list:
+        return {}
+    
+    if not all(isinstance(x, dict) for x in dict_list):
+        non_null = [x for x in dict_list if x is not None]
+        if not non_null:
+            return None
+        seen = []
+        for x in non_null:
+            if x not in seen:
+                seen.append(x)
+        if len(seen) == 1:
+            return seen[0]
+        return seen
+
+    merged = {}
+    all_keys = set()
+    for d in dict_list:
+        all_keys.update(d.keys())
+
+    for key in all_keys:
+        values = [d[key] for d in dict_list if key in d]
+        non_null_values = [v for v in values if v is not None]
+        
+        if not non_null_values:
+            merged[key] = None
+            continue
+
+        if all(isinstance(v, list) for v in non_null_values):
+            combined_list = []
+            for lst in non_null_values:
+                combined_list.extend(lst)
+            merged[key] = combined_list
+        elif all(isinstance(v, dict) for v in non_null_values):
+            merged[key] = merge_dict_list(non_null_values)
+        else:
+            unique_vals = []
+            for v in non_null_values:
+                if v not in unique_vals:
+                    unique_vals.append(v)
+            
+            if len(unique_vals) == 1:
+                merged[key] = unique_vals[0]
+            else:
+                if all(isinstance(v, bool) for v in unique_vals):
+                    merged[key] = any(unique_vals)
+                else:
+                    str_vals = [str(v) for v in unique_vals if str(v).strip()]
+                    merged[key] = ", ".join(str_vals)
+                    
+    return merged
+
+
 # ── Per-document structuring + verification ────────────────────────────────
 
 def structure_document_with_gemini(merged_ocr: dict, doc_type: str,
@@ -612,7 +817,16 @@ def structure_document_with_gemini(merged_ocr: dict, doc_type: str,
 
     raw_response = response.text
 
-    result = json.loads(raw_response)
+    try:
+        result = json.loads(raw_response)
+    except json.JSONDecodeError:
+        m = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', raw_response)
+        if m:
+            result = json.loads(m.group(1))
+        else:
+            raise
+    if isinstance(result, list):
+        result = merge_dict_list(result)
     if "document_type" not in result:
         result["document_type"] = doc_type
 
@@ -957,6 +1171,49 @@ def _get_verification_instructions(doc_type: str) -> str:
         "  do NOT report anything for this check.\n"
     )
 
+    mutation_checks = (
+        "MUTATION REGISTER EXTRACTION & VERIFICATION CHECKS:\n"
+        "- Extract all rows of transaction_details representing division/mutation of survey numbers.\n"
+        "- Check attestation: Verify if the mutation is attested (signed and dated by a Tahsildar / Revenue Inspector). "
+        "  If the attestation date, sign, or status is blank, null, or 'unattested', flag MUTATION_PENDING at "
+        "  HIGH severity, quoting the mutation number in evidence.\n"
+        "- Verify survey number: Check if the target survey number is present and matches the partition details.\n"
+    )
+
+    conversion_checks = (
+        "CONVERSION_ORDER (NA Conversion Order) VERIFICATION CHECKS:\n"
+        "- Extract order number, date, converted survey number, and converted extent.\n"
+        "- Scan for the converted purpose: check if the land is converted for 'Residential', 'Apartment - Residential', "
+        "  'Commercial', or 'Industrial'. If the target land use (e.g. building an apartment) differs from the "
+        "  converted purpose (e.g. converted for agricultural/industrial), flag PROPERTY_MISMATCH at HIGH severity.\n"
+        "- Scan for conditions: check if the order mentions conditions like road margin, buffer zones, or layout plan approvals. "
+        "  Note in suggestions that layout plans must be approved by Town Planning Authority.\n"
+        "- Ensure that the order number and date are cited in the findings, recommending that a certified copy be obtained from the DC Office.\n"
+    )
+
+    rtc_checks = (
+        "RTC_PAHANI (Pahani / Form 16) VERIFICATION CHECKS:\n"
+        "- Extract survey number, total extent, kharab land, net area, owners list (Column 9), liabilities (Column 11), and crops/cultivators (Column 12).\n"
+        "- Check document recency: check the assessment year or print date. If it is older than 1 year (e.g. from a prior financial year), "
+        "  flag DOCUMENT_EXPIRY at medium-low severity.\n"
+        "- Check for liabilities: scan column 11/12/15 (other rights and liabilities) for any entries of bank mortgages, hypothecation, "
+        "  outstanding loans, court injunctions, or family disputes. If any bank name or loan amount is found, flag PENDING_MORTGAGE "
+        "  at HIGH severity, quoting the exact bank name and loan reference from the text.\n"
+        "- Check for agricultural tenancy: if Column 12 (cultivator details) lists any individual other than the registered owners "
+        "  as cultivator with tenancy rights, flag SUSPICIOUS_PATTERN at medium-high severity.\n"
+        "- COMPUTE - Area consistency: add the net area and kharab area (A + B). If this sum differs from the total extent by more than 1%, "
+        "  flag PROPERTY_MISMATCH at medium severity, showing the math (e.g., 'net + kharab != total').\n"
+    )
+
+    cdp_checks = (
+        "CDP_PLAN (Comprehensive Development Plan / Zoning Plan) VERIFICATION CHECKS:\n"
+        "- Extract zoning classification (e.g., Residential, Commercial, Agricultural, Green Belt, Forest, Buffer Zone).\n"
+        "- Zoning restriction check: If the zoning classification is 'Agricultural', 'Green Belt', 'Forest', or 'Buffer Zone', "
+        "  but the target usage of the property is residential or commercial, flag PROPERTY_MISMATCH at HIGH severity. "
+        "  State that development in restricted zones violates the Karnataka Town and Country Planning (KTCP) Act.\n"
+        "- Check road width: if road width is listed, extract it.\n"
+    )
+
     generic_checks = (
         "GENERIC DOCUMENT VERIFICATION CHECKS:\n"
         "- What type of document does this actually appear to be, based on its content?\n"
@@ -974,6 +1231,10 @@ def _get_verification_instructions(doc_type: str) -> str:
         "PROPERTY_TAX_ASSESSMENT": tax_checks,
         "TAX_RECEIPT": tax_checks,
         "GIFT_DEED": gift_deed_checks,
+        "MUTATION": mutation_checks,
+        "CONVERSION_ORDER": conversion_checks,
+        "RTC_PAHANI": rtc_checks,
+        "CDP_PLAN": cdp_checks,
     }
 
     return base + checks.get(doc_type, generic_checks)

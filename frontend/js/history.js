@@ -1,4 +1,3 @@
-// ── Case History Sidebar ────────────────────────────────────────────────────────
 
 window.HistoryPanel = {
   cases: [],
@@ -427,7 +426,7 @@ window.HistoryPanel = {
       // Helper to render Missing Docs
       const renderHistMissingDocs = () => {
         const missing = verifyReport.missing_documents || [];
-        const importantMissing = ["SALE_DEED", "ENCUMBRANCE_CERTIFICATE", "KHATA", "PROPERTY_REGISTER_CARD", "PROPERTY_TAX_ASSESSMENT", "MUTATION", "OCCUPANCY_CERTIFICATE"];
+        const importantMissing = ["SALE_DEED", "ENCUMBRANCE_CERTIFICATE", "KHATA", "PROPERTY_REGISTER_CARD", "PROPERTY_TAX_ASSESSMENT", "MUTATION", "OCCUPANCY_CERTIFICATE", "CONVERSION_ORDER", "RTC_PAHANI", "CDP_PLAN"];
 
         let missingDocsList = [...missing];
         const presentDocs = Object.keys(verifyReport.per_doc_findings || {});

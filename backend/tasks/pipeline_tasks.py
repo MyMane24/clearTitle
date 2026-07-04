@@ -65,6 +65,8 @@ def _structured_output_path(case_dir: Path, doc_id: str, doc_type: str) -> Path:
 
 
 def _is_transient_error(e: Exception) -> bool:
+    if "jsondecodeerror" in e.__class__.__name__.lower() or "json decode" in str(e).lower() or "json.decoder" in str(e).lower():
+        return True
     msg = str(e).lower()
     if "quota" in msg or "exhausted" in msg or "billing" in msg:
         return False
@@ -232,6 +234,7 @@ def process_document_task(self, case_id: str, doc_id: str) -> dict:
             update_document_status(
                 case_id=case_id, doc_id=doc_id, status=STATUS_OCR_DONE,
                 file_paths={"ocr_chunks": str(case_dir / "ocr_raw" / doc_id)},
+                error="",
             )
         except Exception as e:
             _log(case_id, f"[{doc_id}] ✗ OCR failed: {e}")
@@ -255,6 +258,7 @@ def process_document_task(self, case_id: str, doc_id: str) -> dict:
             update_document_status(
                 case_id=case_id, doc_id=doc_id, status=STATUS_MERGED,
                 file_paths={"merged_ocr": str(case_dir / "ocr_raw" / f"{doc_id}_merged.json")},
+                error="",
             )
         except Exception as e:
             _log(case_id, f"[{doc_id}] ✗ Merge failed: {e}")
@@ -324,6 +328,7 @@ def process_document_task(self, case_id: str, doc_id: str) -> dict:
                 latency_ms=analytics.get("latency_ms", 0),
                 cost_usd=analytics.get("cost_usd", 0),
                 model_used=analytics.get("model", ""),
+                error="",
             )
             _log(case_id, f"[{doc_id}] ✓ Saved to property_ocr_v2 DB "
                           f"({analytics.get('provider', '?')}/{analytics.get('model', '?')} "

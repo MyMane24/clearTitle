@@ -256,4 +256,4 @@ The frontend uses a custom CSS design system (`frontend/css/styles.css`) with:
 
 ---
 
-*Last updated: 1 July 2026*
+*Last updated: 4 July 2026*
