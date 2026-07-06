@@ -92,72 +92,184 @@ flowchart TD
 
 ---
 
-## 🛠️ Installation & Setup
+## 🚀 Quick Start (Docker — Recommended)
 
-### Prerequisites
+> **Only requirement:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed. No Python, MySQL, or Redis needed on your machine.
 
-- Python 3.10+
-- MySQL 8.0+
-- Redis Server
+### 1. Clone and configure
 
-### 1. Database Setup
-
-```sql
-CREATE DATABASE IF NOT EXISTS property_ocr_v2 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```bash
+git clone <repo-url>
+cd property_ocr
+cp .env.example .env
 ```
 
-### 2. Environment Configuration
-
-Create a `.env` file in the root directory:
+Open `.env` and fill in **only these 3 lines** (everything else works as-is):
 
 ```env
-# API Keys
-SARVAM_API_KEY=your_sarvam_api_key
-GROQ_API_KEY=your_groq_api_key
-GEMINI_API_KEY=your_gemini_api_key
+SARVAM_API_KEY=your_key_here
+GROQ_API_KEY=your_key_here
+GEMINI_API_KEY=your_key_here
+```
 
-# MySQL V2 Configuration
+### 2. Start everything
+
+```bash
+docker compose up --build
+```
+
+This starts 5 services automatically:
+
+| Service | URL / Port | Purpose |
+|---|---|---|
+| **App (FastAPI)** | http://localhost:8000 | Main application |
+| **phpMyAdmin** | http://localhost:8080 | Browse MySQL data in browser |
+| **MySQL** | `127.0.0.1:3307` | Database (exposed for GUI tools) |
+| **Redis** | internal only | Celery broker |
+| **Celery Worker** | internal only | Background task processing |
+
+> On subsequent runs just use `docker compose up` (no `--build` needed unless you change code).
+
+---
+
+## 🗄️ Inspecting the Database
+
+### Option A — phpMyAdmin (browser, zero install)
+
+Open **http://localhost:8080** — you'll see all tables (`cases`, `documents`, `cross_doc_verifications`, etc.) and can browse/query data directly.
+
+### Option B — VS Code Database Client extension
+
+Add a new connection in the Database Client (or SQLTools) extension:
+
+```
+Host:     127.0.0.1
+Port:     3307          ← not 3306, to avoid conflict with any local MySQL
+User:     property_user
+Password: property_pass_123
+Database: property_ocr_v2
+```
+
+### Option C — MySQL Workbench / DBeaver / TablePlus
+
+Same credentials as Option B — connect to `127.0.0.1:3307`.
+
+### Option D — Terminal (no GUI needed)
+
+```bash
+docker compose exec mysql mysql -u property_user -pproperty_pass_123 property_ocr_v2
+```
+
+Then run any SQL: `SHOW TABLES;`, `SELECT * FROM cases;`, etc.
+
+---
+
+## 🛠️ Manual Setup (Without Docker)
+
+<details>
+<summary>Click to expand — for local development without Docker</summary>
+
+**Prerequisites:** Python 3.10+, MySQL 8.0, Redis
+
+---
+
+### Step 1 — Create the database
+
+Connect to your local MySQL and run:
+
+```sql
+CREATE DATABASE IF NOT EXISTS property_ocr_v2
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+---
+
+### Step 2 — Configure environment
+
+Copy the template and fill in your credentials:
+
+```bash
+# Windows
+copy .env.example .env
+
+# Linux / macOS
+cp .env.example .env
+```
+
+Open `.env` and update these values to match your local MySQL:
+
+```env
 MYSQL_HOST=127.0.0.1
 MYSQL_PORT=3306
 MYSQL_USER=root
 MYSQL_PASSWORD=your_mysql_password
-MYSQL_DATABASE_V2=property_ocr_v2
-
-# Redis
+MYSQL_DATABASE=property_ocr_v2
 REDIS_URL=redis://localhost:6379/0
-
-# Optional Model Overrides
-GEMINI_MODEL=gemini-2.5-flash
 ```
 
-### 3. Install Dependencies
+---
 
+### Step 3 — Install dependencies
+
+**Windows (PowerShell):**
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+**Linux / macOS:**
 ```bash
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
 ---
 
-## 🚀 Running the Application
+### Step 4 — Run the application
 
-Run the following in **three separate terminal sessions**:
+You need **3 terminals open simultaneously**.
 
-**1. Redis Server:**
+**Terminal 1 — Redis**
+
+Windows:
 ```powershell
 & "$env:TEMP\redis\redis-server.exe"
 ```
+Linux / macOS:
+```bash
+redis-server
+```
 
-**2. Celery Worker:**
+**Terminal 2 — Celery Worker**
+
+Windows:
 ```powershell
 .\venv\Scripts\celery.exe -A backend.celery_app worker --loglevel=info --pool=solo --concurrency=1
 ```
+Linux / macOS:
+```bash
+celery -A backend.celery_app worker --loglevel=info --concurrency=2
+```
 
-**3. FastAPI + Frontend (Uvicorn):**
+> **Note:** `--pool=solo` is Windows-only. Linux/macOS use the default pool which supports concurrency natively.
+
+**Terminal 3 — FastAPI Server**
+
+Windows:
 ```powershell
 .\venv\Scripts\uvicorn.exe backend.main:app --reload --port 8000
 ```
+Linux / macOS:
+```bash
+uvicorn backend.main:app --reload --port 8000
+```
 
-Open **http://localhost:8000** in your browser. The frontend is served as static files by FastAPI.
+Then open **http://localhost:8000** in your browser.
+
+</details>
+
 
 ---
 

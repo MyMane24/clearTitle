@@ -1,0 +1,128 @@
+services:
+
+  # ── Redis ─────────────────────────────────────────────────────────────────
+  # Broker + result backend for Celery. Also stores pipeline job state
+  # (see redis_store.py). Data is persisted in the `redis_data` named volume.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── MySQL ──────────────────────────────────────────────────────────────────
+  # The official mysql:8.0 image reads MYSQL_* env vars on first boot and
+  # automatically: creates the root user, creates MYSQL_USER, sets passwords,
+  # and creates MYSQL_DATABASE — no SQL scripts needed.
+  # Your mysql_store.py then creates all 5 tables via CREATE TABLE IF NOT EXISTS.
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE:      ${MYSQL_DATABASE}
+      MYSQL_USER:          ${MYSQL_USER}
+      MYSQL_PASSWORD:      ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    # Expose port 3307 on the host so GUI tools (MySQL Workbench, DBeaver, TablePlus)
+    # can connect directly without conflicting with any local MySQL on port 3306.
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "--password=${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── phpMyAdmin ─────────────────────────────────────────────────────────────
+  # Browser-based MySQL UI. Open http://localhost:8080 to view all tables/data.
+  # No installation needed — runs inside Docker.
+  phpmyadmin:
+    image: phpmyadmin:latest
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      PMA_HOST:     mysql
+      PMA_PORT:     3306
+      PMA_USER:     ${MYSQL_USER}
+      PMA_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "8080:80"
+
+  # ── API (FastAPI + uvicorn) ────────────────────────────────────────────────
+  # Serves the REST API and the frontend static files.
+  # Port 8000 exposed to host — open http://localhost:8000
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      # Override localhost references so they point to Docker service names
+      MYSQL_HOST: mysql
+      REDIS_URL:  redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    volumes:
+      # Bind-mount local directories so uploaded files and outputs persist
+      # on the host machine across container restarts.
+      - ./uploads:/app/uploads
+      - ./outputs:/app/outputs
+      # Qdrant uses local file mode (path="./data/qdrant_db") — mount the
+      # data directory so the vector DB persists between restarts.
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── Celery Worker ──────────────────────────────────────────────────────────
+  # Same Docker image as `api`, different start command.
+  # Processes background tasks: OCR, structuring, verification, etc.
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # Override the default CMD (uvicorn) with celery worker
+    command: >
+      celery -A backend.celery_app worker
+      --loglevel=info
+      --concurrency=2
+    depends_on:
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      MYSQL_HOST: mysql
+      REDIS_URL:  redis://redis:6379/0
+    volumes:
+      # Worker also reads/writes uploads and outputs
+      - ./uploads:/app/uploads
+      - ./outputs:/app/outputs
+      - ./data:/app/data
+
+# ── Named volumes ────────────────────────────────────────────────────────────
+# Docker manages these — data survives `docker compose down`.
+# Use `docker compose down -v` ONLY if you want to wipe all data.
+volumes:
+  redis_data:
+  mysql_data:

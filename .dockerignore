@@ -1,0 +1,34 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.ruff_cache/
+
+# Environment & secrets — never go into the image
+.env
+
+# Runtime data — provided by volume mounts at runtime
+data/
+uploads/
+outputs/
+dump.rdb
+
+# Git
+.git/
+.gitignore
+
+# Docker files themselves
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Dev/test artifacts
+scratch/
+_test_cases.py
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

@@ -19,3 +19,6 @@ data/
 
 # Scratch directory
 scratch/
+
+# Docker — do NOT ignore .env.example (it is safe to commit)
+docker-compose.override.yml
