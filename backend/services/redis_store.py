@@ -7,28 +7,10 @@ and can be read/written by multiple Celery workers.
 from __future__ import annotations
 
 import json
-import os
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from redis import Redis
-
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+from backend.services.redis_client import get_redis as _get_client
 
 
-_redis_client = None
-
-def _get_client() -> "Redis":
-    global _redis_client
-    if _redis_client is None:
-        try:
-            import redis as redis_module
-        except ImportError as exc:
-            raise RuntimeError(
-                "redis-py is not installed. Run pip install -r requirements.txt"
-            ) from exc
-        _redis_client = redis_module.from_url(REDIS_URL, decode_responses=True)
-    return _redis_client
 
 
 # ── Key helpers ──────────────────────────────────────────────────────────────────
@@ -249,10 +231,15 @@ def add_error(case_id: str, error: dict) -> None:
 def remove_error_for_doc(case_id: str, doc_id: str) -> None:
     r = _get_client()
     errors = get_case_errors(case_id)
-    errors = [e for e in errors if e.get("doc_id") != doc_id]
-    r.delete(_errors_key(case_id))
-    if errors:
-        r.rpush(_errors_key(case_id), *[json.dumps(e, ensure_ascii=False) for e in errors])
+    filtered = [e for e in errors if e.get("doc_id") != doc_id]
+    # Use MULTI/EXEC (transaction=True) so the delete and re-push are atomic.
+    # Without this, a concurrent reader sees an empty errors list in the
+    # brief window between the DELETE and the RPUSH.
+    pipe = r.pipeline(transaction=True)
+    pipe.delete(_errors_key(case_id))
+    if filtered:
+        pipe.rpush(_errors_key(case_id), *[json.dumps(e, ensure_ascii=False) for e in filtered])
+    pipe.execute()
 
 
 def increment_done_count(case_id: str) -> int:
@@ -266,15 +253,34 @@ def get_done_count(case_id: str) -> int:
     return int(val) if val else 0
 
 
-# ── Per-doc status ───────────────────────────────────────────────────────────────
+# Lua script for atomic read-merge-write on the per-doc status JSON blob.
+# Eliminates the TOCTOU race where two concurrent workers both read the same
+# stale value, merge different fields, and one silently overwrites the other.
+#
+# KEYS[1] = docs hash key  (case:{id}:docs)
+# KEYS[2] = doc_id field   (the hash field to update)
+# ARGV[1] = JSON string of the fields to merge in
+_SET_DOC_STATUS_LUA = """\
+local raw = redis.call('HGET', KEYS[1], KEYS[2])
+local existing = {}
+if raw then
+    local ok, val = pcall(cjson.decode, raw)
+    if ok and type(val) == 'table' then existing = val end
+end
+local ok2, updates = pcall(cjson.decode, ARGV[1])
+if not ok2 then return redis.error_reply('set_doc_status: bad JSON in updates') end
+for k, v in pairs(updates) do existing[k] = v end
+redis.call('HSET', KEYS[1], KEYS[2], cjson.encode(existing))
+return 1
+"""
+
 
 def set_doc_status(case_id: str, doc_id: str, **fields) -> None:
     r = _get_client()
     key = _docs_status_key(case_id)
-    existing_raw = r.hget(key, doc_id)
-    existing = json.loads(existing_raw) if existing_raw else {}
-    existing.update(fields)
-    r.hset(key, doc_id, json.dumps(existing, ensure_ascii=False))
+    updates_json = json.dumps(fields, ensure_ascii=False)
+    r.eval(_SET_DOC_STATUS_LUA, 2, key, doc_id, updates_json)
+
 
 
 # ── Single-case delete ────────────────────────────────────────────────────────────

@@ -1,6 +1,14 @@
 """
 Redis-backed sliding-window rate limiter for LLM API calls.
 Coordinates across all Celery workers via Redis.
+
+Key improvements over the previous version:
+  - Uses the shared redis_client singleton (no separate connection pool).
+  - _try_acquire() is now a single atomic Lua script — no race window
+    between the read-check and the write-commit under concurrent workers.
+  - LLMCallTracker.record() pipelines lpush + ltrim into one round-trip.
+  - wait_and_acquire() default max_retries capped at 10 (~105 s max)
+    instead of 30 (~7.5 min) so a rate-limited worker fails fast.
 """
 
 from __future__ import annotations
@@ -12,19 +20,12 @@ import time
 from dataclasses import dataclass
 
 from backend.logger import get_logger
+from backend.services.redis_client import get_redis as _get_redis
 
 logger = get_logger(__name__)
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-
-def _get_redis():
-    try:
-        import redis as redis_module
-    except ImportError as exc:
-        raise RuntimeError("redis-py not installed") from exc
-    return redis_module.from_url(REDIS_URL, decode_responses=True)
-
+# ── Rate limit config ─────────────────────────────────────────────────────────
 
 @dataclass
 class RateLimitConfig:
@@ -45,6 +46,58 @@ GROQ_LIMITS = RateLimitConfig(
     burst_size=int(os.getenv("GROQ_BURST", "10")),
 )
 
+
+# ── Lua script for atomic token-bucket acquire ────────────────────────────────
+#
+# All three pipeline calls in the old _try_acquire (TIME, read-state,
+# write-state) are collapsed into ONE Lua script that Redis executes
+# atomically.  No other command can interleave between the read and the
+# write, so two concurrent workers can never both see "allowed" for the
+# same token slot.
+#
+# KEYS[1] = ratelimit:<prefix>:requests  (sorted set of request timestamps)
+# KEYS[2] = ratelimit:<prefix>:tokens    (string: current token count)
+# KEYS[3] = ratelimit:<prefix>:refill    (string: last refill timestamp)
+# ARGV[1] = window_seconds  (60.0)
+# ARGV[2] = burst_size      (max tokens in the bucket)
+# ARGV[3] = tokens_per_minute
+# ARGV[4] = requests_per_minute
+# ARGV[5] = tokens_needed   (1)
+# ARGV[6] = unique sorted-set member (random string to avoid collisions)
+#
+# Returns: 1 = acquired, 0 = rate-limited
+
+_ACQUIRE_LUA = """\
+local t = redis.call('TIME')
+local now = tonumber(t[1]) + tonumber(t[2]) / 1000000.0
+local window_start = now - tonumber(ARGV[1])
+redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, window_start)
+local recent = tonumber(redis.call('ZCARD', KEYS[1]))
+local tokens_raw  = redis.call('GET', KEYS[2])
+local refill_raw  = redis.call('GET', KEYS[3])
+local burst  = tonumber(ARGV[2])
+local tpm    = tonumber(ARGV[3])
+local rpm    = tonumber(ARGV[4])
+local needed = tonumber(ARGV[5])
+local cur = burst
+if tokens_raw then cur = tonumber(tokens_raw) end
+local last_refill = now
+if refill_raw then last_refill = tonumber(refill_raw) end
+cur = math.min(cur + (now - last_refill) * (tpm / 60.0), burst)
+if recent >= rpm or cur < needed then
+    redis.call('SET', KEYS[2], tostring(cur))
+    redis.call('SET', KEYS[3], tostring(now))
+    return 0
+end
+cur = cur - needed
+redis.call('ZADD', KEYS[1], tostring(now), ARGV[6])
+redis.call('SET', KEYS[2], tostring(cur))
+redis.call('SET', KEYS[3], tostring(now))
+return 1
+"""
+
+
+# ── Rate limiter class ────────────────────────────────────────────────────────
 
 class TokenBucketRateLimiter:
     """Redis-based token bucket limiter shared across workers."""
@@ -83,58 +136,35 @@ class TokenBucketRateLimiter:
         return False
 
     def _try_acquire(self, tokens: int = 1) -> tuple[bool, float]:
-        """Returns (allowed, wait_seconds)."""
+        """
+        Returns (allowed, wait_seconds).
+        Implemented as a single atomic Lua script — no race between
+        reading the bucket state and committing the deduction.
+        """
         r = _get_redis()
-        now = time.time()
-        window = 60.0
-
-        request_key = self._request_key()
-        window_key = self._window_key()
-        tokens_key = self._tokens_key()
-        refill_key = self._refill_key()
-
-        pipe = r.pipeline()
-        pipe.time()
-        results = pipe.execute()
-        now = results[0][0] + results[0][1] / 1_000_000
-
-        window_start = now - window
-
-        pipe = r.pipeline()
-        pipe.zremrangebyscore(request_key, 0, window_start)
-        pipe.zcard(request_key)
-        pipe.get(tokens_key)
-        pipe.get(refill_key)
-        results = pipe.execute()
-        recent_count = results[1] or 0
-        current_tokens = float(results[2]) if results[2] else float(self.config.burst_size)
-        last_refill = float(results[3]) if results[3] else now
-
-        elapsed = now - last_refill
-        refill_rate = self.config.tokens_per_minute / 60.0
-        current_tokens = min(
-            current_tokens + elapsed * refill_rate,
+        result = r.eval(
+            _ACQUIRE_LUA,
+            3,                                          # numkeys
+            self._request_key(),
+            self._tokens_key(),
+            self._refill_key(),
+            60.0,                                       # window seconds
             float(self.config.burst_size),
+            float(self.config.tokens_per_minute),
+            float(self.config.requests_per_minute),
+            float(tokens),
+            str(random.random()),                       # unique sorted-set member
         )
+        allowed = bool(result)
+        return allowed, 0.0 if allowed else 1.0
 
-        rpm_exceeded = recent_count >= self.config.requests_per_minute
-        tpm_exceeded = current_tokens < tokens
-
-        if rpm_exceeded or tpm_exceeded:
-            pipe.set(tokens_key, str(current_tokens))
-            pipe.set(refill_key, str(now))
-            pipe.execute()
-            return False, 1.0
-
-        current_tokens -= tokens
-        pipe.zadd(request_key, {str(random.random()): now})
-        pipe.set(tokens_key, str(current_tokens))
-        pipe.set(refill_key, str(now))
-        pipe.execute()
-        return True, 0
-
-    def wait_and_acquire(self, tokens: int = 1, max_retries: int = 30):
-        """Blocking acquire with retry."""
+    def wait_and_acquire(self, tokens: int = 1, max_retries: int = 10) -> bool:
+        """
+        Blocking acquire with exponential backoff.
+        Default max_retries=10 (~105 s max wait) instead of the previous
+        30 (~7.5 min), so a rate-limited Celery worker fails fast rather
+        than freezing for minutes.
+        """
         for attempt in range(max_retries):
             allowed, _ = self._try_acquire(tokens)
             if allowed:
@@ -145,8 +175,10 @@ class TokenBucketRateLimiter:
 
 
 gemini_limiter = TokenBucketRateLimiter("gemini", GEMINI_LIMITS)
-groq_limiter = TokenBucketRateLimiter("groq", GROQ_LIMITS)
+groq_limiter   = TokenBucketRateLimiter("groq",   GROQ_LIMITS)
 
+
+# ── LLM call tracker ─────────────────────────────────────────────────────────
 
 class LLMCallTracker:
     """Logs per-call LLM metrics to a Redis list for cost/usage dashboards."""
@@ -157,25 +189,28 @@ class LLMCallTracker:
                cost_usd: float, retry_count: int, status: str):
         from datetime import datetime
         entry = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "provider": provider,
-            "model": model,
-            "doc_type": doc_type,
+            "timestamp":    datetime.utcnow().isoformat(),
+            "provider":     provider,
+            "model":        model,
+            "doc_type":     doc_type,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "cached_tokens": cached_tokens,
-            "latency_ms": latency_ms,
-            "cost_usd": round(cost_usd, 8),
-            "retry_count": retry_count,
-            "status": status,
+            "latency_ms":   latency_ms,
+            "cost_usd":     round(cost_usd, 8),
+            "retry_count":  retry_count,
+            "status":       status,
         }
+        # Pipeline lpush + ltrim into a single round-trip (was 2 separate calls)
         try:
             r = _get_redis()
-            key = "llm_call_log"
-            r.lpush(key, json.dumps(entry))
-            r.ltrim(key, 0, 9999)
+            pipe = r.pipeline()
+            pipe.lpush("llm_call_log", json.dumps(entry))
+            pipe.ltrim("llm_call_log", 0, 9999)
+            pipe.execute()
         except Exception as e:
             logger.warning("Failed to record LLM call metric: %s", e)
+
         # Also persist to MySQL for queryable dashboard
         try:
             from backend.services.mysql_store import log_llm_call
