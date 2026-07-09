@@ -173,10 +173,20 @@ def _process_chunked(client, pdf_path: Path,
         cidx, ps, pe, zp = args
         return _send_zip(client, zp, cidx, ps, pe, out_dir)
 
-    with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(zip_paths))) as ex:
-        futures = {ex.submit(send_chunk, a): a for a in zip_paths}
-        for f in as_completed(futures):
-            results.append(f.result())
+    try:
+        with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(zip_paths))) as ex:
+            futures = {ex.submit(send_chunk, a): a for a in zip_paths}
+            for f in as_completed(futures):
+                results.append(f.result())
+    finally:
+        # Clean up temp PNGs and input zips — response zips are kept for the merger
+        import shutil
+        shutil.rmtree(png_dir, ignore_errors=True)
+        for _, _, _, zp in zip_paths:
+            try:
+                zp.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     return sorted(results, key=lambda r: r.chunk_index)
 

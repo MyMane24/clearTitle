@@ -67,11 +67,19 @@ def _enhance_page(img: np.ndarray) -> np.ndarray:
     img = _deskew(img, gray)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # 3. Denoising (Non-local means — preserves text edges)
-    denoised = cv2.fastNlMeansDenoisingColored(img, None,
-                                                h=10, hColor=10,
-                                                templateWindowSize=7,
-                                                searchWindowSize=21)
+    # 3. Denoising — only apply if the page is actually noisy.
+    #    Clean digital PDFs rendered to image have very low pixel std dev (< 8).
+    #    Scanned documents with film grain / JPEG compression noise sit above ~15.
+    #    Skipping on clean pages avoids the expensive O(N²) search window pass
+    #    and prevents slight text blurring on already-clear documents.
+    noise_level = float(np.std(gray))
+    if noise_level > 15.0:
+        denoised = cv2.fastNlMeansDenoisingColored(img, None,
+                                                    h=10, hColor=10,
+                                                    templateWindowSize=7,
+                                                    searchWindowSize=21)
+    else:
+        denoised = img
 
     # 4. CLAHE contrast enhancement on L channel (LAB space)
     lab   = cv2.cvtColor(denoised, cv2.COLOR_BGR2LAB)
