@@ -145,10 +145,6 @@ def _structure_document(merged: dict, doc_type: str) -> dict:
                     # Non-transient error, try next model
                     break
 
-        # If we got a result, return it (don't continue chain)
-        if last_error is None:
-            break
-
     if last_error:
         raise last_error
     raise RuntimeError(f"All models failed for {doc_type}")
@@ -269,7 +265,7 @@ def process_document_task(self, case_id: str, doc_id: str) -> dict:
             return {"doc_id": doc_id, "status": STATUS_FAILED, "step": STEP_MERGE, "error": str(e), "filename": filename}
 
         # ── Step 4: Classify ─────────────────────────────────────────────────
-        doc_type = classify_document(pdf_path.name, merged["full_text"][:500])
+        doc_type = classify_document(pdf_path.name, merged["full_text"][:2000])
         _log(case_id, f"[{doc_id}] Step 4: Classified → {doc_type}")
 
         if doc_type == UNKNOWN_DOC:
@@ -408,13 +404,6 @@ def finalize_case_task(results: list, case_id: str):
     # Update V2 database case status
     try:
         mysql_update_case_status(case_id=case_id)
-        from backend.services.mysql_store import _get_conn as get_v2_conn
-        with get_v2_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT status FROM cases WHERE id = %s", (case_id,))
-            row = cursor.fetchone()
-            if row:
-                set_case_status(case_id, row[0])
     except Exception as e:
         append_log(case_id, f"⚠ Case status DB update failed: {e}")
 
