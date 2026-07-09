@@ -20,6 +20,7 @@ from backend.logger import get_logger
 from backend.services.rate_limiter import groq_limiter, LLMCallTracker
 from backend.services.risk_scorer import compute_risk_score
 from backend.services.few_shot_retriever import retrieve_corrections, format_few_shot_examples
+from backend.services.self_critique import run_critique
 
 load_dotenv()
 
@@ -28,6 +29,18 @@ logger = get_logger(__name__)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = "llama-3.3-70b-versatile"
 FALLBACK_GROQ_MODEL = "llama-3.1-8b-instant"
+
+# Module-level Groq client singleton — avoids creating a new connection pool per call
+_groq_http_client: "httpx.Client | None" = None
+_groq_client: "Groq | None" = None
+
+
+def _get_groq_client() -> "Groq":
+    global _groq_http_client, _groq_client
+    if _groq_client is None:
+        _groq_http_client = httpx.Client(timeout=httpx.Timeout(120.0, connect=30.0))
+        _groq_client = Groq(api_key=GROQ_API_KEY, http_client=_groq_http_client)
+    return _groq_client
 
 # ── Statutory reference guide for expected document checklists ────────────
 
@@ -190,8 +203,7 @@ def run_cross_doc_verification(documents: list[dict]) -> dict:
     deterministic_findings.extend(_check_document_recency(documents))
     deterministic_findings.extend(_check_expected_missing_docs(documents, property_type))
 
-    _http_client = httpx.Client(timeout=httpx.Timeout(120.0, connect=30.0))
-    client = Groq(api_key=GROQ_API_KEY, http_client=_http_client)
+    client = _get_groq_client()
 
     doc_summaries = []
     for doc in documents:
@@ -272,6 +284,15 @@ def run_cross_doc_verification(documents: list[dict]) -> dict:
                     seen.add(key)
                     unique_findings.append(f)
             all_findings = unique_findings
+
+            # ── Self-critique pass (devil's-advocate review) ────────────
+            try:
+                all_findings = run_critique(all_findings)
+            except Exception as _critique_err:
+                logger.warning(
+                    "Self-critique pass failed, continuing with raw findings: %s",
+                    _critique_err,
+                )
 
             # ── Compute composite risk score ────────────────────────────
             risk_result = compute_risk_score(all_findings)

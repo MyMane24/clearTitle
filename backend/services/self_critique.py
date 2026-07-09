@@ -27,6 +27,18 @@ logger = get_logger(__name__)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 CRITIQUE_MODEL = "llama-3.3-70b-versatile"
 
+# Module-level singleton — avoids creating a new connection pool per critique call
+_critique_http_client: "httpx.Client | None" = None
+_critique_groq_client: "Groq | None" = None
+
+
+def _get_groq_client() -> "Groq":
+    global _critique_http_client, _critique_groq_client
+    if _critique_groq_client is None:
+        _critique_http_client = httpx.Client(timeout=httpx.Timeout(60.0, connect=30.0))
+        _critique_groq_client = Groq(api_key=GROQ_API_KEY, http_client=_critique_http_client)
+    return _critique_groq_client
+
 CRITIQUE_SYSTEM_PROMPT = """You are a SENIOR PARTNER at a law firm reviewing a junior associate's due diligence findings.
 Your job is to play devil's advocate and critically evaluate each finding.
 
@@ -67,8 +79,7 @@ def run_critique(findings: list[dict], doc_summary: str | None = None) -> list[d
     if not findings:
         return findings
 
-    _http_client = httpx.Client(timeout=httpx.Timeout(60.0, connect=30.0))
-    client = Groq(api_key=GROQ_API_KEY, http_client=_http_client)
+    client = _get_groq_client()
 
     # Build a compact input with just the findings
     critique_input = []
