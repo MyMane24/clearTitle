@@ -32,3 +32,10 @@ redis==5.2.0
 
 # Agentic verification engine
 qdrant-client==1.18.0
+
+# Observability refactor dependencies
+python-json-logger==2.0.7
+prometheus_client==0.21.0
+opentelemetry-sdk==1.28.0
+opentelemetry-exporter-otlp-proto-grpc==1.28.0
+opentelemetry-instrumentation-celery==0.49b0

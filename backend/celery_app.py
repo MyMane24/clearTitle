@@ -18,7 +18,7 @@ celery_app = Celery(
     "property_ocr",
     broker=_REDIS_URL,
     backend=_REDIS_URL,
-    include=["backend.tasks.pipeline_tasks"],
+    include=["backend.tasks.pipeline_tasks", "backend.pipeline.tasks"],
 )
 
 celery_app.conf.update(

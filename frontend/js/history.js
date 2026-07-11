@@ -329,7 +329,18 @@ window.HistoryPanel = {
     if (verifyReport !== null) {
       // Set globals so the global drawer/filters work
       lastVerificationData = verifyReport;
-      verificationFindings = verifyReport.findings || [];
+      const shapedFindings = [];
+      if (verifyReport.cross_doc_findings) {
+        shapedFindings.push(...verifyReport.cross_doc_findings);
+      }
+      if (verifyReport.per_doc_findings) {
+        Object.values(verifyReport.per_doc_findings).forEach(group => {
+          if (group.issues) {
+            shapedFindings.push(...group.issues);
+          }
+        });
+      }
+      verificationFindings = shapedFindings;
 
       // Render the same tabbed interactive UI structure inside history panel!
       container.innerHTML = `
@@ -342,6 +353,7 @@ window.HistoryPanel = {
               <div class="vr-nav-tab" data-tab="hist-per-doc">Per Document</div>
               <div class="vr-nav-tab" data-tab="hist-missing-docs">Missing Documents</div>
               <div class="vr-nav-tab" data-tab="hist-final-report">Final Report</div>
+              <div class="vr-nav-tab" data-tab="hist-human-review">Human Review</div>
             </div>
             <button class="btn-pdf-download" id="btn-hist-download-pdf" title="Download PDF Report">⬇ PDF Report</button>
           </div>
@@ -381,6 +393,21 @@ window.HistoryPanel = {
           <!-- Tab 5: Final Report -->
           <div class="vr-tab-pane" id="pane-hist-final-report">
             <div id="vr-hist-final-opinion"></div>
+          </div>
+
+          <!-- Tab 6: Human Review -->
+          <div class="vr-tab-pane" id="pane-hist-human-review">
+            <div id="hist-verify-feedback-area" style="padding:16px;background:#f9fafb;border:1px solid var(--border);border-radius:8px">
+              <strong style="color:#111827">✏️ Human Review</strong>
+              <p style="font-size:12px;color:var(--gray);margin:8px 0 12px">
+                Review each finding. Accept if correct, or provide a correction with reason to update the AI learnings.
+              </p>
+              <div id="hist-feedback-items"></div>
+              <div class="btn-row">
+                <button class="btn btn-primary" id="hist-submit-feedback-btn">📤 Submit Review</button>
+              </div>
+              <div id="hist-feedback-status" style="margin-top:10px;font-size:13px"></div>
+            </div>
           </div>
         </div>
       `;
@@ -485,6 +512,120 @@ window.HistoryPanel = {
           </div>`;
       };
 
+      // Define helper to render Human Review inside history
+      const buildHistFeedbackForm = (reviewItems) => {
+        const container = document.getElementById("hist-feedback-items");
+        if (!container) return;
+        container.innerHTML = "";
+
+        reviewItems.forEach((item) => {
+          const f = item.finding;
+          const i = item.originalIndex;
+
+          const evidenceHtml = (f.evidence && f.evidence.length > 0)
+            ? `<div style="font-size:11px;color:var(--gray);background:#f3f4f6;padding:6px;border-radius:4px;margin-top:6px">
+                <strong>Evidence:</strong>
+                ${f.evidence.map(e => `<div><span class="vr-doc-pill" style="font-size:9px;padding:2px 4px">${escHtml(e.source)}</span> ${escHtml(e.detail)}</div>`).join('')}
+               </div>`
+            : '';
+
+          const whyFlaggedHtml = f.why_flagged 
+            ? `<div style="font-size:11px;color:var(--red);margin-top:4px"><strong>Why Flagged:</strong> ${escHtml(f.why_flagged)}</div>`
+            : '';
+
+          const legalRefHtml = (f.legal_references && f.legal_references.length > 0)
+            ? `<div style="font-size:11px;color:var(--blue);margin-top:4px"><strong>Legal Reference:</strong> ${f.legal_references.map(r => escHtml(r)).join(', ')}</div>`
+            : '';
+
+          const div = document.createElement("div");
+          div.className = "vr-review-card";
+          div.innerHTML = `
+            <div class="vr-review-header">
+              <div style="flex:1;padding-right:16px">
+                <strong style="font-size:13px">${escHtml(f.title || '')}</strong>
+                <span class="badge ${f.severity === "high" || f.severity === "critical" ? "badge-red" : f.severity === "medium" ? "badge-amber" : "badge-blue"}" style="margin-left:6px">${f.severity || 'low'}</span>
+                <div style="font-size:12px;color:var(--gray);margin-top:4px">${escHtml(f.what_was_found || '')}</div>
+                ${whyFlaggedHtml}
+                ${legalRefHtml}
+                ${evidenceHtml}
+              </div>
+              <div class="vr-review-actions">
+                <button class="vr-review-btn accept active" id="hist-fb-accept-btn-${i}" onclick="toggleHistHumanReviewChoice(${i}, true)">✔ Accept</button>
+                <button class="vr-review-btn reject" id="hist-fb-reject-btn-${i}" onclick="toggleHistHumanReviewChoice(${i}, false)">✖ Reject</button>
+              </div>
+            </div>
+            <div class="vr-review-expand" id="hist-fb-expand-${i}">
+              <textarea id="hist-fb-correction-${i}" placeholder="Enter the corrected fact or observation here..."
+                        style="width:100%;border:1px solid var(--border);border-radius:6px;padding:8px;font-size:12px;resize:vertical;min-height:40px;font-family:inherit"></textarea>
+              <input type="text" id="hist-fb-reason-${i}" placeholder="Provide legal context or reason (e.g. 'This survey number has been rectified under correction deed page 2')"
+                     style="width:100%;border:1px solid var(--border);border-radius:6px;padding:8px;font-size:12px;margin-top:6px;font-family:inherit">
+            </div>
+            <input type="hidden" id="hist-fb-docid-${i}" value="${((f.doc_ids || []).join(",")) || (f.source_doc_id || "")}">
+            <input type="hidden" id="hist-fb-type-${i}" value="${f.type || ''}">
+            <input type="hidden" id="hist-fb-accept-val-${i}" value="true">`;
+          container.appendChild(div);
+        });
+      };
+
+      window.toggleHistHumanReviewChoice = (index, accept) => {
+        const acceptBtn = document.getElementById(`hist-fb-accept-btn-${index}`);
+        const rejectBtn = document.getElementById(`hist-fb-reject-btn-${index}`);
+        const expandArea = document.getElementById(`hist-fb-expand-${index}`);
+        const valInput = document.getElementById(`hist-fb-accept-val-${index}`);
+
+        if (accept) {
+          acceptBtn.classList.add("active");
+          rejectBtn.classList.remove("active");
+          expandArea.classList.remove("active");
+          valInput.value = "true";
+        } else {
+          acceptBtn.classList.remove("active");
+          rejectBtn.classList.add("active");
+          expandArea.classList.add("active");
+          valInput.value = "false";
+        }
+      };
+
+      const submitHistFeedback = async () => {
+        const feedback = [];
+        const findings = verifyReport.findings || [];
+        
+        findings.forEach((f, i) => {
+          const acceptedVal = document.getElementById(`hist-fb-accept-val-${i}`);
+          if (acceptedVal) {
+            const accepted = acceptedVal.value === "true";
+            const correction = document.getElementById(`hist-fb-correction-${i}`).value.trim();
+            const reason = document.getElementById(`hist-fb-reason-${i}`).value.trim();
+            feedback.push({
+              doc_id: document.getElementById(`hist-fb-docid-${i}`).value,
+              original_flag: f.title || f.summary,
+              human_correction: correction || (accepted ? "Confirmed correct" : "Needs review"),
+              reason: reason,
+              accepted: accepted,
+              finding_type: document.getElementById(`hist-fb-type-${i}`).value,
+            });
+          }
+        });
+
+        const statusEl = document.getElementById("hist-feedback-status");
+        statusEl.innerHTML = '<span style="color:var(--blue)">⏳ Storing feedback and updating vector database...</span>';
+
+        try {
+          const data = await API.submitFeedback(caseId, feedback);
+          statusEl.innerHTML = `<span style="color:var(--green)">✅ ${data.message}</span>`;
+          if (window.showLearningsStats) window.showLearningsStats();
+        } catch (e) {
+          statusEl.innerHTML = `<span style="color:var(--red)">✗ ${e.message}</span>`;
+        }
+      };
+
+      setTimeout(() => {
+        const histSubmitBtn = document.getElementById("hist-submit-feedback-btn");
+        if (histSubmitBtn) {
+          histSubmitBtn.addEventListener("click", submitHistFeedback);
+        }
+      }, 0);
+
       // Dynamic filtering and rendering inside history
       let histSearchQuery = "";
       let histFilterSeverity = "";
@@ -546,6 +687,12 @@ window.HistoryPanel = {
             </div>
           </div>`;
         document.getElementById("vr-hist-per-doc-section").innerHTML = perDocHtml;
+
+        // 3. Human review pane
+        const reviewItems = (verificationFindings || [])
+          .map((f, idx) => ({ finding: f, originalIndex: idx }))
+          .filter(item => matchesHistFilter(item.finding));
+        buildHistFeedbackForm(reviewItems);
 
         // Bind sidebar item clicks
         perDocKeys.forEach(dt => {

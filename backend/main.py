@@ -20,6 +20,14 @@ for proxy_var in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https
     if os.getenv(proxy_var, "").startswith("http://127.0.0.1:9"):
         os.environ.pop(proxy_var, None)
 
+# Initialize JSON logging and tracing
+from backend.observability.logging import configure_json_logging
+from backend.observability.tracing import configure_tracing
+from prometheus_client import make_asgi_app
+
+configure_json_logging()
+configure_tracing()
+
 from backend.routers import router as pipeline_router
 
 # ── Ensure required directories exist ─────────────────────────────────────────
@@ -32,6 +40,9 @@ app = FastAPI(
     description="Sarvam OCR + Groq Structuring for property documents",
     version="1.0.0",
 )
+
+# Mount Prometheus /metrics endpoint
+app.mount("/metrics", make_asgi_app())
 
 app.add_middleware(
     CORSMiddleware,

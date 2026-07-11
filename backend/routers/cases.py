@@ -168,11 +168,23 @@ async def upload_documents(files: list[UploadFile] = File(...)):
 
 @router.post("/process/{case_id}")
 async def process_case(case_id: str):
+    import os
     if not redis_case_exists(case_id):
         raise HTTPException(status_code=404, detail="Case not found")
 
+    # Distributed locking
+    lock_enabled = os.getenv("PIPELINE_LOCK_ENABLED", "true").lower() == "true"
+    lock = None
+    if lock_enabled:
+        from backend.locking.redis_lock import RedisLock
+        lock = RedisLock(f"case:{case_id}:pipeline_lock")
+        if not lock.acquire():
+            raise HTTPException(status_code=409, detail={"error": "Pipeline already running"})
+
     meta = get_case_job(case_id)
     if meta["status"] == STATUS_PROCESSING:
+        if lock:
+            lock.release()
         raise HTTPException(status_code=409, detail="Already processing")
 
     set_case_status(case_id, STATUS_PROCESSING)
@@ -181,6 +193,8 @@ async def process_case(case_id: str):
     try:
         start_case_pipeline(case_id)
     except Exception as e:
+        if lock:
+            lock.release()
         set_case_status(case_id, STATUS_FAILED)
         append_log(case_id, f"FATAL: Failed to start pipeline — {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -193,7 +207,15 @@ async def get_status(case_id: str):
     if not redis_case_exists(case_id):
         raise HTTPException(status_code=404, detail="Case not found")
 
-    job = get_case_job(case_id)
+    from backend.services.mysql_store import get_case_status_payload
+    try:
+        job = get_case_status_payload(case_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Case not found")
+    except Exception as e:
+        logger.error("Failed to retrieve status from DB: %s", e)
+        # Fallback to get_case_job if DB read fails (very robust!)
+        job = get_case_job(case_id)
 
     action_errors = [
         e for e in job.get("errors", [])
@@ -238,17 +260,31 @@ async def get_status(case_id: str):
 
 @router.post("/retry/{case_id}")
 async def retry_failed(case_id: str):
+    import os
     if not redis_case_exists(case_id):
         raise HTTPException(status_code=404, detail="Case not found")
 
+    # Distributed locking
+    lock_enabled = os.getenv("PIPELINE_LOCK_ENABLED", "true").lower() == "true"
+    lock = None
+    if lock_enabled:
+        from backend.locking.redis_lock import RedisLock
+        lock = RedisLock(f"case:{case_id}:pipeline_lock")
+        if not lock.acquire():
+            raise HTTPException(status_code=409, detail={"error": "Pipeline already running"})
+
     meta = get_case_job(case_id)
     if meta["status"] == STATUS_PROCESSING:
+        if lock:
+            lock.release()
         raise HTTPException(status_code=409, detail="Already processing")
 
     failed = get_failed_documents(case_id)
     classification_failed = get_classification_failed_documents(case_id)
 
     if not failed:
+        if lock:
+            lock.release()
         msg = "No failed documents to retry."
         if classification_failed:
             doc_list = ", ".join(d["doc_id"] for d in classification_failed)
@@ -273,6 +309,8 @@ async def retry_failed(case_id: str):
     try:
         start_retry_pipeline(case_id)
     except Exception as e:
+        if lock:
+            lock.release()
         set_case_status(case_id, STATUS_FAILED)
         append_log(case_id, f"FATAL: Failed to start retry pipeline — {e}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -216,6 +216,11 @@ def append_log(case_id: str, msg: str) -> None:
     pipe.execute()
     safe_msg = f"[{case_id}] {msg}".encode("ascii", "backslashreplace").decode("ascii")
     print(safe_msg)
+    try:
+        from backend.services.mysql_store import append_pipeline_log
+        append_pipeline_log(case_id, msg)
+    except Exception as e:
+        print(f"Failed to append log to MySQL: {e}")
 
 
 def add_result(case_id: str, result: dict) -> None:

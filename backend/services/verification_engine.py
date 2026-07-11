@@ -225,6 +225,7 @@ def generate_verification_report_payload(
             "severity_icon": sev_icon,
             "category": f.get("category", "PER_DOC"),
             "documents_involved": docs_involved,
+            "doc_ids": doc_ids,
             "what_was_found": what_was_detected,
             "evidence": evidence_list,
             "why_flagged": why_flagged,

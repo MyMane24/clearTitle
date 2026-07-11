@@ -49,19 +49,27 @@ async def start_verification(case_id: str):
     if not redis_case_exists(case_id):
         raise HTTPException(status_code=404, detail="Case not found")
 
-    docs = get_case_documents(case_id)
-    if not docs:
-        raise HTTPException(
-            status_code=400,
-            detail="No documents found. Complete OCR pipeline first.",
-        )
+    from backend.locking.redis_lock import RedisLock
+    lock = RedisLock(f"case:{case_id}:verify_lock")
+    if not lock.acquire():
+        raise HTTPException(status_code=409, detail={"error": "Pipeline already running"})
 
     try:
-        report = run_verification(case_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Verification failed: {e}")
+        docs = get_case_documents(case_id)
+        if not docs:
+            raise HTTPException(
+                status_code=400,
+                detail="No documents found. Complete OCR pipeline first.",
+            )
 
-    return report
+        try:
+            report = run_verification(case_id)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Verification failed: {e}")
+
+        return report
+    finally:
+        lock.release()
 
 
 # ── Get report ───────────────────────────────────────────────────────────

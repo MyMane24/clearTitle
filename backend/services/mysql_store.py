@@ -60,9 +60,26 @@ def _get_pool():
     return _connection_pool
 
 
+class ManagedConnection:
+    def __init__(self, pool):
+        self.pool = pool
+        self.conn = None
+
+    def __enter__(self):
+        self.conn = self.pool.get_connection()
+        return self.conn
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.conn:
+            try:
+                self.conn.close()
+            except Exception:
+                pass
+
+
 def _get_conn():
     pool = _get_pool()
-    return pool.get_connection()
+    return ManagedConnection(pool)
 
 
 CREATE_TABLES_SQL = """
@@ -194,6 +211,27 @@ def _ensure_tables():
                 cursor.execute(stmt + ";")
         conn.commit()
 
+        # Add migration columns if they do not exist
+        for col_def in [
+            ("documents", "stage_started_at", "ALTER TABLE documents ADD COLUMN stage_started_at TIMESTAMP NULL DEFAULT NULL"),
+            ("documents", "stage_completed_at", "ALTER TABLE documents ADD COLUMN stage_completed_at TIMESTAMP NULL DEFAULT NULL"),
+            ("documents", "trace_id", "ALTER TABLE documents ADD COLUMN trace_id VARCHAR(64) NULL DEFAULT NULL"),
+            ("cases", "pipeline_logs", "ALTER TABLE cases ADD COLUMN pipeline_logs JSON NULL DEFAULT NULL"),
+        ]:
+            table, col, sql = col_def
+            try:
+                cursor.execute(sql)
+                conn.commit()
+            except Exception:
+                pass
+
+        # Backfill stage_completed_at for completed documents
+        try:
+            cursor.execute("UPDATE documents SET stage_completed_at = updated_at WHERE status IN ('structured', 'skipped') AND stage_completed_at IS NULL")
+            conn.commit()
+        except Exception:
+            pass
+
 
 # ── Case operations ──────────────────────────────────────────────────────
 
@@ -291,7 +329,17 @@ def update_document_status(
         if verification_notes is not None:
             fields["verification_notes"] = json.dumps(verification_notes, ensure_ascii=False)
         if file_paths is not None:
-            fields["file_paths"] = json.dumps(file_paths, ensure_ascii=False)
+            # Merge with existing file paths instead of overwriting
+            cursor.execute("SELECT file_paths FROM documents WHERE case_id = %s AND doc_id = %s", (case_id, doc_id))
+            row = cursor.fetchone()
+            existing_paths = {}
+            if row and row[0]:
+                try:
+                    existing_paths = json.loads(row[0])
+                except Exception:
+                    pass
+            existing_paths.update(file_paths)
+            fields["file_paths"] = json.dumps(existing_paths, ensure_ascii=False)
         if error is not None:
             fields["error"] = error
         if page_count:
@@ -634,3 +682,204 @@ def clear_all_tables() -> None:
             pass
         cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
         conn.commit()
+
+
+def get_document_status(case_id: str, doc_id: str) -> str | None:
+    with _get_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT status FROM documents WHERE case_id = %s AND doc_id = %s",
+            (case_id, doc_id),
+        )
+        row = cursor.fetchone()
+        return row[0] if row else None
+
+
+def set_document_stage(case_id: str, doc_id: str, stage) -> None:
+    status_str = stage.name.lower()
+    with _get_conn() as conn:
+        cursor = conn.cursor()
+        
+        start_stages = {"preprocessing", "ocr_in_progress", "merging", "classifying", "structuring", "persisting"}
+        complete_stages = {"preprocessed", "ocr_done", "merged", "classified", "structuring_done", "structured", "skipped"}
+        
+        sql = "UPDATE documents SET status = %s"
+        params = [status_str]
+        
+        if status_str in start_stages:
+            sql += ", stage_started_at = CURRENT_TIMESTAMP"
+        elif status_str in complete_stages:
+            sql += ", stage_completed_at = CURRENT_TIMESTAMP"
+            
+        sql += " WHERE case_id = %s AND doc_id = %s"
+        params.extend([case_id, doc_id])
+        
+        cursor.execute(sql, tuple(params))
+        conn.commit()
+
+
+def load_document_paths(case_id: str, doc_id: str) -> dict:
+    with _get_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT file_paths FROM documents WHERE case_id = %s AND doc_id = %s", (case_id, doc_id))
+        row = cursor.fetchone()
+        if row and row[0]:
+            try:
+                return json.loads(row[0])
+            except Exception:
+                pass
+        return {}
+
+
+def recompute_case_status(case_id: str) -> None:
+    update_case_status(case_id=case_id)
+
+
+def append_pipeline_log(case_id: str, msg: str) -> None:
+    with _get_conn() as conn:
+        cursor = conn.cursor()
+        # Acquire lock on the cases row to prevent race conditions from concurrent updates
+        cursor.execute("SELECT pipeline_logs FROM cases WHERE id = %s FOR UPDATE", (case_id,))
+        row = cursor.fetchone()
+        logs = []
+        if row and row[0]:
+            try:
+                logs = json.loads(row[0])
+            except Exception:
+                logs = []
+        if not isinstance(logs, list):
+            logs = []
+        logs.append(msg)
+        logs = logs[-200:]
+        cursor.execute(
+            "UPDATE cases SET pipeline_logs = %s WHERE id = %s",
+            (json.dumps(logs, ensure_ascii=False), case_id)
+        )
+        conn.commit()
+
+
+def get_pipeline_logs(case_id: str) -> list[str]:
+    with _get_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT pipeline_logs FROM cases WHERE id = %s", (case_id,))
+        row = cursor.fetchone()
+        if row and row[0]:
+            try:
+                logs = json.loads(row[0])
+                if isinstance(logs, list):
+                    return logs
+            except Exception:
+                pass
+        return []
+
+
+def get_case_status_payload(case_id: str) -> dict:
+    with _get_conn() as conn:
+        # 1. Fetch case info
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT status, total_docs, completed_docs, failed_docs, pipeline_logs "
+            "FROM cases WHERE id = %s",
+            (case_id,)
+        )
+        case_row = cursor.fetchone()
+        if not case_row:
+            raise KeyError(f"Case {case_id} not found in DB")
+            
+        # 2. Fetch documents
+        cursor.execute(
+            "SELECT doc_id, filename, document_type, status, structured_data, file_paths, error, "
+            "page_count, input_tokens, output_tokens, latency_ms, cost_usd, model_used "
+            "FROM documents WHERE case_id = %s ORDER BY doc_index ASC",
+            (case_id,)
+        )
+        doc_rows = cursor.fetchall()
+        
+    # Reconstruct log list
+    logs = []
+    if case_row.get("pipeline_logs"):
+        try:
+            logs = json.loads(case_row["pipeline_logs"])
+        except Exception:
+            pass
+            
+    # Reconstruct files list
+    files = []
+    results = []
+    errors = []
+    
+    for d in doc_rows:
+        file_paths = {}
+        if d.get("file_paths"):
+            try:
+                file_paths = json.loads(d["file_paths"])
+            except Exception:
+                pass
+                
+        # files element
+        files.append({
+            "doc_id": d["doc_id"],
+            "original_name": d["filename"],
+            "saved_path": file_paths.get("raw")
+        })
+        
+        # results element (only if status is structured)
+        if d["status"] == "structured":
+            structured_data = {}
+            if d.get("structured_data"):
+                try:
+                    structured_data = json.loads(d["structured_data"])
+                except Exception:
+                    pass
+            
+            doc_type = d.get("document_type") or ""
+            safe_type = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in doc_type.upper())
+            results.append({
+                "doc_id": d["doc_id"],
+                "filename": d["filename"],
+                "doc_type": doc_type,
+                "status": "complete",
+                "structured": structured_data,
+                "result_file": f"{d['doc_id']}_{safe_type}.json",
+                "total_pages": d["page_count"],
+                "chunks_used": 1,  # derived placeholder
+                "input_tokens": d["input_tokens"],
+                "output_tokens": d["output_tokens"],
+                "cost_usd": float(d["cost_usd"]),
+                "latency_ms": d["latency_ms"],
+                "model_used": d["model_used"],
+                "provider": "gemini" if "gemini" in (d["model_used"] or "").lower() else "groq"
+            })
+            
+        # errors element (if failed or classification_failed)
+        if d["status"] in ("failed", "classification_failed"):
+            action_required = None
+            if d["status"] == "classification_failed":
+                action_required = "replace_or_skip"
+            errors.append({
+                "doc_id": d["doc_id"],
+                "step": "classify" if d["status"] == "classification_failed" else "pipeline",
+                "error": d["error"],
+                "action_required": action_required
+            })
+            
+    # Calculate progress
+    total = case_row["total_docs"]
+    done = case_row["completed_docs"] + case_row["failed_docs"]
+    case_status = case_row["status"]
+    
+    if total > 0:
+        progress = min(100, int((done / total) * 90)) if case_status == "processing" else 100
+    else:
+        progress = 0
+        
+    return {
+        "case_id": case_id,
+        "status": case_status,
+        "files": files,
+        "results": results,
+        "errors": errors,
+        "progress": progress,
+        "log": logs
+    }
+

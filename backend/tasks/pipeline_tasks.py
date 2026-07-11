@@ -381,31 +381,37 @@ def process_document_task(self, case_id: str, doc_id: str) -> dict:
 @celery_app.task(ignore_result=True)
 def finalize_case_task(results: list, case_id: str):
     """Runs once after ALL documents in the case have been processed."""
-    success_ids = {
-        r["doc_id"] for r in results
-        if isinstance(r, dict) and r.get("status") == STATUS_COMPLETE
-    }
-
-    # Clean up errors for docs that just succeeded
-    for doc_id in success_ids:
-        try:
-            remove_error_for_doc(case_id, doc_id)
-        except Exception as e:
-            logger.warning("Failed to remove error for %s/%s: %s", case_id, doc_id, e)
-
-    # Determine final status
-    failed_count = sum(
-        1 for r in results
-        if isinstance(r, dict) and r.get("status") in (STATUS_FAILED, STATUS_CLASSIFICATION_FAILED)
+    from backend.services.mysql_store import (
+        update_case_status as mysql_update_case_status,
+        append_pipeline_log,
+        get_case_documents,
     )
-    case_status = STATUS_COMPLETE if failed_count == 0 else STATUS_PARTIAL
-    set_case_status(case_id, case_status)
 
-    # Update V2 database case status
+    # 1. Update MySQL database case status (counts completed and failed documents)
     try:
         mysql_update_case_status(case_id=case_id)
     except Exception as e:
-        append_log(case_id, f"⚠ Case status DB update failed: {e}")
+        logger.error("Failed to recompute case status in DB: %s", e)
 
-    total = len(results)
-    append_log(case_id, f"── Pipeline done: {total - failed_count} complete, {failed_count} failed ──")
+    # 2. Re-read statuses from MySQL to compile logs
+    try:
+        docs = get_case_documents(case_id)
+        failed_count = sum(
+            1 for d in docs
+            if d.get("status") in ("failed", "classification_failed")
+        )
+        success_count = sum(1 for d in docs if d.get("status") == "structured")
+        
+        append_pipeline_log(
+            case_id,
+            f"── Pipeline done: {success_count} complete, {failed_count} failed ──"
+        )
+    except Exception as e:
+        logger.error("Failed to log pipeline completion to DB: %s", e)
+
+    # 3. Release pipeline lock
+    try:
+        from backend.locking.redis_lock import RedisLock
+        RedisLock(f"case:{case_id}:pipeline_lock").force_release()
+    except Exception as e:
+        logger.error("Failed to release pipeline lock for case %s: %s", case_id, e)

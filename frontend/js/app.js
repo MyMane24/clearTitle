@@ -325,9 +325,21 @@ async function startVerification() {
 function showVerificationResults(data) {
   document.getElementById("verify-loading").classList.add("hidden");
   document.getElementById("verify-results").classList.remove("hidden");
+  document.getElementById("verify-feedback-area").classList.remove("hidden");
 
   lastVerificationData = data;
-  verificationFindings = data.findings || [];
+  const shapedFindings = [];
+  if (data.cross_doc_findings) {
+    shapedFindings.push(...data.cross_doc_findings);
+  }
+  if (data.per_doc_findings) {
+    Object.values(data.per_doc_findings).forEach(group => {
+      if (group.issues) {
+        shapedFindings.push(...group.issues);
+      }
+    });
+  }
+  verificationFindings = shapedFindings;
 
   document.getElementById("verify-progress-bar").style.width = "100%";
   document.getElementById("verify-progress-label").textContent = "Verification complete";
@@ -587,7 +599,10 @@ function applyFiltersAndRender() {
   document.getElementById("vr-per-doc-section").innerHTML = perDocHtml;
 
   // 3. Human review pane
-  buildFeedbackForm(verificationFindings.filter(matchesFilter));
+  const reviewItems = verificationFindings
+    .map((f, idx) => ({ finding: f, originalIndex: idx }))
+    .filter(item => matchesFilter(item.finding));
+  buildFeedbackForm(reviewItems);
 }
 
 function switchActivePerDoc(docType) {
@@ -725,19 +740,40 @@ function closeDrawer() {
   document.getElementById("vr-drawer").classList.remove("active");
 }
 
-function buildFeedbackForm(findings) {
+function buildFeedbackForm(reviewItems) {
   const container = document.getElementById("feedback-items");
   container.innerHTML = "";
 
-  findings.forEach((f, i) => {
+  reviewItems.forEach((item) => {
+    const f = item.finding;
+    const i = item.originalIndex;
+
+    const evidenceHtml = (f.evidence && f.evidence.length > 0)
+      ? `<div style="font-size:11px;color:var(--gray);background:#f3f4f6;padding:6px;border-radius:4px;margin-top:6px">
+          <strong>Evidence:</strong>
+          ${f.evidence.map(e => `<div><span class="vr-doc-pill" style="font-size:9px;padding:2px 4px">${escHtml(e.source)}</span> ${escHtml(e.detail)}</div>`).join('')}
+         </div>`
+      : '';
+
+    const whyFlaggedHtml = f.why_flagged 
+      ? `<div style="font-size:11px;color:var(--red);margin-top:4px"><strong>Why Flagged:</strong> ${escHtml(f.why_flagged)}</div>`
+      : '';
+
+    const legalRefHtml = (f.legal_references && f.legal_references.length > 0)
+      ? `<div style="font-size:11px;color:var(--blue);margin-top:4px"><strong>Legal Reference:</strong> ${f.legal_references.map(r => escHtml(r)).join(', ')}</div>`
+      : '';
+
     const div = document.createElement("div");
     div.className = "vr-review-card";
     div.innerHTML = `
       <div class="vr-review-header">
-        <div>
+        <div style="flex:1;padding-right:16px">
           <strong style="font-size:13px">${escHtml(f.title || '')}</strong>
           <span class="badge ${f.severity === "high" || f.severity === "critical" ? "badge-red" : f.severity === "medium" ? "badge-amber" : "badge-blue"}" style="margin-left:6px">${f.severity || 'low'}</span>
           <div style="font-size:12px;color:var(--gray);margin-top:4px">${escHtml(f.what_was_found || '')}</div>
+          ${whyFlaggedHtml}
+          ${legalRefHtml}
+          ${evidenceHtml}
         </div>
         <div class="vr-review-actions">
           <button class="vr-review-btn accept active" id="fb-accept-btn-${i}" onclick="toggleHumanReviewChoice(${i}, true)">✔ Accept</button>
@@ -777,12 +813,11 @@ function toggleHumanReviewChoice(index, accept) {
 }
 
 async function submitFeedback() {
-  if (!currentCaseId || !lastVerificationData) return;
+  if (!currentCaseId || !verificationFindings) return;
   
   const feedback = [];
-  const findings = lastVerificationData.findings || [];
   
-  findings.forEach((f, i) => {
+  verificationFindings.forEach((f, i) => {
     const acceptedVal = document.getElementById(`fb-accept-val-${i}`);
     if (acceptedVal) {
       const accepted = acceptedVal.value === "true";
@@ -794,7 +829,7 @@ async function submitFeedback() {
         human_correction: correction || (accepted ? "Confirmed correct" : "Needs review"),
         reason: reason,
         accepted: accepted,
-        finding_type: document.getElementById(`fb-type-${i}`).value,
+        finding_type: f.type || '',
       });
     }
   });
