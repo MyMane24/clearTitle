@@ -1223,13 +1223,183 @@
 }
 
 @media (max-width: 800px) {
-  .header { padding: 16px; }
-  .header p { display: none; }
-  .app-layout { display: block; margin: 16px auto; padding: 0 12px; }
-  .sidebar { position: static; width: 100%; min-width: 0; max-height: 260px; margin: 0 0 16px; }
-  .steps { overflow-x: auto; }
-  .step { min-width: 120px; }
-  .btn-row { flex-wrap: wrap; }
-  .btn-danger { margin-left: 0 !important; }
-  .vr-dashboard { grid-template-columns: 1fr; }
+  .header {
+    padding: 10px 16px;
+    gap: 10px;
+  }
+  .header h1 {
+    font-size: 14px;
+  }
+  .header p {
+    display: none;
+  }
+  .header-logo {
+    height: 28px;
+  }
+  .health-dot #health-text {
+    display: none;
+  }
+
+  .app-layout {
+    display: flex;
+    position: relative;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Mobile sidebar drawer overlay */
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 57px; /* height of header */
+    height: calc(100vh - 57px);
+    width: 280px;
+    min-width: 280px;
+    z-index: 999;
+    box-shadow: 4px 0 12px rgba(0,0,0,0.15);
+    transform: translateX(0);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .sidebar.collapsed {
+    transform: translateX(-100%);
+    width: 280px;
+    min-width: 280px;
+    border-right-color: transparent;
+  }
+
+  .main-content {
+    padding: 16px;
+    width: 100%;
+  }
+
+  .steps {
+    overflow-x: auto;
+    white-space: nowrap;
+    display: flex;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+  .step {
+    flex: 0 0 auto;
+    min-width: 120px;
+    padding: 10px 6px;
+    font-size: 12px;
+  }
+
+  .btn-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .btn {
+    padding: 9px 16px;
+    font-size: 13px;
+  }
+  .btn-danger {
+    margin-left: 0 !important;
+  }
+
+  /* Navigation sub-tabs horizontal scrolling */
+  .vr-nav-tabs-bar {
+    position: sticky;
+    top: 0;
+    margin-bottom: 12px;
+    padding: 4px 0;
+  }
+  .vr-nav-tabs {
+    overflow-x: auto;
+    white-space: nowrap;
+    display: flex;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    gap: 4px;
+  }
+  .vr-nav-tab {
+    flex: 0 0 auto;
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+
+  /* Document tab buttons */
+  .doc-tabs {
+    overflow-x: auto;
+    white-space: nowrap;
+    display: flex;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    gap: 6px;
+    padding-bottom: 4px;
+  }
+  .doc-tab {
+    flex: 0 0 auto;
+  }
+
+  /* Grids and Split layouts */
+  .vr-overview-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .vr-split-layout {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .vr-field-grid {
+    grid-template-columns: 1fr;
+  }
+  .vr-opinion-grid {
+    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+    gap: 8px;
+  }
+  .vr-missing-tile-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Evidence side-by-side splits */
+  .vr-evidence-split {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    text-align: center;
+  }
+  .vr-evidence-arrow {
+    transform: rotate(90deg);
+    margin: 4px auto;
+  }
+
+  /* Sliding side drawer (Finding Details) */
+  .vr-drawer {
+    width: 100%;
+    right: -105%;
+  }
+  .vr-drawer.active {
+    right: 0;
+  }
+
+  /* Table structure for sheets/attributes */
+  .vr-sheet-row {
+    grid-template-columns: 1fr;
+    border-bottom: 1px solid var(--border);
+  }
+  .vr-sheet-key {
+    background: #fcfcfc;
+    border-right: none;
+    border-bottom: 1px solid #f3f4f6;
+    padding: 6px 16px;
+  }
+  .vr-sheet-val {
+    padding: 8px 16px;
+  }
+
+  /* Metrics rows */
+  .metrics-row {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    display: grid;
+    gap: 8px;
+  }
+  .metric-box {
+    min-width: 0;
+    padding: 10px 12px;
+  }
+  .metric-box .val {
+    font-size: 20px;
+  }
 }

@@ -977,10 +977,24 @@ document.addEventListener("DOMContentLoaded", () => {
   // Sidebar expand/collapse toggle
   const toggleBtn = document.getElementById("sidebar-toggle-btn");
   if (toggleBtn) {
-    toggleBtn.addEventListener("click", () => {
+    toggleBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
       const sidebar = document.getElementById("sidebar");
       if (sidebar) {
         sidebar.classList.toggle("collapsed");
+      }
+    });
+  }
+
+  // Close sidebar on mobile when clicking main content
+  const mainContent = document.querySelector(".main-content");
+  if (mainContent) {
+    mainContent.addEventListener("click", () => {
+      if (window.innerWidth <= 800) {
+        const sidebar = document.getElementById("sidebar");
+        if (sidebar && !sidebar.classList.contains("collapsed")) {
+          sidebar.classList.add("collapsed");
+        }
       }
     });
   }
