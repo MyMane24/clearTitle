@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 
 MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")
 MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
@@ -40,23 +41,26 @@ def _ensure_database(connector):
 
 
 _connection_pool = None
+_pool_lock = threading.Lock()
 
 def _get_pool():
     global _connection_pool
     if _connection_pool is None:
-        connector = _mysql_connector()
-        _ensure_database(connector)
-        try:
-            from mysql.connector.pooling import MySQLConnectionPool
-        except ImportError as exc:
-            raise RuntimeError("mysql-connector-python not installed") from exc
-        _connection_pool = MySQLConnectionPool(
-            pool_name="property_ocr_pool",
-            pool_size=10,
-            pool_reset_session=True,
-            host=MYSQL_HOST, port=MYSQL_PORT, user=MYSQL_USER,
-            password=MYSQL_PASSWORD, database=MYSQL_DATABASE,
-        )
+        with _pool_lock:
+            if _connection_pool is None:
+                connector = _mysql_connector()
+                _ensure_database(connector)
+                try:
+                    from mysql.connector.pooling import MySQLConnectionPool
+                except ImportError as exc:
+                    raise RuntimeError("mysql-connector-python not installed") from exc
+                _connection_pool = MySQLConnectionPool(
+                    pool_name="property_ocr_pool",
+                    pool_size=10,
+                    pool_reset_session=True,
+                    host=MYSQL_HOST, port=MYSQL_PORT, user=MYSQL_USER,
+                    password=MYSQL_PASSWORD, database=MYSQL_DATABASE,
+                )
     return _connection_pool
 
 
@@ -202,7 +206,13 @@ CREATE TABLE IF NOT EXISTS cross_doc_verifications (
 """
 
 
-def _ensure_tables():
+_tables_initialized = False
+
+def ensure_tables():
+    """Run DDL once at startup. Do NOT call from per-request handlers."""
+    global _tables_initialized
+    if _tables_initialized:
+        return
     with _get_conn() as conn:
         cursor = conn.cursor()
         for statement in CREATE_TABLES_SQL.split(";"):
@@ -211,7 +221,6 @@ def _ensure_tables():
                 cursor.execute(stmt + ";")
         conn.commit()
 
-        # Add migration columns if they do not exist
         for col_def in [
             ("documents", "stage_started_at", "ALTER TABLE documents ADD COLUMN stage_started_at TIMESTAMP NULL DEFAULT NULL"),
             ("documents", "stage_completed_at", "ALTER TABLE documents ADD COLUMN stage_completed_at TIMESTAMP NULL DEFAULT NULL"),
@@ -225,18 +234,22 @@ def _ensure_tables():
             except Exception:
                 pass
 
-        # Backfill stage_completed_at for completed documents
         try:
             cursor.execute("UPDATE documents SET stage_completed_at = updated_at WHERE status IN ('structured', 'skipped') AND stage_completed_at IS NULL")
             conn.commit()
         except Exception:
             pass
+    _tables_initialized = True
+
+
+def _ensure_tables():
+    """Deprecated: use ensure_tables() at startup instead."""
+    ensure_tables()
 
 
 # ── Case operations ──────────────────────────────────────────────────────
 
 def init_case(*, case_id: str, total_docs: int) -> None:
-    _ensure_tables()
     with _get_conn() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -272,7 +285,6 @@ def update_case_status(*, case_id: str) -> None:
 
 
 def list_cases(limit: int = 50, offset: int = 0) -> list[dict]:
-    _ensure_tables()
     with _get_conn() as conn:
         cursor = conn.cursor(dictionary=True)
         cursor.execute(
@@ -287,7 +299,6 @@ def list_cases(limit: int = 50, offset: int = 0) -> list[dict]:
 # ── Document operations ──────────────────────────────────────────────────
 
 def init_document(*, case_id: str, doc_id: str, doc_index: int, filename: str, file_paths: dict | None = None) -> None:
-    _ensure_tables()
     with _get_conn() as conn:
         cursor = conn.cursor()
         file_paths_str = json.dumps(file_paths, ensure_ascii=False) if file_paths else None
@@ -328,18 +339,6 @@ def update_document_status(
             fields["structured_data"] = json.dumps(structured_data, ensure_ascii=False)
         if verification_notes is not None:
             fields["verification_notes"] = json.dumps(verification_notes, ensure_ascii=False)
-        if file_paths is not None:
-            # Merge with existing file paths instead of overwriting
-            cursor.execute("SELECT file_paths FROM documents WHERE case_id = %s AND doc_id = %s", (case_id, doc_id))
-            row = cursor.fetchone()
-            existing_paths = {}
-            if row and row[0]:
-                try:
-                    existing_paths = json.loads(row[0])
-                except Exception:
-                    pass
-            existing_paths.update(file_paths)
-            fields["file_paths"] = json.dumps(existing_paths, ensure_ascii=False)
         if error is not None:
             fields["error"] = error
         if page_count:
@@ -358,7 +357,15 @@ def update_document_status(
             fields["raw_ocr_path"] = raw_ocr_path
 
         set_clause = ", ".join(f"{k} = %s" for k in fields)
-        values = [*list(fields.values()), case_id, doc_id]
+        values = [*list(fields.values())]
+
+        # Use MySQL JSON_MERGE_PATCH for atomic file_paths merge (no read-modify-write race)
+        if file_paths is not None:
+            for key, val in file_paths.items():
+                set_clause += f", file_paths = JSON_SET(COALESCE(file_paths, '{{}}'), %s, %s)"
+                values.extend([f"$.{key}", json.dumps(val, ensure_ascii=False) if not isinstance(val, str) else val])
+
+        values.extend([case_id, doc_id])
         cursor.execute(
             f"UPDATE documents SET {set_clause} WHERE case_id = %s AND doc_id = %s",
             values,
@@ -439,7 +446,6 @@ def save_cross_doc_verification(*, case_id: str, verdict: str | None = None,
                                  input_tokens: int = 0, output_tokens: int = 0,
                                  latency_ms: int = 0, cost_usd: float = 0,
                                  model_used: str = "") -> None:
-    _ensure_tables()
     with _get_conn() as conn:
         cursor = conn.cursor()
         fields = {"status": "completed"}

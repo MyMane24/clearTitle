@@ -5,6 +5,7 @@ Case-level endpoints: upload, process, retry, status
 from __future__ import annotations
 
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
@@ -50,16 +51,21 @@ from backend.utils.file_utils import delete_case_dir, get_case_dir, save_upload
 router = APIRouter()
 logger = get_logger(__name__)
 
+_executor = ThreadPoolExecutor(max_workers=4)
+
 
 @router.get("/cases")
 async def get_all_cases(limit: int = 50, offset: int = 0):
     """List historical cases from database plus output folders."""
+    import asyncio
     seen = set()
     merged = []
 
-    # Try database
+    # Try database (non-blocking)
     try:
-        db_cases = list_cases(limit=limit, offset=offset)
+        db_cases = await asyncio.get_event_loop().run_in_executor(
+            _executor, lambda: list_cases(limit=limit, offset=offset)
+        )
         for case in db_cases:
             case["source"] = "v2"
             case["db_version"] = "v2"
@@ -204,17 +210,19 @@ async def process_case(case_id: str):
 
 @router.get("/status/{case_id}")
 async def get_status(case_id: str):
+    import asyncio
     if not redis_case_exists(case_id):
         raise HTTPException(status_code=404, detail="Case not found")
 
     from backend.services.mysql_store import get_case_status_payload
     try:
-        job = get_case_status_payload(case_id)
+        job = await asyncio.get_event_loop().run_in_executor(
+            _executor, get_case_status_payload, case_id
+        )
     except KeyError:
         raise HTTPException(status_code=404, detail="Case not found")
     except Exception as e:
         logger.error("Failed to retrieve status from DB: %s", e)
-        # Fallback to get_case_job if DB read fails (very robust!)
         job = get_case_job(case_id)
 
     action_errors = [

@@ -1,13 +1,17 @@
 """File path helpers and utilities."""
 
 import json
+import os
 import re
 import shutil
 import aiofiles
 from pathlib import Path
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
 
 BASE_DIR = Path(".")
+
+MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50"))
+MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
 
 def get_case_dir(case_id: str) -> Path:
@@ -22,8 +26,13 @@ async def save_upload(file: UploadFile, dest_dir: Path, doc_id: str = "") -> Pat
     if doc_id:
         safe_name = f"{doc_id}_{safe_name}"
     dest = dest_dir / safe_name
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File '{file.filename}' exceeds maximum upload size of {MAX_UPLOAD_SIZE_MB}MB",
+        )
     async with aiofiles.open(dest, "wb") as f:
-        content = await file.read()
         await f.write(content)
     return dest
 

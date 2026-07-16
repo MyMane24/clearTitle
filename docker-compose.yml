@@ -55,7 +55,7 @@ services:
       PMA_USER:     ${MYSQL_USER}
       PMA_PASSWORD: ${MYSQL_PASSWORD}
     ports:
-      - "8080:80"
+      - "127.0.0.1:8080:80"
 
   # ── API (FastAPI + uvicorn) ────────────────────────────────────────────────
   # Serves the REST API and the frontend static files.

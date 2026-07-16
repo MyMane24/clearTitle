@@ -3,6 +3,7 @@ Property OCR Pipeline — FastAPI Application
 Entry point: uvicorn backend.main:app --reload --port 8000
 """
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -10,17 +11,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 from dotenv import load_dotenv
 import os
+import logging
 
 load_dotenv()
 
 # Codex/sandbox launches can inject a dead local proxy (127.0.0.1:9).
-# The Sarvam and Groq SDKs use httpx, which honors these env vars by default.
-# If left in place, external API calls fail with WinError 10061.
 for proxy_var in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
     if os.getenv(proxy_var, "").startswith("http://127.0.0.1:9"):
         os.environ.pop(proxy_var, None)
 
-# Initialize JSON logging and tracing
 from backend.observability.logging import configure_json_logging
 from backend.observability.tracing import configure_tracing
 from prometheus_client import make_asgi_app
@@ -34,11 +33,39 @@ from backend.routers import router as pipeline_router
 for d in ["uploads", "outputs/structured", "outputs/raw_ocr"]:
     Path(d).mkdir(parents=True, exist_ok=True)
 
+logger = logging.getLogger(__name__)
+
+# ── Allowed CORS origins ──────────────────────────────────────────────────────
+ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",")
+
+# ── Lifespan (replaces deprecated @app.on_event) ─────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: init DB tables once, init statute RAG
+    from backend.services.mysql_store import ensure_tables
+    try:
+        ensure_tables()
+    except Exception as e:
+        logger.warning("Failed to initialize database tables: %s", e)
+
+    try:
+        from backend.services.statute_rag import initialize_statute_store
+        initialize_statute_store()
+    except Exception as e:
+        logger.warning("Failed to initialize statute store: %s", e)
+
+    yield
+
+    # Shutdown (if needed)
+    pass
+
+
 # ── App ────────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="Property Verification Engine",
     description="Sarvam OCR + Groq Structuring for property documents",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # Mount Prometheus /metrics endpoint
@@ -46,23 +73,10 @@ app.mount("/metrics", make_asgi_app())
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# ── Initialize statute RAG store on startup ──────────────────────────────────
-from backend.services.statute_rag import initialize_statute_store
-
-
-@app.on_event("startup")
-async def startup():
-    try:
-        initialize_statute_store()
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning("Failed to initialize statute store: %s", e)
-
 
 # ── API routes ─────────────────────────────────────────────────────────────────
 app.include_router(pipeline_router, prefix="/api")

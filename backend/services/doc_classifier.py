@@ -11,7 +11,8 @@ from backend.constants import (
     E_PAYMENT_RECEIPT, TAX_RECEIPT,
     LEGAL_HEIR_CERTIFICATE, PARTITION_DEED,
     COURT_ORDER, POSSESSION_CERTIFICATE, CONVERSION_ORDER,
-    CDP_PLAN, UNKNOWN_DOC,
+    CDP_PLAN, RERA_CERTIFICATE, LITIGATION_AFFIDAVIT,
+    ALLOTMENT_LETTER, BUILDING_LICENSE, COMPLETION_CERTIFICATE, UNKNOWN_DOC,
 )
 
 DOC_TYPE_KEYWORDS = {
@@ -106,6 +107,40 @@ DOC_TYPE_KEYWORDS = {
         "cdp plan", "cdp", "development plan", "master plan",
         "zoning classification", "planning authority",
     ],
+    RERA_CERTIFICATE: [
+        "karnataka real estate regulatory authority",
+        "real estate regulatory authority",
+        "rera",
+        "form-c",
+        "registration certificate of project",
+    ],
+    LITIGATION_AFFIDAVIT: [
+        "affidavit declaration about no litigation",
+        "no litigation",
+        "no-litigation",
+        "affidavit cum declaration",
+    ],
+    ALLOTMENT_LETTER: [
+        "allotment letter",
+        "allotment of flat",
+        "allotted a",
+        "booking amount/advance payment",
+    ],
+    BUILDING_LICENSE: [
+        "building license",
+        "ಕಟ್ಟಡ ಪರವಾನಿಗೆ",
+        "ಪರವಾನಿಗೆ ಸಂಖ್ಯೆ",
+        "ಕಟ್ಟಡ ನಿರ್ಮಾಣ ಮಾಡಲು",
+    ],
+    COMPLETION_CERTIFICATE: [
+        "completion certificate",
+        "issue of completion certificate",
+        "preamble",
+        "fit for occupation",
+        "structural safety",
+        "ಜೆ.ಇ ವರದಿ",
+        "ಕಾಮಗಾರಿ ಪೂರ್ಣಗೊಂಡ ಪತ್ರ",
+    ],
 }
 
 # Filename-level quick matches (checked before content)
@@ -142,6 +177,13 @@ FILENAME_PATTERNS = {
     "cdp":           CDP_PLAN,
     "masterplan":    CDP_PLAN,
     "zoning":        CDP_PLAN,
+    "rera":          RERA_CERTIFICATE,
+    "litigation":    LITIGATION_AFFIDAVIT,
+    "affidavit":     LITIGATION_AFFIDAVIT,
+    "allotment":     ALLOTMENT_LETTER,
+    "building":      BUILDING_LICENSE,
+    "license":       BUILDING_LICENSE,
+    "completion":    COMPLETION_CERTIFICATE,
 }
 
 

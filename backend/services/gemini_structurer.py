@@ -333,6 +333,73 @@ GIFT_DEED_SCHEMA = {
     **VERIFICATION_NOTES_SCHEMA,
 }
 
+
+PARTITION_DEED_SCHEMA = {
+    "document_type": "PARTITION_DEED",
+    "file_metadata": {
+        "registration_number": None,
+        "document_number": None,
+        "book_number": None,
+        "cd_number": None,
+        "execution_date": None,
+        "registration_date": None,
+        "registration_time": None,
+        "issuing_office": None,
+        "scanned_sheet_count": None,
+        "drafted_by": None,
+    },
+    "financial_summary": {
+        "stamp_duty_paid_amount": None,
+        "stamp_duty_payment_mode": None,
+        "stamp_duty_certificate_reference": None,
+        "stamp_duty_certificate_date": None,
+        "registration_fee": None,
+        "scanning_fee": None,
+        "conversion_fee": None,
+        "scrutiny_fee": None,
+        "total_other_fees": None,
+        "payment_breakdown": [
+            {"amount": None, "mode": None, "instrument_reference": None, "instrument_date": None, "bank_branch": None}
+        ],
+    },
+    "parties": {
+        "coparceners": [{"entity_name": None, "age": None, "occupation": None, "address": None, "party_number": None}],
+    },
+    "property_schedule_a": {
+        "survey_number": None,
+        "cts_number": None,
+        "municipal_number": None,
+        "full_schedule_description": None,
+        "measurements": {
+            "dimensions_text": None,
+            "total_land_area_sqyds": None,
+            "total_land_area_sqft": None,
+        },
+        "boundaries": {"north": None, "east": None, "west": None, "south": None},
+        "property_address": None,
+    },
+    "allocated_schedules": [
+        {
+            "schedule_name": None,
+            "allocated_to_party_name": None,
+            "survey_number": None,
+            "cts_number": None,
+            "municipal_number": None,
+            "full_schedule_description": None,
+            "measurements": {
+                "dimensions_text": None,
+                "total_land_area_sqyds": None,
+                "total_land_area_sqft": None,
+                "built_up_area_sqft": None,
+            },
+            "boundaries": {"north": None, "east": None, "west": None, "south": None},
+            "property_address": None,
+        }
+    ],
+    "witnesses": [{"name": None, "address": None}],
+    **VERIFICATION_NOTES_SCHEMA,
+}
+
 RTC_PAHANI_SCHEMA = {
     "document_type": "RTC_PAHANI",
     "land_details": {
@@ -474,6 +541,158 @@ CDP_PLAN_SCHEMA = {
     **VERIFICATION_NOTES_SCHEMA,
 }
 
+RERA_CERTIFICATE_SCHEMA = {
+    "document_type": "RERA_CERTIFICATE",
+    "file_metadata": {
+        "registration_number": None,
+        "acknowledgement_number": None,
+        "acknowledgement_date": None,
+        "approval_date": None,
+        "expiry_date": None,
+        "issuing_authority": None,
+    },
+    "project_details": {
+        "project_name": None,
+        "promoter_name": None,
+        "project_address": None,
+        "survey_numbers": [],
+        "cts_numbers": [],
+        "plots_covered": [],
+        "locality": None,
+    },
+    "promoter_details": {
+        "registered_office_address": None,
+    },
+    **VERIFICATION_NOTES_SCHEMA,
+}
+
+LITIGATION_AFFIDAVIT_SCHEMA = {
+    "document_type": "LITIGATION_AFFIDAVIT",
+    "file_metadata": {
+        "stamp_certificate_number": None,
+        "stamp_certificate_date": None,
+        "stamp_duty_amount": None,
+        "notary_name": None,
+        "notary_exp_date": None,
+        "notary_reg_number": None,
+        "deponent_name": None,
+    },
+    "project_details": {
+        "project_name": None,
+        "promoter_name": None,
+        "survey_number": None,
+        "cts_number": None,
+        "plot_number": None,
+        "total_area_sq_meters": None,
+    },
+    "declaration_details": {
+        "is_free_from_encumbrances": None,
+        "no_claims_or_litigations": None,
+    },
+    **VERIFICATION_NOTES_SCHEMA,
+}
+
+ALLOTMENT_LETTER_SCHEMA = {
+    "document_type": "ALLOTMENT_LETTER",
+    "file_metadata": {
+        "letter_number": None,
+        "letter_date": None,
+        "rera_registration_number": None,
+    },
+    "allotment_details": {
+        "project_name": None,
+        "promoter_name": None,
+        "allottee_name": None,
+        "unit_number": None,
+        "floor_number": None,
+        "wing_or_block": None,
+        "carpet_area_sq_mts": None,
+        "carpet_area_sq_ft": None,
+        "parking_allotted": None,
+        "parking_details": None,
+        "project_address": None,
+        "survey_numbers": [],
+        "cts_numbers": [],
+        "plots_covered": [],
+    },
+    "financial_details": {
+        "total_consideration_amount": None,
+        "booking_amount_received": None,
+        "booking_amount_pct": None,
+        "booking_payment_date": None,
+    },
+    "possession_date": None,
+    **VERIFICATION_NOTES_SCHEMA,
+}
+
+BUILDING_LICENSE_SCHEMA = {
+    "document_type": "BUILDING_LICENSE",
+    "file_metadata": {
+        "license_number": None,
+        "license_date": None,
+        "application_number": None,
+        "application_date": None,
+        "issuing_authority": None,
+        "valid_from": None,
+        "valid_to": None,
+    },
+    "property_details": {
+        "owner_name": None,
+        "survey_number": None,
+        "cts_number": None,
+        "site_number": None,
+        "plot_area_sq_meters": None,
+        "far_approved": None,
+        "boundaries": {
+            "east": None,
+            "west": None,
+            "north": None,
+            "south": None,
+        },
+    },
+    "building_specifications": {
+        "floors": [
+            {"floor_name": None, "use": None, "area_sq_meters": None}
+        ],
+        "total_built_up_area_sq_meters": None,
+    },
+    "financial_details": {
+        "total_fee_paid": None,
+        "receipt_number": None,
+        "receipt_date": None,
+    },
+    **VERIFICATION_NOTES_SCHEMA,
+}
+
+COMPLETION_CERTIFICATE_SCHEMA = {
+    "document_type": "COMPLETION_CERTIFICATE",
+    "file_metadata": {
+        "certificate_number": None,
+        "certificate_date": None,
+        "issuing_office": None,
+        "scanned_sheet_count": None,
+    },
+    "application_details": {
+        "applicant_name": None,
+        "application_date": None,
+        "building_permission_letter_reference": None,
+        "building_permission_letter_date": None,
+    },
+    "inspection_details": {
+        "inspected_by": None,
+        "inspection_date": None,
+    },
+    "property_details": {
+        "survey_number": None,
+        "cts_number": None,
+        "location": None,
+        "supervising_architect_engineer": None,
+        "fit_for_occupation_floors": [],
+        "intended_use": None,
+    },
+    **VERIFICATION_NOTES_SCHEMA,
+}
+
 GENERIC_SCHEMA_TEMPLATE = {
     "document_type": None,
     "file_metadata": {
@@ -500,6 +719,12 @@ SCHEMA_MAP = {
     "CONVERSION_ORDER": CONVERSION_ORDER_SCHEMA,
     "MUTATION": MUTATION_SCHEMA,
     "CDP_PLAN": CDP_PLAN_SCHEMA,
+    "RERA_CERTIFICATE": RERA_CERTIFICATE_SCHEMA,
+    "LITIGATION_AFFIDAVIT": LITIGATION_AFFIDAVIT_SCHEMA,
+    "ALLOTMENT_LETTER": ALLOTMENT_LETTER_SCHEMA,
+    "BUILDING_LICENSE": BUILDING_LICENSE_SCHEMA,
+    "PARTITION_DEED": PARTITION_DEED_SCHEMA,
+    "COMPLETION_CERTIFICATE": COMPLETION_CERTIFICATE_SCHEMA,
 }
 
 # Schema for the cross-document pass — note the extra "doc_ids_involved" field,
@@ -530,53 +755,53 @@ CROSS_DOC_SCHEMA = {
 # padding "legal_detail" with generic statute summaries that aren't tied to the real facts.
 
 OUTPUT_QUALITY_CONTRACT = """
-OUTPUT QUALITY CONTRACT — read this carefully, it fixes a known failure mode.
+You are a Karnataka property-document extraction and verification engine.
 
-You must behave like a SENIOR PROPERTY DUE DILIGENCE LAWYER. Your job is to produce production-grade due diligence findings for property buyers, advocates, and bank loan verification teams. 
+TASK
+1. Extract information from the OCR text into the provided JSON schema.
+2. Perform only the document-specific verification checks provided below.
+3. Record detected issues in verification_notes.
 
-DO NOT write like a Law Professor or a Legal Research Assistant.
-1. NEVER explain the history or general purposes of Acts or Sections.
-2. NEVER write generic descriptions like "Under the Registration Act..." or "Section X states that...". 
-3. Apply all legal rules SILENTLY. Write ONLY practical, business-driven, and evidence-supported risks.
-4. Keep all findings understandable within 10 seconds.
-5. All legal references must be optional, simple citations in the "legal_reference" field only.
+EXTRACTION RULES
+- Use only information supported by the document. Never infer or invent missing values.
+- Preserve names, identifiers, survey/CTS/hissa numbers, registration numbers, and monetary values accurately.
+- Use null for unavailable scalar fields and [] for unavailable lists.
+- Return dates as YYYY-MM-DD. If only month and year are explicitly available, use YYYY-MM-01.
+- Return numbers as numeric values, not formatted strings.
+- Extract all relevant repeated records or transactions, not only the first.
+- When Kannada and English represent the same value, prefer the English equivalent. Do not treat normal transliteration differences as contradictions.
 
-BAD finding (do NOT produce output like this):
-  title: "PROPERTY_MISMATCH"
-  what_was_detected: "CTS number mismatch."
-  evidence: "property_details.cts_number vs assessment_rows[2].value"
-  reason: "Accurate property identification is crucial under the Karnataka Municipal Corporations Act, 1976. Section 58 of the Act dictates proper tax assessments. Discrepancies in CTS numbers can lead to ownership disputes and incorrect tax levies by local authorities."
-  possible_causes: ["Incorrect data entry", "Invalid survey"]
-  impact: "Ownership cannot be verified."
-  verification_steps: ["Verify the correct CTS number."]
-  legal_reference: "Karnataka Municipal Corporations Act, 1976 — Section 58"
+VERIFICATION RULES
+- Verify only issues supported by this document. Do not perform cross-document comparisons.
+- Report only actual issues; do not report passing checks.
+- Every finding must be grounded in specific evidence from the document.
+- For a mismatch or comparison, quote the actual values being compared.
+- Do not use JSON paths or internal field names as evidence.
+- Do not flag an issue solely because OCR text is unclear or a value is absent unless the document-specific checks explicitly require that field.
+- Do not write generic legal explanations. State the practical reason and impact.
+- Use legal_reference only for a concise citation when relevant.
+- If no issue is found, return verification_notes as [].
 
-GOOD finding (same underlying issue, produced correctly):
-  title: "CTS Number Mismatch between Address and Tax Assessment"
-  severity: "high"
-  type: "PROPERTY_MISMATCH"
-  confidence: 0.92
-  what_was_detected: "CTS number is recorded as '1918' in property details but '1928 Bhag 1' in the tax assessment row."
-  evidence: "Property Details -> CTS No: '1918' | Tax Assessment Row 2: '1928 Bhag 1'"
-  reason: "Property tax is levied against a specific city survey subdivision. If 1918 and 1928 Bhag 1 are different subdivisions, this tax assessment may not belong to the property under review."
-  possible_causes: ["Property subdivision not updated", "Tax record covers adjacent plot", "Typographical error in tax assessment"]
-  impact: "Property tax cannot be verified as paid for the subject property, and ownership transfer may be delayed."
-  verification_steps: [
-    "Confirm with BBMP Revenue Department which CTS number applies",
-    "Obtain latest City Survey Map/CTS sketch to verify the subdivision number",
-    "Request updated tax assessment card from seller"
-  ]
-  legal_reference: "Section 58, Karnataka Municipal Corporations Act, 1976"
+FINDING QUALITY
+Each verification_note must:
+- have a specific title describing the actual issue;
+- use an allowed severity and finding type;
+- assign confidence based on evidence strength;
+- state exactly what was detected;
+- include human-readable evidence with the relevant values or text;
+- explain why the issue matters in practical terms;
+- list plausible causes only when supported or reasonably possible;
+- state the practical impact;
+- provide concrete verification steps.
 
-RULES FOR EVERY FINDING:
-1. title: MUST be specific and describe what exactly is wrong (e.g. 'Survey Number differs between Sale Deed and EC'), NOT a generic category like 'PROPERTY_MISMATCH'.
-2. evidence: MUST be human-readable text quoting exact values and where they appeared. NEVER show JSON paths or technical keys (e.g. show 'Sale Deed Page 3: 663/1 Paiki' instead of 'property_schedule.survey_number').
-3. reason: 1-2 practical, direct sentences explaining why this matters. No statute explanations.
-4. possible_causes: Bullet points/list of practical, likely reasons.
-5. impact: Factual business or legal risk of this finding.
-6. verification_steps: Specific, actionable, concrete next checks. No generic placeholders.
-7. legal_reference: Simple citations (e.g., 'Section 54, Transfer of Property Act'), collapsed by default.
-8. If no issues found, return an empty array [].
+OUTPUT
+Return only valid JSON matching the provided schema exactly.
+
+TARGET JSON SCHEMA
+{schema_json}
+
+DOCUMENT-SPECIFIC INSTRUCTIONS
+{verification_instructions}
 """
 
 # ── Context cache (per doc_type) ───────────────────────────────────────────
@@ -885,343 +1110,386 @@ def _get_verification_instructions(doc_type: str) -> str:
         "comparison with real values in 'evidence'.\n"
     )
 
-    sale_deed_checks = (
-        "SALE_DEED EXTRACTION NOTE: in addition to the schema's top-level fields, extract "
-        "financial_summary.payment_breakdown as one entry PER payment mentioned in the "
-        "'DETAILS OF PAYMENT'/payment section — e.g. a pay order/DD entry and a separate "
-        "cash entry are TWO entries, each with its own amount and mode ('cash', 'cheque', "
-        "'dd', 'pay_order', 'rtgs/neft', 'bank_transfer'). Also extract "
-        "property_schedule.measurements.dimensions_text as the raw dimension string if the "
-        "schedule states one (e.g. \"30' X 40'\"), verbatim, alongside the numeric area.\n\n"
-        "SALE_DEED VERIFICATION CHECKS (compare these fields against each other and cite "
-        "real values for both sides):\n"
-        "- Are both vendors AND purchasers actually named (not just placeholders)?\n"
-        "- Is survey_number or cts_number present and does it look like a real survey "
-        "  number format (not a placeholder like '0' or 'NA')? If the survey number includes "
-        "  a sub-division marker like 'Paiki'/'Part of' (indicating the parent survey number "
-        "  is split among multiple owners), note this explicitly — it's relevant to the "
-        "  cross-document over-sale check described below.\n"
-        "- Compare statutory_valuation_endorsement.estimated_market_value against "
-        "  financial_summary.declared_consideration_amount. If consideration is below "
-        "  market value AND prevention_of_undervaluation_referred is false/null, flag "
-        "  GUIDANCE_VALUE_ISSUE citing both numbers and the percentage shortfall.\n"
-        "- If property_schedule.full_schedule_description or intended_usage mentions "
-        "  'agricultural'/'farm'/'cultivation' in the SCHEDULE OF PROPERTY itself (not in "
-        "  a party's address or a road name used only for location), flag CONVERSION_MISSING "
-        "  and quote the exact phrase found. If a conversion order IS cited (order number + "
-        "  date), quote it but note in 'suggestion' that the underlying order copy should be "
-        "  independently obtained from the Deputy Commissioner's office — a cited order "
-        "  number is not, by itself, proof the order is genuine or actually covers this land.\n"
-        "- Count witnesses if listed elsewhere in the OCR; if fewer than 2, flag "
-        "  MISSING_DOCUMENT/SUSPICIOUS_PATTERN citing how many were found.\n"
-        "- Does the OCR reference a prior encumbrance/mortgage on this property without a "
-        "  corresponding release shown anywhere in this same document? If so, flag "
-        "  PENDING_MORTGAGE and quote the referencing sentence.\n"
-        "- FRAUD PATTERN — execution via Power of Attorney: if 'represented_by' is populated "
-        "  for the vendor (i.e. someone signed on the seller's behalf under a POA rather than "
-        "  the owner personally), flag SUSPICIOUS_PATTERN at medium-high severity. Quote the "
-        "  POA holder's name and note: under Suraj Lamp & Industries Pvt. Ltd. v. State of "
-        "  Haryana (Supreme Court, 2011/2012), a sale executed merely under a General Power "
-        "  of Attorney — without the principal also executing a registered conveyance — does "
-        "  not by itself transfer valid title; the POA's own registration, validity, and the "
-        "  principal's status at the time of use must be independently verified.\n"
-        "- FRAUD PATTERN — impersonation risk: Karnataka's registration process requires a "
-        "  photograph and biometric thumb-impression of each executant to be captured at "
-        "  registration (introduced specifically to curb impersonation of absentee/NRI "
-        "  owners). If the OCR text gives no indication that a photo/thumb-impression "
-        "  annexure exists anywhere in the document set (look for endorsement language "
-        "  referencing photograph/thumb impression capture), flag MISSING_DOCUMENT at medium "
-        "  severity noting this annexure could not be confirmed from the text alone.\n"
-        "- COMPUTE — date ordering: compare file_metadata.execution_date and "
-        "  file_metadata.registration_date. Under Section 23/32, Registration Act, 1908, "
-        "  execution must precede registration. If execution_date is AFTER "
-        "  registration_date, flag DATE_INCONSISTENCY at high severity, quoting both dates "
-        "  verbatim in evidence.\n"
-        "- COMPUTE — stamp duty ratio: divide financial_summary.stamp_duty_paid_amount by "
-        "  financial_summary.declared_consideration_amount and multiply by 100. SHOW this "
-        "  division as text in 'evidence' (e.g. '168000 / 2500000 x 100 = 6.72%'). Karnataka's "
-        f"  typical effective band is roughly {STAMP_DUTY_PCT_MIN}%-{STAMP_DUTY_PCT_MAX}% "
-        "  depending on slab/surcharge/concession. If the computed ratio falls outside that "
-        "  band, flag FINANCIAL_MISMATCH at medium severity; if within the band, do NOT "
-        "  report anything for this check (passing checks should be silent).\n"
-        "- COMPUTE — cash payment / Section 269SS: scan financial_summary.payment_breakdown "
-        "  for any entry whose mode is 'cash' (not cheque/DD/pay order/RTGS/NEFT/bank "
-        f"  transfer). If a cash entry's amount is >= ₹{CASH_PAYMENT_269SS_THRESHOLD:,}, flag "
-        "  SUSPICIOUS_PATTERN at HIGH severity citing Section 269SS of the Income Tax Act, "
-        "  1961 (cash receipts of ₹20,000+ toward an immovable property transfer are "
-        "  prohibited; violation attracts a penalty under Section 271D equal to the amount "
-        "  received). Quote the exact cash amount and what fraction of the total declared "
-        "  consideration it represents (show the division, e.g. '900000 / 2500000 = 36%').\n"
-        "- COMPUTE — dimension-vs-area math: if property_schedule.measurements."
-        "  dimensions_text contains a 'LENGTH x WIDTH' pattern (e.g. \"30' X 40'\"), multiply "
-        "  the two numbers and SHOW the multiplication in evidence (e.g. '30 x 40 = 1200'). "
-        "  Compare that product to the declared area field (super_built_up_area_sqft or "
-        "  undivided_share_land_sqft, whichever is populated). If they differ by more than "
-        "  ~5%, flag PROPERTY_MISMATCH at medium severity, showing both the computed product "
-        "  and the declared area. If they match, do NOT report anything for this check.\n"
-    )
+   
+    sale_deed_checks = f""" SALE DEED
 
-    ec_checks = (
-        "ENCUMBRANCE_CERTIFICATE VERIFICATION & EXTRACTION CHECKS:\n"
-        "- IMPORTANT — EXTRACT EVERY TRANSACTION: Scan the entire document from start to "
-        "  finish. Extract ALL transactions in the EC ledger into historical_ledger. Do "
-        "  not skip or summarize any row.\n"
-        "  KEY EXTRACTION RULES:\n"
-        "    a) Merge rows across all pages into one historical_ledger array.\n"
-        "    b) Multi-row transaction: if a row has no date but contains data, append it "
-        "       to the previous transaction rather than treating it as a new one.\n"
-        "    c) Older ECs: handle 7-column formats where volume/page/references are "
-        "       combined into a single cell.\n"
-        "    d) Deduplicate: if the same transaction_index+date+reference appears more "
-        "       than once (e.g. repeated across page breaks), keep only one copy.\n"
-        "    e) PROPERTY DESCRIPTION BOUNDARIES WARNING: in the '(ಎ) ಆಸ್ತಿ ವಿವರ' (Property "
-        "       Description) column, isolate the actual boundary sub-fields (North/East/"
-        "       West/South). A survey number that appears only as a BOUNDARY landmark "
-        "       (e.g. 'East: R.S.No. 694') belongs to an adjacent property, not the "
-        "       transaction's own parent survey number — do not treat it as a mismatch.\n"
-        "    f) DEFAULT PARENT SURVEY RULE: if a row matches the target plot/CTS number "
-        "       and does not explicitly state a different parent survey for the main "
-        "       property (e.g. it doesn't say 'out of R S No 677' or 'comprised in RS No "
-        "       697/1'), assume it belongs to the target parent survey number and extract "
-        "       it as such.\n\n"
-        "  LLM-LEVEL LEGAL & VERIFICATION CHECKS — perform ALL of these yourself, there is "
-        "  no separate code-side checking layer. Show all mathematical or subtraction computations "
-        "  verbatim inside the 'evidence' field:\n\n"
-        "  CHECK 1 — RELEVANCE FILTER (do this FIRST, before any chain-of-title check):\n"
-        "    Compare each row's parent_survey_number_raw + locality_raw against the EC's own "
-        "    search_criteria.target_identifiers (cts_number, survey_number, converted_survey_number, "
-        "    plot_number) and target_village/target_hobli. A row that shares only the Plot No. "
-        "    but has a different survey number AND a different locality than the target is "
-        "    almost certainly an unrelated property swept in by a landmark-based search — "
-        "    explicitly mark it 'not part of target chain' in your reasoning and EXCLUDE it "
-        "    from checks 2-9 below. If a row's survey number is ambiguous or partially "
-        "    overlapping (e.g. shares one digit, or is a sub-division of the target survey "
-        "    number), say so explicitly and treat it as uncertain rather than silently including "
-        "    or excluding it — flag PROPERTY_MISMATCH at low/medium severity recommending "
-        "    manual confirmation rather than guessing.\n\n"
-        "  CHECK 2 — CHAIN OF TITLE CONTINUITY (only on rows that passed Check 1):\n"
-        "    Sort the relevant rows by execution_date. For each consecutive pair, the purchaser(s) "
-        "    of the earlier row should be the vendor(s) of the later row (allowing for natural "
-        "    changes like marriage-name updates, gift/inheritance within family, or GPA "
-        "    representation of the same person). If a later row's vendor is NOT the same as — or "
-        "    traceable to — the prior row's purchaser, with no transaction explaining the change, "
-        "    flag this as a serious chain break: PROPERTY_MISMATCH or SUSPICIOUS_PATTERN at "
-        "    HIGH severity, naming both rows, both party sets, and the gap.\n\n"
-        "  CHECK 3 — DOUBLE-SALE / UNDISCLOSED PRIOR CONVEYANCE:\n"
-        "    For every pair of rows (A, B) on the SAME relevant chain where A is earlier than B: "
-        "    if A conveyed a partial interest (share_fraction is non-null, e.g. '1/2') or a partial "
-        "    extent, and B — by the SAME vendor as A, or a vendor claiming full unencumbered "
-        "    ownership — later conveys the WHOLE property with no row between A and B that "
-        "    cancels/reconveys/releases A's share back, flag SUSPICIOUS_PATTERN at HIGH severity. "
-        "    Name both rows' dates, parties, share/extent conveyed, and consideration, and state "
-        "    explicitly: 'no intervening row undoes [A's] conveyance; confirm the current status "
-        "    of [A's purchaser]'s share before relying on [B] as proof of full, unencumbered "
-        "    ownership.' Apply this check also when row A conveys the full extent to party X and "
-        "    row B (no intervening undoing row) later has a DIFFERENT vendor purporting to sell "
-        "    the same property as if A never happened.\n\n"
-        "  CHECK 4 — AGREEMENT-TO-SELL RESOLUTION TRACKING:\n"
-        "    For every row where is_agreement_to_sell is true, look for EITHER: (a) a LATER row, "
-        "    same parties (vendor -> that agreement's purchaser), that is an actual Sale/Conveyance "
-        "    (completing the agreement), OR (b) a LATER row that is a Cancellation Deed/Reconveyance "
-        "    between the same parties (terminating the agreement). If NEITHER exists anywhere "
-        "    later in the ledger, flag MISSING_DOCUMENT or SUSPICIOUS_PATTERN at MEDIUM severity: "
-        "    name the agreement's date/parties/amount and state that an unresolved agreement to "
-        "    sell does not itself transfer title (Section 54, Transfer of Property Act) but a "
-        "    purchaser who has paid and taken steps in reliance on it may have a part-performance "
-        "    claim under Section 53A — so it should be confirmed as abandoned/settled before "
-        "    treating the property as clear.\n\n"
-        "  CHECK 5 — MORTGAGE / CHARGE RELEASE MATCHING:\n"
-        "    Treat ALL of the following transaction_type values as creating a charge that must "
-        "    later be released: 'Mortgage without Possession', 'Mortgage with Possession', "
-        "    'Simple Mortgage', 'English Mortgage', 'Usufructuary Mortgage', 'Mortgage by "
-        "    Conditional Sale', and 'DTD' / 'Deposit of Title Deeds' (an equitable mortgage under "
-        "    Section 58(f), Transfer of Property Act). For each such row, look for a LATER row "
-        "    of type 'Release Deed' or 'Reconveyance' naming the same parties/property. If none "
-        "    exists, flag PENDING_MORTGAGE at HIGH severity, quoting the row's date, type, "
-        "    parties, and amount.\n\n"
-        "  CHECK 6 — GPA-EXECUTED TRANSACTION VALIDATION:\n"
-        "    For every row where the vendor/executant is described as a GPA holder ('Rep'd by "
-        "    GPA Holder', 'Authorized Signatory' under POA, etc.), check whether the named "
-        "    PRINCIPAL (the actual owner the POA holder claims to represent) matches who the "
-        "    chain-of-title (Check 2) shows as the rightful owner at that point. If the "
-        "    principal's name doesn't match — or can't be confirmed from earlier rows — flag "
-        "    SUSPICIOUS_PATTERN at HIGH severity, citing Suraj Lamp & Industries Pvt. Ltd. v. "
-        "    State of Haryana (Supreme Court, 2011/2012): a transfer executed merely under a "
-        "    General Power of Attorney does not itself convey valid title; the POA's registration, "
-        "    continued validity, and the principal's status must be independently verified.\n\n"
-        "  CHECK 7 — SAME NAME ON BOTH SIDES OF ONE TRANSACTION:\n"
-        "    If any individual or set of named principals appears in BOTH the 'vendors'/executants "
-        "    list AND the 'purchasers'/claimants list of the SAME row (even through different GPA "
-        "    holders representing them on each side), flag SUSPICIOUS_PATTERN at MEDIUM severity "
-        "    and quote both occurrences — this could be partition, data overlap, or a sham transaction.\n\n"
-        "  CHECK 8 — UNDERVALUATION / TOKEN CONSIDERATION:\n"
-        "    For every row where BOTH market_value and consideration_amount are present and "
-        "    non-zero, divide consideration by market value and show the computation. If "
-        "    consideration is substantially below market value (below 70-75% of market value), "
-        "    flag GUIDANCE_VALUE_ISSUE at MEDIUM severity. Separately: if a row's transaction_type "
-        "    is something that should normally involve real payment (e.g. 'Sale') but "
-        "    consideration_amount is 0, Rs 1, or another token amount, flag SUSPICIOUS_PATTERN "
-        "    at MEDIUM severity (nil/token consideration is NORMAL and should NOT be flagged for "
-        "    Gift Deed, Release Deed, Cancellation Deed, or Reconveyance article types).\n\n"
-        "  CHECK 9 — MINOR / LEGAL HEIR PARTY VALIDATION:\n"
-        "    For every row where minor_or_legal_heir_party is true: if a minor's interest is "
-        "    being conveyed (sold/mortgaged) by a natural guardian, flag MISSING_DOCUMENT at "
-        "    MEDIUM severity noting that under Section 8, Hindu Minority and Guardianship Act, "
-        "    1956, a natural guardian needs prior permission of the court to transfer a minor's "
-        "    immovable property. If parties are described as 'legal heirs of [deceased],' check "
-        "    whether the row appears to list ALL heirs; if only some heirs appear to be party to "
-        "    a transaction affecting the whole property, flag MISSING_DOCUMENT at medium severity "
-        "    recommending a succession certificate / legal heir certificate be obtained.\n\n"
-        f"  CHECK 10 — SEARCH WINDOW & GAPS (apply only within the relevant chain identified in Check 1):\n"
-        f"    Read or compute file_metadata.search_period_years. If under {EC_MIN_SEARCH_YEARS} years, "
-        f"    flag EC_GAP at high severity. Sort the relevant chain rows by date and check for "
-        f"    gaps exceeding {EC_GAP_FLAG_YEARS} years between consecutive entries; if found, flag "
-        f"    EC_GAP at medium severity, showing the subtraction (e.g. '2015 - 1998 = 17 years') "
-        "    and naming the two rows/dates either side of the gap. Do NOT compute this gap check "
-        "    across irrelevant rows excluded by Check 1.\n\n"
-        "  ARTICLE-TYPE REFERENCE TABLE:\n"
-        "  Use the following lookup matrix to apply the correct checks based on row transaction_type/article:\n"
-        "  | Article Name (as seen in Karnataka ECs)        | What must be checked                                                                 |\n"
-        "  |-------------------------------------------------|----------------------------------------------------------------------------------------|\n"
-        "  | Sale / Sale-Conveyance                          | Checks 2, 3, 6, 7, 8                                                                   |\n"
-        "  | Agreement of Sale (possession given/not given)  | Check 4 (resolution tracking); do not treat as a transfer of title by itself           |\n"
-        "  | Gift Deed                                       | Checks 2, 6, 7; consideration of 0 is normal, do not flag under Check 8                |\n"
-        "  | Mortgage with/without Possession, Simple/English/Usufructuary Mortgage, Mortgage by Conditional Sale | Check 5 (release matching)                                  |\n"
-        "  | DTD (Deposit of Title Deeds)                    | Check 5 — treat identically to a registered mortgage (Section 58(f), TPA)             |\n"
-        "  | Release Deed                                    | Should be matched AS the resolution for an earlier mortgage/DTD/agreement row (Checks 4, 5) — if it doesn't match anything earlier, note that explicitly |\n"
-        "  | Reconveyance                                    | Same as Release Deed — confirm it matches an earlier mortgage/agreement row            |\n"
-        "  | Cancellation Deed                                | Confirm it matches and fully undoes an earlier row between the same parties (Check 3, 4)|\n"
-        "  | Lease of Immovable Property                     | Note the lessee and term if stated — relevant for vacant-possession due diligence, not itself an encumbrance on title |\n"
-        "  | Mortgage / DTD where mortgagor includes a GPA holder or a name not matching the registered owner | Checks 5 AND 6 together                                          |\n"
-        "  | Partition Deed (if present)                     | Check that all co-sharers named in the partition match the full set of owners from the prior chain |\n"
-        "  | Will / Succession Certificate / Court Decree (if present) | Apply Check 9's heir-completeness logic                                       |\n\n"
-        "  NON-NEGOTIABLE TEST CASE — CRITICAL DOUBLE-SALE FAILURE MODE:\n"
-        "  If the ledger contains a sequence like:\n"
-        "    - Row A: vendor sells a fractional share (e.g. 1/2 undivided common share) of the property to purchaser X\n"
-        "    - Row B (later): the same vendor sells the WHOLE property to purchaser Y as unencumbered, with no intermediate cancellation deed\n"
-        "  You MUST raise a high-severity SUSPICIOUS_PATTERN or PROPERTY_MISMATCH note. Quote both row numbers, dates, parties, and the conflict explicitly.\n"
-        "- If 'Nil Encumbrance' is stated, set historical_ledger to [] and skip checks "
-        "  1, 2, 4, 5, 6, 7, 8, 9 above (there's nothing to compare) — but still run check 10 "
-        "  (search window length), since that applies regardless of ledger content.\n"
-    )
+                ACCURACY
+                Extract exact values from the OCR. Never guess, infer, complete, or normalize a value unless explicitly instructed. Map each value to the correct schema field based on context and labels. Preserve identifiers exactly. Use null when a value cannot be reliably determined.
 
-    prc_checks = (
-        "PROPERTY_REGISTER_CARD VERIFICATION CHECKS:\n"
-        "- Is city_survey_number present and does it match the format/value referenced "
-        "  elsewhere in the OCR (e.g. in a guidance value order)? Quote both if they differ.\n"
-        "- Are holders listed with full names, or is a holder slot blank/illegible where "
-        "  the layout clearly expects a name?\n"
-        "- Is a lessee recorded? If so, quote the lessee details — a lessee with "
-        "  cultivation/possession rights matters for vacant-possession due diligence.\n"
-        "- Are easements or other_encumbrances recorded? Quote them verbatim if present.\n"
-        "- Is guidance_value.value present? If null, flag GUIDANCE_VALUE_ISSUE naming "
-        "  exactly which downstream check (stamp duty adequacy) becomes impossible without it.\n"
-        "- RESTRICTED TENURE: Check the tenure / classification field. Standard tenure should "
-        "  be Freehold/Patta. If tenure is Government, Leasehold, Inam, or any restricted/service "
-        "  category, flag PROPERTY_MISMATCH at HIGH severity noting transfer of ownership is restricted.\n"
-        "- UN-ATTESTED MUTATION: For each mutation entry inside mutation_or_transaction_entries, "
-        "  verify if the attestation field is populated. If it is blank/null, flag MUTATION_PENDING "
-        "  at MEDIUM severity, quoting the transaction name and date.\n"
-        "- Is area_sq_meters a plausible number for the stated property type (not zero, "
-        "  not absurdly large)?\n"
-    )
+                EXTRACT
+                - All vendors and purchasers.
+                - Every payment as a separate payment_breakdown entry: amount, mode, instrument reference/date, and bank/branch if stated.
+                - Complete property schedule: survey/CTS, hissa/subdivision/Paiki/Part-of references, property number, area, intended use, boundaries, and dimensions_text verbatim.
+                - Execution and registration dates separately.
+                - Any market/guidance value, undervaluation reference, mortgage/encumbrance/release, conversion-order reference, POA/GPA representation, and witnesses.
 
-    tax_checks = (
-        "PROPERTY_TAX_ASSESSMENT / E_PAYMENT_RECEIPT VERIFICATION CHECKS:\n"
-        "- IMPORTANT — TAX TABLE: numbered rows are typically 1-44. Common mapping: "
-        "  1=owner, 2=occupier, 4=assessment_year, 5=ward, 8=site_area, "
-        "  16(A)=land_market_value, 16(B)=50% value, 24=plinth_area, 30=usage, "
-        "  34/36=property_tax_payable, 43=total, 44=payment_mode. Capture sub-parts like "
-        "  16(A)/16(B) as separate assessment_rows entries, don't merge them.\n"
-        "- Identify CHALLAN COPIES separately from the main assessment_rows table.\n"
-        "- Is owner_name present and is it a real name (not a template placeholder)?\n"
-        "- Is pid present and does it match the format used elsewhere in this same document "
-        "  (e.g. consumer_details.pid vs property_owner.pid)? Quote both if they differ.\n"
-        "- TAX DEFAULT: Is transaction_details.status (or equivalent) a clear success/paid state? "
-        "  If it reads as failed, pending, or anything other than success, flag TAX_DEFAULT "
-        "  at HIGH severity quoting the exact status text.\n"
-        "- Is assessment_year recent relative to today, or several years stale? Quote the "
-        "  actual year found.\n"
-    )
+                VERIFY — report only supported issues; passing checks stay silent.
 
-    gift_deed_checks = (
-        "GIFT_DEED VERIFICATION CHECKS:\n"
-        "- Are both donors AND donees named with real names (not blank/placeholder)?\n"
-        "- Is parties.relationship_between_parties stated, and is it a close-family "
-        "  relation (parent/child/spouse/sibling)? If the stated relationship is distant "
-        "  or absent, quote what's actually written — this affects whether a concessional "
-        "  gift-deed stamp duty rate properly applies. If the relationship is not family (or is "
-        "  unspecified/absent) and financial_summary.stamp_duty_amount is less than 5% of "
-        "  the estimated market value, flag FINANCIAL_MISMATCH at HIGH severity.\n"
-        "- Is survey_number or cts_number present and does it match the value, if any, "
-        "  referenced elsewhere in the same document (e.g. in the building description)?\n"
-        "- COMPULSORY REGISTRATION: Is file_metadata.registration_number present? Under Section 17, "
-        "  Registration Act, 1908, gift deeds of immovable property must be registered. "
-        "  If genuinely absent, quote 'not found' and flag MISSING_DOCUMENT at HIGH severity.\n"
-        "- WITNESS ATTESTATION: Are witnesses listed? Section 123 of the Transfer of Property "
-        "  Act, 1882 requires a gift deed of immovable property to be attested by at least two "
-        "  witnesses. If fewer than two witnesses are found, flag MISSING_DOCUMENT at HIGH severity "
-        "  quoting the count of witnesses found.\n"
-        "- Is financial_summary.stamp_duty_amount populated and non-zero?\n"
-        "- COMPUTE — date ordering: compare file_metadata.execution_date and "
-        "  file_metadata.registration_date. Execution must precede registration under "
-        "  Section 23/32, Registration Act, 1908. If execution_date is AFTER "
-        "  registration_date, flag DATE_INCONSISTENCY at high severity, quoting both dates "
-        "  verbatim in evidence. If execution_date is before or equal to registration_date, "
-        "  do NOT report anything for this check.\n"
-    )
+                1. PARTIES: Flag if both vendor and purchaser are not identifiable, only when genuine absence can be established.
 
-    mutation_checks = (
-        "MUTATION REGISTER EXTRACTION & VERIFICATION CHECKS:\n"
-        "- Extract all rows of transaction_details representing division/mutation of survey numbers.\n"
-        "- Check attestation: Verify if the mutation is attested (signed and dated by a Tahsildar / Revenue Inspector). "
-        "  If the attestation date, sign, or status is blank, null, or 'unattested', flag MUTATION_PENDING at "
-        "  HIGH severity, quoting the mutation number in evidence.\n"
-        "- Verify survey number: Check if the target survey number is present and matches the partition details.\n"
-    )
+                2. PROPERTY ID: Flag if neither usable survey nor CTS number exists, or if conflicting identifiers appear. Preserve Hissa/Paiki/Part-of references; their presence alone is not an issue.
 
-    conversion_checks = (
-        "CONVERSION_ORDER (NA Conversion Order) VERIFICATION CHECKS:\n"
-        "- Extract order number, date, converted survey number, and converted extent.\n"
-        "- Scan for the converted purpose: check if the land is converted for 'Residential', 'Apartment - Residential', "
-        "  'Commercial', or 'Industrial'. If the target land use (e.g. building an apartment) differs from the "
-        "  converted purpose (e.g. converted for agricultural/industrial), flag PROPERTY_MISMATCH at HIGH severity.\n"
-        "- Scan for conditions: check if the order mentions conditions like road margin, buffer zones, or layout plan approvals. "
-        "  Note in suggestions that layout plans must be approved by Town Planning Authority.\n"
-        "- Ensure that the order number and date are cited in the findings, recommending that a certified copy be obtained from the DC Office.\n"
-    )
+                3. DATES: If execution_date > registration_date, flag DATE_INCONSISTENCY with both dates.
 
-    rtc_checks = (
-        "RTC_PAHANI (Pahani / Form 16) VERIFICATION CHECKS:\n"
-        "- Extract survey number, total extent, kharab land, net area, owners list (Column 9), liabilities (Column 11), and crops/cultivators (Column 12).\n"
-        "- Check document recency: check the assessment year or print date. If it is older than 1 year (e.g. from a prior financial year), "
-        "  flag DOCUMENT_EXPIRY at medium-low severity.\n"
-        "- Check for liabilities: scan column 11/12/15 (other rights and liabilities) for any entries of bank mortgages, hypothecation, "
-        "  outstanding loans, court injunctions, or family disputes. If any bank name or loan amount is found, flag PENDING_MORTGAGE "
-        "  at HIGH severity, quoting the exact bank name and loan reference from the text.\n"
-        "- Check for agricultural tenancy: if Column 12 (cultivator details) lists any individual other than the registered owners "
-        "  as cultivator with tenancy rights, flag SUSPICIOUS_PATTERN at medium-high severity.\n"
-        "- COMPUTE - Area consistency: add the net area and kharab area (A + B). If this sum differs from the total extent by more than 1%, "
-        "  flag PROPERTY_MISMATCH at medium severity, showing the math (e.g., 'net + kharab != total').\n"
-    )
+                4. VALUATION: If declared consideration < stated market/guidance value and no referral/resolution is shown, flag GUIDANCE_VALUE_ISSUE with both values and percentage difference.
 
-    cdp_checks = (
-        "CDP_PLAN (Comprehensive Development Plan / Zoning Plan) VERIFICATION CHECKS:\n"
-        "- Extract zoning classification (e.g., Residential, Commercial, Agricultural, Green Belt, Forest, Buffer Zone).\n"
-        "- Zoning restriction check: If the zoning classification is 'Agricultural', 'Green Belt', 'Forest', or 'Buffer Zone', "
-        "  but the target usage of the property is residential or commercial, flag PROPERTY_MISMATCH at HIGH severity. "
-        "  State that development in restricted zones violates the Karnataka Town and Country Planning (KTCP) Act.\n"
-        "- Check road width: if road width is listed, extract it.\n"
-    )
+                5. PAYMENTS:
+                - Compare identifiable payment totals with declared consideration; flag only a material unexplained difference when payment details are sufficiently complete.
+                - If explicitly stated cash payment >= ₹{CASH_PAYMENT_269SS_THRESHOLD:,}, flag SUSPICIOUS_PATTERN with the exact amount.
 
-    generic_checks = (
-        "GENERIC DOCUMENT VERIFICATION CHECKS:\n"
-        "- What type of document does this actually appear to be, based on its content?\n"
-        "- Is there a document number, date, or issuing authority you can quote verbatim?\n"
-        "- Does it reference a specific, quotable property identifier (survey/CTS/PID/plot)?\n"
-        "- Does it reference specific, quotable person/party names?\n"
-        "- Any apparent inconsistencies between two parts of THIS SAME document? Quote both sides.\n"
-    )
+                6. STAMP DUTY: Compute (stamp duty / consideration) × 100. If outside {STAMP_DUTY_PCT_MIN}%–{STAMP_DUTY_PCT_MAX}%, flag FINANCIAL_MISMATCH and show the calculation.
+
+                7. AREA: For clear length × width dimensions, compute area and compare only with an equivalent declared area for the same property component/unit. If difference >5%, flag PROPERTY_MISMATCH and show the calculation. Never compare non-equivalent areas.
+
+                8. CONVERSION: If the subject-property schedule identifies agricultural/farm/cultivation land and indicates non-agricultural use without conversion evidence, flag CONVERSION_MISSING. Ignore such words in addresses, roads, boundaries, or unrelated recitals. A cited conversion order is a reference, not proof of validity.
+
+                9. ENCUMBRANCE: If the deed acknowledges a mortgage/encumbrance affecting the subject property without stating discharge/release, flag PENDING_MORTGAGE. Do not infer an active mortgage from historical recital language alone.
+
+                10. POA/GPA: If a vendor executes through a representative, flag SUSPICIOUS_PATTERN for authority verification. Quote available principal, representative, and POA details. Do not claim POA execution itself invalidates the sale.
+
+                11. WITNESSES: If an execution/attestation section is clearly present and fewer than 2 witnesses are identified, flag for verification. Do not flag solely because OCR may have missed signature pages.
+
+                Follow the OUTPUT QUALITY CONTRACT for every finding.
+                """
+
+    ec_checks = f"""ENCUMBRANCE CERTIFICATE (EC)
+
+            ACCURACY
+            Extract exact values from the OCR. Never guess missing values. Preserve names, dates, document references, survey/CTS/plot numbers, shares, extents, transaction types, and amounts accurately.
+
+            EXTRACT
+            - Scan the entire EC and extract EVERY transaction into historical_ledger; never summarize or skip rows.
+            - Merge transactions across all pages.
+            - If a continuation row has no date but contains transaction data, merge it with the previous transaction.
+            - Support older 7-column EC formats with combined volume/page/reference fields.
+            - Deduplicate repeated rows using transaction index + date + reference.
+            - Separate the subject property's identifiers from survey/CTS numbers appearing only in North/East/West/South boundary descriptions; boundary properties are not the transaction property.
+            - If a row matches the target plot/CTS and does not explicitly state a different parent survey, associate it with the target parent survey.
+            - If the EC explicitly states Nil Encumbrance, set historical_ledger=[].
+
+            VERIFY
+            First determine which transactions belong to the target property. Apply chain checks only to relevant or reasonably matching rows. Report only supported issues; passing checks stay silent.
+
+            1. RELEVANCE
+            Compare each row's property identifiers and locality with search_criteria target survey/CTS/converted-survey/plot number and village/hobli.
+            - Exclude a row from the title chain when it matches only a plot number but has both a different survey number and different locality.
+            - If identity is ambiguous, including possible subdivisions of the target survey, do not guess; flag PROPERTY_MISMATCH at low/medium severity for manual confirmation.
+
+            2. TITLE CHAIN
+            Sort relevant title-transfer rows by execution date. The earlier purchaser should be the later vendor or be traceably connected through another transaction, inheritance, family transfer, name variation, or valid representation.
+            If ownership changes without an explaining transaction, flag PROPERTY_MISMATCH or SUSPICIOUS_PATTERN at HIGH severity with both rows, dates, and party sets.
+
+            3. DOUBLE SALE / PRIOR CONVEYANCE
+            Flag SUSPICIOUS_PATTERN at HIGH severity when:
+            - a vendor first conveys a share/partial extent and later conveys the whole property without an intervening cancellation, reconveyance, release, or other transaction restoring that interest; or
+            - the full property was already conveyed and a later unrelated vendor again purports to convey the same property without an intervening transaction explaining title.
+            Quote both transactions, dates, parties, shares/extents, and consideration.
+
+            4. AGREEMENT OF SALE
+            An Agreement of Sale is not itself a title transfer. For each agreement, look later for:
+            - a Sale/Conveyance completing it; or
+            - a Cancellation Deed/Reconveyance terminating it.
+            If neither exists, flag MISSING_DOCUMENT or SUSPICIOUS_PATTERN at MEDIUM severity with the agreement date, parties, and amount, and recommend confirming its current status.
+
+            5. MORTGAGE / CHARGE
+            Treat Mortgage with/without Possession, Simple Mortgage, English Mortgage, Usufructuary Mortgage, Mortgage by Conditional Sale, and DTD/Deposit of Title Deeds as charges.
+            For each, find a later matching Release Deed or Reconveyance for the same property/obligation. If none exists, flag PENDING_MORTGAGE at HIGH severity with transaction date, type, parties, and amount.
+            If a Release/Reconveyance does not match any earlier charge or agreement, note the unmatched resolution.
+
+            6. GPA / POA TRANSACTIONS
+            When a vendor/executant acts through a GPA/POA/authorized representative, verify that the represented principal matches the owner shown by the preceding title chain.
+            If the principal conflicts with or cannot be traced to the owner, flag SUSPICIOUS_PATTERN at HIGH severity and require verification of the POA's authority, registration, validity, and principal's ownership. Do not treat POA representation alone as invalid.
+
+            7. SAME PARTY ON BOTH SIDES
+            If the same person/principal appears as both vendor/executant and purchaser/claimant in one transaction, including through different representatives, flag SUSPICIOUS_PATTERN at MEDIUM severity. Note that partition, extraction overlap, or another legitimate structure may explain it and requires confirmation.
+
+            8. VALUE / CONSIDERATION
+            - When market_value and consideration_amount are both non-zero, compute consideration / market value × 100. If consideration is below 70–75% of market value, flag GUIDANCE_VALUE_ISSUE at MEDIUM severity and show the calculation.
+            - For transactions normally requiring consideration, such as Sale, flag zero/₹1/token consideration as SUSPICIOUS_PATTERN at MEDIUM severity.
+            - Do NOT apply the token-consideration check to Gift Deed, Release Deed, Cancellation Deed, or Reconveyance.
+
+            9. MINOR / LEGAL HEIRS
+            - If a minor's property interest is sold or mortgaged through a natural guardian, flag MISSING_DOCUMENT at MEDIUM severity and require verification of necessary court permission.
+            - If a transaction affecting the whole property is executed by only some apparent legal heirs, flag MISSING_DOCUMENT at MEDIUM severity and recommend verifying complete succession/legal-heir records.
+
+            10. SEARCH COVERAGE & GAPS
+            - If the EC search period is under {EC_MIN_SEARCH_YEARS} years, flag EC_GAP at HIGH severity.
+            - Sort relevant transactions by date. If consecutive relevant transactions are more than {EC_GAP_FLAG_YEARS} years apart, flag EC_GAP at MEDIUM severity and show the date subtraction.
+            - Never calculate transaction gaps using rows excluded as unrelated.
+
+            TRANSACTION RULES
+            - Sale/Conveyance: title-chain, double-sale, GPA, same-party, and valuation checks.
+            - Agreement of Sale: resolution tracking; do not treat as title transfer.
+            - Gift Deed: title-chain/GPA/same-party checks; zero consideration is normal.
+            - Mortgage/DTD: require matching release/reconveyance.
+            - Release Deed/Reconveyance: match to the earlier obligation it resolves.
+            - Cancellation Deed: verify which earlier transaction it cancels.
+            - Lease: extract lessee and term; do not treat the lease itself as a title transfer.
+            - Partition Deed: verify co-sharers against the preceding ownership chain.
+            - Will/Succession Certificate/Court Decree: apply succession and heir-completeness checks.
+
+            If Nil Encumbrance is stated, keep historical_ledger=[] and perform only the EC search-coverage check.
+
+            For every calculation, show the computation in evidence.
+            Follow the OUTPUT QUALITY CONTRACT for every finding.
+            """
+
+    prc_checks = """PROPERTY REGISTER CARD (PRC)
+
+            ACCURACY
+            Extract exact OCR values; never guess. Preserve CTS numbers, holder names, tenure, area, mutation entries, lessee, easements, encumbrances and guidance value.
+
+            VERIFY — WITHIN THIS PRC ONLY
+            Report only supported issues; passing checks stay silent.
+
+            1. PROPERTY ID: Flag conflicting city survey/CTS numbers appearing within the PRC; quote both values.
+
+            2. HOLDERS: Flag a missing holder only when the document layout clearly contains an expected holder field that is genuinely blank/illegible.
+
+            3. LESSEE/RIGHTS: If a lessee, easement or other encumbrance is recorded, report the exact details because they may affect possession or property rights.
+
+            4. GUIDANCE VALUE: If guidance_value.value is absent, flag GUIDANCE_VALUE_ISSUE and state that stamp-duty adequacy cannot be assessed from this PRC.
+
+            5. TENURE: If tenure is Government, Leasehold, Inam or another restricted/service category rather than standard Freehold/Patta, flag PROPERTY_MISMATCH, HIGH, because transfer rights may be restricted.
+
+            6. MUTATION: For each mutation_or_transaction_entries record, if attestation is genuinely blank/null, flag MUTATION_PENDING, MEDIUM, with transaction name and date.
+
+            7. AREA: Flag area_sq_meters only if it is zero or clearly implausible for the property described.
+
+            Follow the OUTPUT QUALITY CONTRACT for every finding.
+            """
+
+    tax_checks = """PROPERTY TAX / PAYMENT RECEIPT
+
+            ACCURACY
+            Extract exact OCR values; never guess. Keep assessment-table rows and challan/receipt copies separate.
+
+            EXTRACT
+            - For assessment tables, extract all numbered rows. Common mapping: 1=owner, 2=occupier, 4=assessment year, 5=ward, 8=site area, 16(A)=land market value, 16(B)=50% value, 24=plinth area, 30=usage, 34/36=property tax payable, 43=total, 44=payment mode.
+            - Keep sub-rows such as 16(A) and 16(B) as separate assessment_rows.
+            - Extract each challan/receipt copy separately.
+
+            VERIFY — WITHIN THIS DOCUMENT ONLY
+            1. OWNER: Flag if owner_name is genuinely missing or only a template placeholder.
+            2. PID: If multiple PID fields appear within this document, flag PROPERTY_MISMATCH only when their exact values conflict.
+            3. PAYMENT STATUS: If status explicitly says failed, pending, unsuccessful, or another non-paid state, flag TAX_DEFAULT, HIGH, quoting the exact status. Do not flag when status is absent.
+            4. RECENCY: If assessment_year is clearly stale, flag TAX_DEFAULT at low/medium severity and quote the actual year.
+
+            Report only supported issues; passing checks stay silent.
+            Follow the OUTPUT QUALITY CONTRACT.
+            """
+    gift_deed_checks = """GIFT DEED
+
+            ACCURACY
+            Extract exact OCR values; never guess. Preserve party names, relationship, property IDs, dates, registration details, stamp duty and witnesses.
+
+            VERIFY — WITHIN THIS GIFT DEED ONLY
+            Report only supported issues; passing checks stay silent.
+
+            1. PARTIES: Flag if donor or donee is genuinely missing/placeholder.
+
+            2. RELATIONSHIP & STAMP DUTY: Extract the stated donor-donee relationship. If it is non-family or unspecified AND stamp duty is below 5% of the stated estimated market value, flag FINANCIAL_MISMATCH, HIGH. Show the calculation. Do not assume a relationship not stated in the deed.
+
+            3. PROPERTY ID: Flag conflicting survey/CTS identifiers within the deed. Do not flag merely because one identifier is absent when another valid property identifier exists.
+
+            4. REGISTRATION: If the deed concerns immovable property and the registration number is genuinely absent from a sufficiently complete document, flag MISSING_DOCUMENT, HIGH. Do not flag solely because OCR may have missed the registration endorsement.
+
+            5. WITNESSES: If the execution/attestation section is available and fewer than 2 witnesses are identified, flag MISSING_DOCUMENT, HIGH, with the count found. Do not flag solely because OCR may have missed signature pages.
+
+            6. STAMP DUTY: If stamp_duty_amount is explicitly zero, flag FINANCIAL_MISMATCH. If merely missing/unreadable, do not treat it as zero.
+
+            7. DATES: If execution_date > registration_date, flag DATE_INCONSISTENCY, HIGH, quoting both dates.
+
+            Follow the OUTPUT QUALITY CONTRACT.
+            """
+    mutation_checks = """MUTATION REGISTER (MR)
+
+            ACCURACY
+            Extract exact OCR values; never guess. Extract every mutation/division row and preserve MR number, survey/hissa, area, previous/new owners, mutation reason, supporting-document reference, dates, status and attestation details.
+
+            VERIFY — WITHIN THIS MUTATION DOCUMENT ONLY
+            Report only supported issues; passing checks stay silent.
+
+            1. MR NUMBER: If the mutation number is genuinely absent or clearly invalid, flag MUTATION_PENDING.
+
+            2. PROPERTY: Flag conflicting survey/hissa/area values within this document. Do not compare with RTC or Sale Deed here.
+
+            3. OWNERSHIP: Extract previous and new owners exactly. Flag only internal contradictions or genuinely missing ownership details.
+
+            4. BASIS: Extract the mutation reason (Sale/Gift/Partition/Inheritance/Court Order/etc.) and supporting-document reference. If the basis is stated but the expected reference is genuinely absent, flag MISSING_DOCUMENT.
+
+            5. DATES: If both supporting-document and mutation dates are present and mutation predates its supporting transaction, flag DATE_INCONSISTENCY with both dates.
+
+            6. APPROVAL: If the mutation is explicitly pending, rejected, or unattested, flag MUTATION_PENDING, MEDIUM, quoting the exact status.
+
+            7. AUTHENTICATION: If the document is complete enough to assess authentication and no official signature, seal, attestation or digital authentication is present, flag MUTATION_PENDING. Do not flag solely because OCR may have missed a seal/signature.
+
+            Follow the OUTPUT QUALITY CONTRACT.
+            """
+
+    conversion_checks = """CONVERSION / NA ORDER
+
+            ACCURACY
+            Extract exact OCR values; never guess. Preserve survey/hissa, area, applicant/owner, order details, conversion purpose, challan/fees, conditions, authority and authentication details.
+
+            VERIFY — WITHIN THIS DOCUMENT ONLY
+            Report only supported issues; passing checks stay silent.
+
+            1. PROPERTY: Flag conflicting survey/hissa or area values within the document.
+
+            2. ORDER: Extract order number, order date and issuing authority. Flag genuinely missing essential order details.
+
+            3. APPLICANT/OWNER: Extract applicant and owner exactly. Flag only internal contradictions or genuinely missing identity details.
+
+            4. PURPOSE: Extract the approved conversion purpose/use exactly. Flag conflicting purposes stated within the document.
+
+            5. FEES: Extract challan/payment references, amounts and payment status. If fees are explicitly unpaid, pending or deficient, flag FINANCIAL_MISMATCH.
+
+            6. CONDITIONS: Extract all government/authority conditions and restrictions. Flag any condition explicitly shown as pending, violated or unfulfilled.
+
+            7. AUTHENTICATION: If the document is complete enough to assess authenticity and lacks official signature, seal or digital authentication, flag MISSING_DOCUMENT. Do not flag solely because OCR may have missed visual authentication.
+
+            Follow the OUTPUT QUALITY CONTRACT.
+            """
+
+    rtc_checks = """RTC / PAHANI
+
+            ACCURACY
+            Extract exact OCR values; never guess. Preserve survey/hissa, total extent, kharab land, net area, owners (Column 9), rights/liabilities and cultivators/crops (Column 12).
+
+            VERIFY — WITHIN THIS RTC ONLY
+            Report only supported issues; passing checks stay silent.
+
+            1. RECENCY: If the assessment year or print date is clearly older than 1 year, flag DOCUMENT_EXPIRY at low/medium severity with the actual date/year.
+
+            2. LIABILITIES: If rights/liability columns explicitly record a bank mortgage, hypothecation, outstanding loan, court injunction or dispute, flag PENDING_MORTGAGE or SUSPICIOUS_PATTERN as appropriate, quoting the exact entry. Do not infer a liability from unrelated text.
+
+            3. TENANCY: If a person other than the recorded owner is explicitly shown as cultivator with tenancy or occupancy rights, flag SUSPICIOUS_PATTERN, medium/high. Do not flag a different cultivator unless the RTC indicates a legally relevant right.
+
+            4. AREA: If total extent, net area and kharab area are available in equivalent units, compute net + kharab. If the result differs from total extent by more than 1%, flag PROPERTY_MISMATCH, MEDIUM, and show the calculation.
+
+            Follow the OUTPUT QUALITY CONTRACT.
+            """
+
+    rera_checks = """RERA CERTIFICATE
+
+            ACCURACY
+            Extract exact OCR values; never guess. Preserve project name, promoter name, registration number, acknowledgement details, approval and expiry dates, and property identifiers.
+
+            VERIFY — WITHIN THIS RERA CERTIFICATE ONLY
+            Report only supported issues; passing checks stay silent.
+
+            1. DOCUMENT EXPIRY: Compare the registration's expiry_date with the current date (2026-07-15). If the expiry_date is in the past, flag DOCUMENT_EXPIRY at HIGH severity.
+
+            2. IDENTIFIERS: If there are no clear property identifiers (survey numbers, CTS numbers, or plots covered), flag PROPERTY_MISMATCH at MEDIUM severity.
+
+            3. REGISTRATION NUMBER: If the project registration number is missing, flag MISSING_DOCUMENT at HIGH severity.
+
+            Follow the OUTPUT QUALITY CONTRACT.
+            """
+
+    litigation_checks = """LITIGATION AFFIDAVIT
+            
+            ACCURACY
+            Extract exact OCR values; never guess. Preserve certificate number, date, stamp duty amount, notary details, promoter name, project name, land extent, and deponent details.
+
+            VERIFY — WITHIN THIS LITIGATION AFFIDAVIT ONLY
+            Report only supported issues; passing checks stay silent.
+
+            1. NOTARY VALIDITY: Compare the notary's commission expiration date (notary_exp_date) with the current date (2026-07-15). If expired, flag DOCUMENT_EXPIRY at HIGH severity.
+            
+            2. LAND DECLARATION: Check the deponent's declaration. If the affidavit indicates the project land is NOT free from encumbrances or contains pending litigations/claims, flag PENDING_MORTGAGE or SUSPICIOUS_PATTERN at HIGH severity.
+
+            Follow the OUTPUT QUALITY CONTRACT.
+            """
+
+    allotment_checks = """ALLOTMENT LETTER
+            
+            ACCURACY
+            Extract exact OCR values; never guess. Preserve letter date, unit number, project name, promoter name, allottee, total cost/consideration, and booking amount details.
+
+            VERIFY — WITHIN THIS ALLOTMENT LETTER ONLY
+            Report only supported issues; passing checks stay silent.
+
+            1. BOOKING AMOUNT LIMIT: Compute the booking amount as a percentage of the total unit cost. If it exceeds 10% of the total unit cost, flag FINANCIAL_MISMATCH at MEDIUM severity.
+            
+            2. PROJECT COMPLETION DATE: Verify the stated possession date. If the project completion/possession date is in the past relative to the current date (2026-07-15), flag DOCUMENT_EXPIRY at HIGH severity.
+
+            Follow the OUTPUT QUALITY CONTRACT.
+            """
+
+    building_license_checks = """BUILDING LICENSE
+            
+            ACCURACY
+            Extract exact OCR values; never guess. Preserve license number, license date, owner/applicant name, survey/CTS numbers, plot area, boundaries, floor specifications, total built-up area, and fees paid.
+
+            VERIFY — WITHIN THIS BUILDING LICENSE ONLY
+            Report only supported issues; passing checks stay silent.
+
+            1. LICENSE VALIDITY: Compare the license's valid_to date with the current date (2026-07-15). If valid_to is in the past, flag DOCUMENT_EXPIRY at HIGH severity.
+            
+            2. PROPERTY IDENTIFIERS: If there are conflicting survey or CTS numbers within the document, flag PROPERTY_MISMATCH at MEDIUM severity.
+
+            Follow the OUTPUT QUALITY CONTRACT.
+            """
+
+    partition_deed_checks = """PARTITION DEED
+
+            ACCURACY
+            Extract exact OCR values; never guess. Map each value to the correct schema field based on context and labels. Preserve identifiers, names, survey/CTS/municipal numbers, boundaries, and measurements exactly.
+
+            EXTRACT
+            - File metadata: registration number, document number, book number, cd number, execution/registration date, issuing office.
+            - Financial summary: stamp duty paid, registration fee, scanning fee, conversion fee, scrutiny fee, total other fees, and details of any DD or payments.
+            - Parties: all coparceners / family members (names, ages, occupations, addresses, and party number/role).
+            - Schedule A (total property being partitioned): full description, identifiers, measurements, boundaries.
+            - Allocated Schedules (First Schedule, Second Schedule, etc.): schedule name, allocated party name, description, boundaries, measurements.
+            - Witnesses.
+
+            VERIFY — WITHIN THIS PARTITION DEED ONLY
+            Report only supported issues; passing checks stay silent.
+
+            1. PARTIES: Flag if fewer than 2 parties/coparceners are identified in the deed.
+            2. PROPERTY ID: Flag if neither a usable survey nor CTS number exists for Schedule A or any allocated schedule.
+            3. DATES: If execution_date > registration_date, flag DATE_INCONSISTENCY with both dates.
+            4. WITNESSES: If the execution/attestation section is available and fewer than 2 witnesses are identified, flag MISSING_DOCUMENT, HIGH.
+            5. STAMP DUTY: If stamp_duty_paid_amount is explicitly zero, flag FINANCIAL_MISMATCH.
+
+            Follow the OUTPUT QUALITY CONTRACT.
+            """
+
+    completion_certificate_checks = """COMPLETION CERTIFICATE
+
+            ACCURACY
+            Extract exact OCR values; never guess. Map each value to the correct schema field based on context and labels. Preserve identifiers, names, survey/CTS/municipal numbers, and dates exactly.
+
+            EXTRACT
+            - File metadata: certificate number, certificate date, issuing office.
+            - Application details: applicant name, application date, building permission letter reference, building permission letter date.
+            - Inspection details: inspected by (e.g. JE, Town Planning Officer), inspection date.
+            - Property details: survey number, CTS number, location, supervising architect/engineer, fit for occupation floors (e.g. GF, FF, SF), intended use.
+
+            VERIFY — WITHIN THIS DOCUMENT ONLY
+            Report only supported issues; passing checks stay silent.
+
+            1. PROPERTY ID: Flag if neither a usable survey nor CTS number exists.
+            2. DATES: If certificate_date < application_date, flag DATE_INCONSISTENCY with both dates.
+
+            Follow the OUTPUT QUALITY CONTRACT.
+            """
+
+    generic_checks = """GENERIC DOCUMENT
+
+            Extract exact OCR values; never guess.
+
+            VERIFY — WITHIN THIS DOCUMENT ONLY
+            - Identify the apparent document type.
+            - Extract document number, date, issuing authority, property identifiers and party names when present.
+            - Flag only clear internal inconsistencies, quoting the conflicting values.
+
+            Report only supported issues; passing checks stay silent.
+            Follow the OUTPUT QUALITY CONTRACT.
+            """
 
     checks = {
         "SALE_DEED": sale_deed_checks,
@@ -1234,7 +1502,12 @@ def _get_verification_instructions(doc_type: str) -> str:
         "MUTATION": mutation_checks,
         "CONVERSION_ORDER": conversion_checks,
         "RTC_PAHANI": rtc_checks,
-        "CDP_PLAN": cdp_checks,
+        "RERA_CERTIFICATE": rera_checks,
+        "LITIGATION_AFFIDAVIT": litigation_checks,
+        "ALLOTMENT_LETTER": allotment_checks,
+        "BUILDING_LICENSE": building_license_checks,
+        "PARTITION_DEED": partition_deed_checks,
+        "COMPLETION_CERTIFICATE": completion_certificate_checks,
     }
 
     return base + checks.get(doc_type, generic_checks)

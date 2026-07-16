@@ -17,6 +17,11 @@ DETERMINISTIC_DOC_TYPES = {
     "PROPERTY_TAX_ASSESSMENT",
     "TAX_RECEIPT",
     "PROPERTY_REGISTER_CARD",
+    "RERA_CERTIFICATE",
+    "LITIGATION_AFFIDAVIT",
+    "ALLOTMENT_LETTER",
+    "BUILDING_LICENSE",
+    "COMPLETION_CERTIFICATE",
 }
 
 REASONING_DOC_TYPES = {
@@ -43,6 +48,11 @@ DEFAULT_ROUTING_MAP = {
     "POSSESSION_CERTIFICATE": {"provider": "groq", "model": "llama-3.1-8b-instant"},
     "CONVERSION_ORDER": {"provider": "groq", "model": "llama-3.1-8b-instant"},
     "CDP_PLAN": {"provider": "groq", "model": "llama-3.1-8b-instant"},
+    "RERA_CERTIFICATE": {"provider": "groq", "model": "llama-3.1-8b-instant"},
+    "LITIGATION_AFFIDAVIT": {"provider": "groq", "model": "llama-3.1-8b-instant"},
+    "ALLOTMENT_LETTER": {"provider": "groq", "model": "llama-3.1-8b-instant"},
+    "BUILDING_LICENSE": {"provider": "gemini", "model": "gemini-2.5-flash"},
+    "COMPLETION_CERTIFICATE": {"provider": "gemini", "model": "gemini-2.5-flash"},
 }
 
 FALLBACK_CHAIN = [

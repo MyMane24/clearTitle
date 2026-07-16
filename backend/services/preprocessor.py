@@ -26,34 +26,37 @@ def preprocess_pdf(src_pdf: Path, out_pdf: Path) -> Path:
     Read src_pdf, enhance each page, write to out_pdf.
     Returns out_pdf path.
     """
+    from concurrent.futures import ThreadPoolExecutor
+
     out_pdf.parent.mkdir(parents=True, exist_ok=True)
     doc = fitz.open(str(src_pdf))
     result_doc = fitz.open()      # new empty PDF
 
+    # 1. Render all pages to BGR images sequentially (very fast, PyMuPDF)
+    pages_bgr = []
     for page_num in range(len(doc)):
         page = doc[page_num]
         pix  = page.get_pixmap(matrix=RENDER_MATRIX, colorspace=fitz.csRGB)
-
-        # Convert pixmap → numpy array (BGR for OpenCV)
         img_np = np.frombuffer(pix.samples, dtype=np.uint8)
         img_np = img_np.reshape(pix.height, pix.width, 3)
         img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+        pages_bgr.append(img_bgr)
+    doc.close()
 
-        # Apply enhancement chain
-        enhanced = _enhance_page(img_bgr)
+    # 2. Process page enhancements in parallel across cores/threads (OpenCV releases GIL)
+    with ThreadPoolExecutor() as executor:
+        enhanced_pages = list(executor.map(_enhance_page, pages_bgr))
 
-        # Convert back to RGB PIL image → insert into new PDF
+    # 3. Compile the enhanced images back to a new PDF sequentially
+    for enhanced in enhanced_pages:
         enhanced_rgb = cv2.cvtColor(enhanced, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(enhanced_rgb)
-
-        # Write enhanced image page to result doc
         img_bytes = _pil_to_bytes(pil_img)
         new_page  = result_doc.new_page(width=pil_img.width, height=pil_img.height)
         new_page.insert_image(new_page.rect, stream=img_bytes)
 
     result_doc.save(str(out_pdf), garbage=4, deflate=True)
     result_doc.close()
-    doc.close()
 
     return out_pdf
 

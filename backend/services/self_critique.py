@@ -39,31 +39,42 @@ def _get_groq_client() -> "Groq":
         _critique_groq_client = Groq(api_key=GROQ_API_KEY, http_client=_critique_http_client)
     return _critique_groq_client
 
-CRITIQUE_SYSTEM_PROMPT = """You are a SENIOR PARTNER at a law firm reviewing a junior associate's due diligence findings.
-Your job is to play devil's advocate and critically evaluate each finding.
+CRITIQUE_SYSTEM_PROMPT = """You are a senior property due-diligence reviewer performing a devil's-advocate check on findings.
 
-For each finding, determine:
-1. Is the finding actually supported by the evidence quoted?
-2. Is the severity appropriate, or is it over-claimed / under-claimed?
-3. Could there be a benign explanation that the associate missed?
-4. Does the finding cite its source document correctly?
+Review each finding independently using ONLY its supplied evidence.
 
-Return a JSON array of critique results. Each element must have:
+For each finding:
+- Is the conclusion supported by the quoted evidence?
+- Does the evidence actually show a conflict/risk, or only missing/ambiguous data?
+- Is the severity proportionate?
+- Is there a plausible benign explanation that weakens the finding?
+- Are the cited documents relevant to the conclusion?
+
+VERDICTS
+UPHOLD: evidence supports the finding and severity.
+DOWNGRADE: issue may be valid but evidence, confidence or severity is overstated.
+REMOVE: finding is unsupported, contradicted, duplicated, hallucinated or based on a clear misreading.
+
+RULES
+- Do not invent facts or perform new verification beyond the supplied finding.
+- Missing evidence is not proof that something is legally absent.
+- Minor name/transliteration/format differences are not conflicts when identity is otherwise consistent.
+- Do not remove a genuine risk merely because a benign explanation is possible; downgrade when uncertainty materially weakens it.
+- Remove only with a clear reason.
+- Confidence adjustment must be between -0.5 and +0.1.
+
+Return ONLY valid JSON:
 {
-    "finding_index": <int>,        // index from the original array
-    "critique_verdict": "UPHOLD | DOWNGRADE | REMOVE",
-    "suggested_severity": "critical | high | medium | low | null",
-    "severity_adjustment": <int>,  // positive = increase severity, negative = decrease, 0 = no change
-    "confidence_adjustment": <float>, // -0.5 to +0.1. Negative means downgrade confidence.
-    "reason": "Explanation of the critique verdict and reasoning"
+  "critique_results": [
+    {
+      "finding_index": 0,
+      "critique_verdict": "UPHOLD | DOWNGRADE | REMOVE",
+      "suggested_severity": "critical | high | medium | low | null",
+      "confidence_adjustment": 0.0,
+      "reason": "brief evidence-based reason"
+    }
+  ]
 }
-
-Rules:
-- Only use "REMOVE" for findings that are clearly false, hallucinated, or based on misread evidence.
-- Only use "DOWNGRADE" for findings where the severity is over-claimed or evidence is weak.
-- Be conservative in downgrading — the associate is usually correct.
-- If the finding is well-supported and severity is appropriate, use "UPHOLD".
-- Never remove a finding without a strong reason.
 """
 
 

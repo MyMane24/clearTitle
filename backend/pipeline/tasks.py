@@ -29,11 +29,11 @@ from backend.utils.file_utils import get_case_dir, write_json
 from backend.pipeline.stages import Stage
 from backend.pipeline.idempotency import idempotent_stage
 from backend.observability.traced_stage import traced_stage
-from backend.tasks.pipeline_tasks import (
-    _run_ocr_with_retry,
-    _structure_document,
-    _structured_output_path,
-    _safe_doc_type,
+from backend.pipeline.helpers import (
+    run_ocr_with_retry as _run_ocr_with_retry,
+    structure_document as _structure_document,
+    structured_output_path as _structured_output_path,
+    safe_doc_type as _safe_doc_type,
 )
 
 logger = get_logger(__name__)

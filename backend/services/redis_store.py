@@ -293,11 +293,16 @@ def set_doc_status(case_id: str, doc_id: str, **fields) -> None:
 def delete_case(case_id: str) -> int:
     """Delete all Redis keys for a single case. Returns count of keys deleted."""
     r = _get_client()
-    keys = r.keys(f"case:{case_id}:*")
-    if not keys:
-        return 0
-    count = len(keys)
-    r.delete(*keys)
+    pattern = f"case:{case_id}:*"
+    count = 0
+    cursor = 0
+    while True:
+        cursor, keys = r.scan(cursor=cursor, match=pattern, count=100)
+        if keys:
+            r.delete(*keys)
+            count += len(keys)
+        if cursor == 0:
+            break
     return count
 
 
@@ -306,11 +311,15 @@ def delete_case(case_id: str) -> int:
 def flush_all_cases() -> int:
     """Delete ALL case:* keys from Redis. Returns count of keys deleted."""
     r = _get_client()
-    keys = r.keys("case:*")
-    if not keys:
-        return 0
-    count = len(keys)
-    r.delete(*keys)
+    count = 0
+    cursor = 0
+    while True:
+        cursor, keys = r.scan(cursor=cursor, match="case:*", count=100)
+        if keys:
+            r.delete(*keys)
+            count += len(keys)
+        if cursor == 0:
+            break
     return count
 
 
