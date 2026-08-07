@@ -1,24 +1,16 @@
-import os
 from celery import Celery
-from dotenv import load_dotenv
 
-load_dotenv()
-
-# Codex/sandbox launches can inject a dead local proxy (127.0.0.1:9).
-# The Sarvam and Groq SDKs use httpx, which honors these env vars by default.
-# If left in place, external API calls fail with WinError 10061 or Lookup timed out.
-for proxy_var in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
-    if os.getenv(proxy_var, "").startswith("http://127.0.0.1:9"):
-        os.environ.pop(proxy_var, None)
-
-
-_REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+from backend.config import REDIS_URL
 
 celery_app = Celery(
     "property_ocr",
-    broker=_REDIS_URL,
-    backend=_REDIS_URL,
-    include=["backend.tasks.pipeline_tasks", "backend.pipeline.tasks"],
+    broker=REDIS_URL,
+    backend=REDIS_URL,
+    include=[
+        "backend.workers.finalize",
+        "backend.workers.tasks",
+        "backend.workers.title_chain_tasks",
+    ],
 )
 
 celery_app.conf.update(

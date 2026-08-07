@@ -1,52 +1,69 @@
 """
-Case-level endpoints: upload, process, retry, status
+Case-level endpoints: upload, process, retry, status, replace/skip, delete.
 """
 
 from __future__ import annotations
 
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from backend.celery_app import celery_app
-from backend.constants import (
-    STATUS_FAILED,
-    STATUS_PENDING_RETRY,
-    STATUS_PROCESSING,
-)
-from backend.logger import get_logger
-from backend.services.file_service import list_output_cases
-from backend.services.mysql_store import (
+from backend.config import PIPELINE_LOCK_ENABLED
+from backend.database.repositories.case_repo import (
     delete_case as db_delete_case,
+)
+from backend.database.repositories.case_repo import (
+    get_case_owner,
+    init_case,
+    list_cases,
+    set_case_owner,
+)
+from backend.database.repositories.document_repo import (
     get_classification_failed_documents,
     get_failed_documents,
-    init_case,
     init_document,
-    list_cases,
+    replace_document,
+    skip_document,
     update_document_status,
 )
-from backend.services.pipeline_orchestrator import (
-    start_case_pipeline,
-    start_retry_pipeline,
-)
-from backend.services.redis_store import (
+from backend.integrations.redis.state_store import (
+    add_files_to_case,
     append_log,
-    delete_case as redis_delete_case,
     flush_all_cases,
     get_case_job,
     reset_for_retry,
     set_case_status,
-    add_files_to_case,
 )
-from backend.services.redis_store import (
+from backend.integrations.redis.state_store import (
     case_exists as redis_case_exists,
 )
-from backend.services.redis_store import (
+from backend.integrations.redis.state_store import (
+    delete_case as redis_delete_case,
+)
+from backend.integrations.redis.state_store import (
     init_case as redis_init_case,
 )
-from backend.utils.file_utils import delete_case_dir, get_case_dir, save_upload
+from backend.integrations.storage.file_utils import delete_case_dir, get_case_dir, save_upload
+from backend.logger import get_logger
+from backend.services.auth import get_current_user, get_optional_user
+from backend.services.orchestrator import (
+    start_case_pipeline,
+    start_retry_pipeline,
+)
+from backend.shared.constants import (
+    ENCUMBRANCE_CERTIFICATE,
+    SALE_DEED,
+    STATUS_FAILED,
+    STATUS_PENDING_RETRY,
+    STATUS_PROCESSING,
+)
+
+SLOT_EXPECTED_TYPE = {
+    "sale_deed": SALE_DEED,
+    "ec": ENCUMBRANCE_CERTIFICATE,
+}
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -54,47 +71,42 @@ logger = get_logger(__name__)
 _executor = ThreadPoolExecutor(max_workers=4)
 
 
-@router.get("/cases")
-async def get_all_cases(limit: int = 50, offset: int = 0):
-    """List historical cases from database plus output folders."""
-    import asyncio
-    seen = set()
-    merged = []
+def _require_owner(case_id: str, user: dict) -> None:
+    """403 unless the case belongs to the authenticated user."""
+    owner = get_case_owner(case_id)
+    if owner and owner != user["id"]:
+        raise HTTPException(status_code=403, detail="Not your case")
 
-    # Try database (non-blocking)
+
+def _enforce_access(case_id: str, user: dict | None) -> None:
+    """Anonymous cases (user_id NULL) are open to anyone with the case id;
+    owned cases require the owner to be authenticated."""
+    owner = get_case_owner(case_id)
+    if owner and (user is None or owner != user["id"]):
+        raise HTTPException(status_code=403, detail="Not your case")
+
+
+@router.get("/cases")
+async def get_all_cases(limit: int = 50, offset: int = 0, user: dict = Depends(get_current_user)):
+    """List the authenticated user's historical cases."""
+    import asyncio
     try:
         db_cases = await asyncio.get_event_loop().run_in_executor(
-            _executor, lambda: list_cases(limit=limit, offset=offset)
+            _executor, lambda: list_cases(user_id=user["id"], limit=limit, offset=offset)
         )
         for case in db_cases:
             case["source"] = "v2"
-            case["db_version"] = "v2"
-            seen.add(case["id"])
-            merged.append(case)
     except Exception as e:
         logger.warning("Failed to list cases: %s", e)
-
-    # Add file-system only cases (no DB record)
-    output_cases = [c for c in list_output_cases() if c["id"] not in seen]
-    merged.extend(output_cases)
-
-    # Sort by created_at DESC (handle datetime, str, and None)
-    def _sort_key(c):
-        v = c.get("created_at")
-        if isinstance(v, datetime):
-            return v.timestamp()
-        if isinstance(v, (int, float)):
-            return v
-        return 0
-
-    merged.sort(key=_sort_key, reverse=True)
-    return {"cases": merged, "total": len(merged)}
+        db_cases = []
+    return {"cases": db_cases, "total": len(db_cases)}
 
 
 @router.delete("/case/{case_id}")
-async def delete_case(case_id: str):
+async def delete_case(case_id: str, user: dict | None = Depends(get_optional_user)):
     """Delete everything related to a case: Redis, MySQL, and files on disk."""
-    # Revoke active Celery tasks for this case
+    _enforce_access(case_id, user)
+
     try:
         inspect = celery_app.control.inspect()
         active = inspect.active()
@@ -107,20 +119,17 @@ async def delete_case(case_id: str):
     except Exception as e:
         logger.warning("Failed to revoke Celery tasks for %s: %s", case_id, e)
 
-    # Delete from Redis
     redis_deleted = 0
     try:
         redis_deleted = redis_delete_case(case_id)
     except Exception as e:
         logger.warning("Failed to delete Redis data for %s: %s", case_id, e)
 
-    # Delete from MySQL
     try:
         db_delete_case(case_id)
     except Exception as e:
         logger.warning("Failed to delete DB records for %s: %s", case_id, e)
 
-    # Delete files on disk
     fs_deleted = delete_case_dir(case_id)
 
     return {
@@ -132,7 +141,11 @@ async def delete_case(case_id: str):
 
 
 @router.post("/upload")
-async def upload_documents(files: list[UploadFile] = File(...)):
+async def upload_documents(
+    files: list[UploadFile] = File(...),
+    slots: list[str] = Form(default=[]),
+    user: dict | None = Depends(get_optional_user),
+):
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
 
@@ -141,23 +154,25 @@ async def upload_documents(files: list[UploadFile] = File(...)):
 
     saved = []
     for i, f in enumerate(files):
-        if not f.filename.lower().endswith(".pdf"):
+        filename = f.filename or ""
+        if not filename.lower().endswith(".pdf"):
             raise HTTPException(status_code=400,
-                                detail=f"{f.filename} is not a PDF")
+                                detail=f"{f.filename or 'Uploaded file'} is not a PDF")
         dest = await save_upload(f, case_dir / "raw")
-        doc_id = f"DOC_{str(i+1).zfill(3)}"
+        doc_id = f"DOC_{str(i + 1).zfill(3)}"
+        slot = slots[i] if i < len(slots) else ""
         saved.append({
             "doc_id":        doc_id,
-            "original_name": f.filename,
+            "original_name": filename,
             "saved_path":    str(dest),
             "size_kb":       round(dest.stat().st_size / 1024, 1),
+            "slot":          slot,
         })
 
     redis_init_case(case_id, saved)
 
-    # Init in database
     try:
-        init_case(case_id=case_id, total_docs=len(saved))
+        init_case(case_id=case_id, total_docs=len(saved), user_id=user["id"] if user else None)
         for s in saved:
             init_document(
                 case_id=case_id,
@@ -165,6 +180,7 @@ async def upload_documents(files: list[UploadFile] = File(...)):
                 doc_index=int(s["doc_id"].split("_")[1]),
                 filename=s["original_name"],
                 file_paths={"raw": s["saved_path"]},
+                expected_type=SLOT_EXPECTED_TYPE.get(s["slot"]),
             )
     except Exception as e:
         append_log(case_id, f"⚠ DB init failed (non-fatal): {e}")
@@ -173,16 +189,15 @@ async def upload_documents(files: list[UploadFile] = File(...)):
 
 
 @router.post("/process/{case_id}")
-async def process_case(case_id: str):
-    import os
+async def process_case(case_id: str, user: dict | None = Depends(get_optional_user)):
     if not redis_case_exists(case_id):
         raise HTTPException(status_code=404, detail="Case not found")
+    _enforce_access(case_id, user)
 
-    # Distributed locking
-    lock_enabled = os.getenv("PIPELINE_LOCK_ENABLED", "true").lower() == "true"
+    lock_enabled = PIPELINE_LOCK_ENABLED
     lock = None
     if lock_enabled:
-        from backend.locking.redis_lock import RedisLock
+        from backend.integrations.redis.lock import RedisLock
         lock = RedisLock(f"case:{case_id}:pipeline_lock")
         if not lock.acquire():
             raise HTTPException(status_code=409, detail={"error": "Pipeline already running"})
@@ -209,12 +224,13 @@ async def process_case(case_id: str):
 
 
 @router.get("/status/{case_id}")
-async def get_status(case_id: str):
+async def get_status(case_id: str, user: dict | None = Depends(get_optional_user)):
     import asyncio
     if not redis_case_exists(case_id):
         raise HTTPException(status_code=404, detail="Case not found")
+    _enforce_access(case_id, user)
 
-    from backend.services.mysql_store import get_case_status_payload
+    from backend.database.repositories.case_repo import get_case_status_payload
     try:
         job = await asyncio.get_event_loop().run_in_executor(
             _executor, get_case_status_payload, case_id
@@ -225,32 +241,17 @@ async def get_status(case_id: str):
         logger.error("Failed to retrieve status from DB: %s", e)
         job = get_case_job(case_id)
 
-    action_errors = [
-        e for e in job.get("errors", [])
-        if e.get("action_required") == "replace_or_skip"
-    ]
-    needs_action = []
-    if action_errors:
-        file_info = {f["doc_id"]: f["original_name"] for f in job.get("files", [])}
-        for e in action_errors:
-            needs_action.append({
-                "doc_id": e["doc_id"],
-                "filename": file_info.get(e["doc_id"], e["doc_id"]),
-            })
-    else:
-        try:
-            needs_action = get_classification_failed_documents(case_id)
-        except Exception as e:
-            logger.warning("Failed to get classification_failed docs: %s", e)
-            needs_action = []
+    try:
+        needs_action = get_classification_failed_documents(case_id)
+    except Exception as e:
+        logger.warning("Failed to get classification_failed docs: %s", e)
+        needs_action = []
 
     job["needs_action"] = [
         {
             "doc_id": d["doc_id"],
             "filename": d["filename"],
-            "message": (
-                f"'{d['filename']}' — document type not recognised. Choices:"
-            ),
+            "message": f"'{d['filename']}' — document type not recognised.",
             "choices": [
                 {"action": "skip", "method": "POST",
                  "url": f"/api/case/{case_id}/doc/{d['doc_id']}/skip",
@@ -267,25 +268,31 @@ async def get_status(case_id: str):
 
 
 @router.post("/retry/{case_id}")
-async def retry_failed(case_id: str):
-    import os
+async def retry_failed(case_id: str, user: dict | None = Depends(get_optional_user)):
     if not redis_case_exists(case_id):
         raise HTTPException(status_code=404, detail="Case not found")
+    _enforce_access(case_id, user)
 
-    # Distributed locking
-    lock_enabled = os.getenv("PIPELINE_LOCK_ENABLED", "true").lower() == "true"
+    lock_enabled = PIPELINE_LOCK_ENABLED
     lock = None
     if lock_enabled:
-        from backend.locking.redis_lock import RedisLock
+        from backend.integrations.redis.lock import RedisLock
         lock = RedisLock(f"case:{case_id}:pipeline_lock")
         if not lock.acquire():
             raise HTTPException(status_code=409, detail={"error": "Pipeline already running"})
 
     meta = get_case_job(case_id)
     if meta["status"] == STATUS_PROCESSING:
-        if lock:
-            lock.release()
-        raise HTTPException(status_code=409, detail="Already processing")
+        from backend.database.repositories.document_repo import get_case_documents
+        db_docs = get_case_documents(case_id)
+        actively_processing = any(
+            d.get("status") in ("processing", "pending", "preprocessing", "ocr", "structuring")
+            for d in db_docs
+        )
+        if actively_processing:
+            if lock:
+                lock.release()
+            raise HTTPException(status_code=409, detail="Already processing")
 
     failed = get_failed_documents(case_id)
     classification_failed = get_classification_failed_documents(case_id)
@@ -326,14 +333,33 @@ async def retry_failed(case_id: str):
     return {"case_id": case_id, "retrying": len(failed)}
 
 
+@router.post("/case/{case_id}/link")
+async def link_case(case_id: str, user: dict = Depends(get_current_user)):
+    """Attach an anonymous case (user_id NULL) to the authenticated user."""
+    if not redis_case_exists(case_id):
+        raise HTTPException(status_code=404, detail="Case not found")
+    owner = get_case_owner(case_id)
+    if owner:
+        if owner == user["id"]:
+            return {"case_id": case_id, "linked": True, "already": True}
+        raise HTTPException(status_code=403, detail="Case is linked to another account")
+    set_case_owner(case_id=case_id, user_id=user["id"])
+    append_log(case_id, "── Case linked to account ──")
+    return {"case_id": case_id, "linked": True, "already": False}
+
+
 @router.post("/case/{case_id}/upload")
-async def upload_more_documents(case_id: str, files: list[UploadFile] = File(...)):
+async def upload_more_documents(
+    case_id: str,
+    files: list[UploadFile] = File(...),
+    user: dict | None = Depends(get_optional_user),
+):
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
     if not redis_case_exists(case_id):
         raise HTTPException(status_code=404, detail="Case not found")
+    _enforce_access(case_id, user)
 
-    # Get case details to determine next doc index
     meta = get_case_job(case_id)
     existing_files = meta.get("files", [])
     start_idx = len(existing_files)
@@ -342,37 +368,27 @@ async def upload_more_documents(case_id: str, files: list[UploadFile] = File(...
 
     saved = []
     for i, f in enumerate(files):
-        if not f.filename.lower().endswith(".pdf"):
+        filename = f.filename or ""
+        if not filename.lower().endswith(".pdf"):
             raise HTTPException(status_code=400,
-                                detail=f"{f.filename} is not a PDF")
+                                detail=f"{f.filename or 'Uploaded file'} is not a PDF")
         dest = await save_upload(f, case_dir / "raw")
         doc_id = f"DOC_{str(start_idx + i + 1).zfill(3)}"
         saved.append({
             "doc_id":        doc_id,
-            "original_name": f.filename,
+            "original_name": filename,
             "saved_path":    str(dest),
             "size_kb":       round(dest.stat().st_size / 1024, 1),
         })
 
-    # Update total count in database
     new_total = start_idx + len(saved)
 
     try:
-        from backend.services.mysql_store import _get_conn
-        with _get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "UPDATE cases SET total_docs = %s, status = 'uploaded', "
-                "verification_status = NULL, verdict = NULL WHERE id = %s",
-                (new_total, case_id)
-            )
-            # Delete stale cross-document verification report
-            cursor.execute("DELETE FROM cross_doc_verifications WHERE case_id = %s", (case_id,))
-            conn.commit()
+        from backend.database.repositories.case_repo import upload_docs_reset
+        upload_docs_reset(case_id=case_id, new_total=new_total)
     except Exception as e:
         logger.warning("Failed to update cases total_docs: %s", e)
 
-    # Initialize new documents in database
     try:
         for s in saved:
             init_document(
@@ -385,17 +401,58 @@ async def upload_more_documents(case_id: str, files: list[UploadFile] = File(...
     except Exception as e:
         logger.warning("Failed to init documents in MySQL: %s", e)
 
-    # Sync to Redis cache
     add_files_to_case(case_id, saved)
     append_log(case_id, f"Uploaded {len(saved)} additional file(s) — total docs is now {new_total}")
 
     return {"case_id": case_id, "files": saved, "total_docs": new_total}
 
 
+@router.post("/case/{case_id}/doc/{doc_id}/replace")
+async def replace_document_endpoint(
+    case_id: str,
+    doc_id: str,
+    file: UploadFile = File(...),
+    user: dict | None = Depends(get_optional_user),
+):
+    if not redis_case_exists(case_id):
+        raise HTTPException(status_code=404, detail="Case not found")
+    _enforce_access(case_id, user)
+
+    filename = file.filename
+    if not filename or not filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail=f"{file.filename or 'Uploaded file'} is not a PDF")
+
+    case_dir = get_case_dir(case_id)
+    dest = await save_upload(file, case_dir / "raw", doc_id=doc_id)
+
+    replace_document(
+        case_id=case_id,
+        doc_id=doc_id,
+        filename=filename,
+        file_paths={"raw": str(dest)},
+    )
+    append_log(case_id, f"[{doc_id}] Document replaced — pending retry")
+    return {"case_id": case_id, "doc_id": doc_id, "status": "replaced"}
+
+
+@router.post("/case/{case_id}/doc/{doc_id}/skip")
+async def skip_document_endpoint(
+    case_id: str,
+    doc_id: str,
+    user: dict | None = Depends(get_optional_user),
+):
+    if not redis_case_exists(case_id):
+        raise HTTPException(status_code=404, detail="Case not found")
+    _enforce_access(case_id, user)
+
+    skip_document(case_id=case_id, doc_id=doc_id)
+    append_log(case_id, f"[{doc_id}] Document skipped")
+    return {"case_id": case_id, "doc_id": doc_id, "status": "skipped"}
+
+
 @router.post("/clear")
 async def clear_all_data():
     """Flush Redis, stop active Celery tasks, and purge Celery queue."""
-    # 1. Stop active Celery tasks
     revoked_count = 0
     try:
         inspect = celery_app.control.inspect()
@@ -410,10 +467,8 @@ async def clear_all_data():
     except Exception as e:
         logger.warning("Failed to revoke active Celery tasks: %s", e)
 
-    # 2. Flush Redis
     redis_deleted = flush_all_cases()
 
-    # 3. Purge Celery Queue
     try:
         purged = celery_app.control.purge()
     except Exception as e:
