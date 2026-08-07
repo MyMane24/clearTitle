@@ -1,6 +1,6 @@
-# Property Verification Engine
+# clearTitle — AI Property Title Verification
 
-An end-to-end document processing and intelligent legal verification platform for Karnataka property documents. The system extracts structured JSON from scanned PDFs using Sarvam OCR, performs single-pass LLM structuring and per-document verification (Groq / Gemini), executes cross-document legal verification, and presents findings in a premium enterprise-grade admin dashboard UI.
+An end-to-end property title verification platform for **Karnataka property documents**. clearTitle extracts structured JSON from scanned PDFs (Sarvam Vision OCR), runs single-pass LLM structuring and per-document verification (Groq / Gemini), executes cross-document legal verification with deterministic risk checks, and presents everything in a warm, premium dashboard — with a landing page that explains the product.
 
 ---
 
@@ -8,49 +8,56 @@ An end-to-end document processing and intelligent legal verification platform fo
 
 ```mermaid
 flowchart TD
-    subgraph Frontend["Frontend Layer (Single-Page Admin Dashboard)"]
-        UI["🖥️ Property Verification Engine UI\nindex.html + Vanilla JS + CSS\nCollapsible sidebar · Tab navigation\nVerification dashboard · History panel"]
+    subgraph Frontend["Frontend Layer (React SPA)"]
+        UI["🖥️ clearTitle SPA\nReact 19 + Vite + TypeScript\nLanding page (/) + Dashboard (/#/app)"]
+        DASH["Verification Dashboard\nUpload · Processing · Results · Verify · History"]
+        HOME["Landing sections\nHero · Pipeline · Audit demo · FAQ"]
     end
 
     subgraph API["API Gateway Layer (FastAPI)"]
-        R_CASES["📁 Cases Router\n/api/upload\n/api/process\n/api/status\n/api/retry"]
-        R_DOCS["📄 Documents Router\n/api/result\n/api/case/*/bundle\n/api/case/*/doc/*/{replace,skip}"]
-        R_VERIFY["⚖️ Verification Router\n/api/verify/*\n/api/verify/*/feedback\n/api/analytics/token-usage"]
+        R_CASES["📁 Cases Router\n/api/upload · /api/cases · /api/process\n/api/status · /api/retry · /api/clear"]
+        R_DOCS["📄 Documents Router\n/api/result · /api/case/{id}/bundle\nreplace / skip / ocr-raw / files"]
+        R_VERIFY["⚖️ Verification Router\n/api/verify/* · /api/verify/*/feedback\n/api/analytics/token-usage · /metrics"]
     end
 
     subgraph Orchestration["Async Task Queue"]
-        CELERY["Celery Workers\nbackend/tasks/pipeline_tasks.py"]
+        CELERY["Celery Workers\nbackend/workers/* (stages, tasks, finalize)"]
         REDIS_BROKER[(Redis Broker / State Store)]
     end
 
-    subgraph Pipeline["V2 Linear Processing Pipeline"]
-        PREPROC["① Preprocess\n(Denoise & Hough Deskew)\nbackend/services/preprocessor.py"]
-        OCR["② Sarvam OCR\n(Scanned PDF ➔ Raw Text)\nbackend/services/sarvam_ocr.py"]
-        CLASSIFY["③ Classify\n(Keyword classification)\nbackend/services/doc_classifier.py"]
-        STRUCTURE["④ Single-Pass Structurer & Per-Doc Verifier\n(Groq primary, Gemini fallback)\nbackend/services/{groq,gemini}_structurer.py"]
+    subgraph Pipeline["Processing Pipeline"]
+        PREPROC["① Preprocess\n(denoise & deskew)\ninfrastructure/integrations/preprocessor.py"]
+        OCR["② Sarvam OCR\n(Scanned PDF ➔ Raw Text)\ninfrastructure/integrations/sarvam/ocr_client.py"]
+        CLASSIFY["③ Classify\n(Keyword + LLM classification)\nai/classification/classifier.py"]
+        STRUCTURE["④ Structurer + Per-Doc Verification\n(Groq primary, Gemini fallback)\nai/extraction/*"]
+        CRITIQUE["⑤ Self-Critique\nai/critique/self_critique.py"]
+        SCORE["⑥ Risk Scoring\ndeterministic checks + ai/scoring"]
     end
 
-    subgraph Verification["Intelligent Verification Layer"]
-        V_ENG["Verification Orchestrator\nbackend/services/verification_engine.py"]
-        CROSS_DOC["Cross-Doc Verifier\n(Groq Llama-3.3-70b-versatile)\nbackend/services/cross_doc_verifier.py"]
-        VECTOR_DB[("Qdrant Vector Store\nPersistent human feedback")]
+    subgraph Verification["Verification Layer"]
+        V_ENG["Verification Orchestrator\napplication/verification/runner.py"]
+        CROSS_DOC["Cross-Doc Verifier\nai/verification/cross_doc.py"]
+        STATUTE["Statute RAG\nai/rag/statute_rag.py"]
+        VECTOR_DB[("Vector Store\nHuman-feedback repository")]
     end
 
     subgraph Storage["Storage Layer"]
-        MYSQL[("MySQL (property_ocr_v2)\nCases, Documents & Reports")]
-        FS[("File System\nRaw uploads & OCR outputs")]
+        MYSQL[("MySQL\nCases, Documents & Reports")]
+        REDIS[(Redis State Store)]
+        FS[("File System\nuploads/ & outputs/")]
     end
 
     UI -->|"HTTP API Requests"| API
+    DASH -->|"HTTP API Requests"| API
     R_CASES -->|"Dispatches tasks"| CELERY
-    CELERY -->|"Reads/writes status"| REDIS_BROKER
-    CELERY --> PREPROC --> OCR --> CLASSIFY --> STRUCTURE
-    STRUCTURE -->|"Saves structured data & notes"| MYSQL
-    STRUCTURE -->|"Saves OCR output"| FS
+    CELERY -->|"Reads/writes status"| REDIS
+    CELERY --> PREPROC --> OCR --> CLASSIFY --> STRUCTURE --> CRITIQUE --> SCORE
+    STRUCTURE -->|"Saves structured data"| MYSQL
     R_VERIFY --> V_ENG
     V_ENG -->|"1. Fetches case bundle"| MYSQL
     V_ENG -->|"2. Generates report"| CROSS_DOC
-    CROSS_DOC -->|"Queries learnings"| VECTOR_DB
+    CROSS_DOC -->|"Queries statute + learnings"| STATUTE
+    STATUTE --> VECTOR_DB
     V_ENG -->|"3. Stores final report"| MYSQL
     R_VERIFY -->|"Post-verification corrections"| VECTOR_DB
 ```
@@ -59,24 +66,24 @@ flowchart TD
 
 | Component | Technology | Description |
 |---|---|---|
-| **Frontend UI** | HTML5, Vanilla JS, CSS | Premium admin dashboard — collapsible sidebar, tab navigation, verification report panels, historical case viewer, grouped field summary property sheet |
-| **API Layer** | FastAPI, Uvicorn | Async REST API for case uploads, document actions, analytics, and verification triggers |
-| **Async Tasks** | Celery, Redis | Background processing — preprocessing, OCR, classification, and structuring in parallel |
-| **OCR Service** | Sarvam AI Vision OCR | High-accuracy OCR for mixed English/Kannada text including table structure extraction |
-| **Structuring** | Groq (Llama-3) / Gemini | Single-pass JSON field extraction with simultaneous per-document verification notes |
-| **Verification Engine** | Groq (Llama 3.3 70B) | Cross-document legal checker — owner consistency, stamp duty, area, registration date checks |
-| **Vector DB** | Qdrant (Persistent) | Stores human corrections to align the system and adjust verification rules on-the-fly |
-| **Relational DB** | MySQL (V2 Schema) | Unified tables for cases, documents, cross-doc reports, and human feedback |
+| **Frontend** | React 19, Vite 6, TypeScript, Tailwind CSS 4 | Landing page + admin dashboard with upload pipeline, results, verification report, and case history |
+| **API Layer** | FastAPI, Uvicorn | Async REST API for cases, documents, analytics, and verification |
+| **Async Tasks** | Celery, Redis | Idempotent background stages — preprocess, OCR, classify, structure, critique, score, finalize |
+| **OCR Service** | Sarvam AI Vision OCR | High-accuracy OCR for mixed English/Kannada text with table extraction |
+| **Structuring** | Groq (Llama-3) / Gemini | Single-pass JSON field extraction with per-document verification notes |
+| **Verification** | Groq Llama-3.3-70B + deterministic checks | Cross-document legal checks, self-critique, and risk scoring |
+| **RAG / Learnings** | Qdrant (local file mode) | Statute retrieval and persistent human-feedback corrections |
+| **Relational DB** | MySQL | Unified tables for cases, documents, verification reports, and feedback |
 
 ---
 
+## 🧠 Verification Features
 
-## 🧠 Intelligent Verification Features
-
-- **100% LLM-Based Per-Document Checks** — Stamp duty ratios, witness counts, GPA authorizations, and date ordering are verified entirely within LLM prompts. Computations (e.g. `168000 / 2500000 × 100 = 6.72%`) appear verbatim in the `evidence` field for full transparency.
-- **Context Cache Auto-Invalidation** — Static instructions and schemas are cached. An MD5 checksum of prompt contents triggers automatic cache invalidation/rebuild on Gemini's servers when rules change.
-- **Human Feedback Loop** — Post-verification corrections are stored in Qdrant and queried during future verifications to continuously improve accuracy.
-- **Rich Historical Report Enrichment** — The `GET /api/verify/{case_id}/report` endpoint dynamically formats stored findings into the full dashboard payload (metrics, risk scores, per-doc findings, missing docs) — identical to the live pipeline output.
+- **Per-Document Checks** — Stamp duty ratios, witness counts, GPA authorizations, and date ordering verified inside LLM prompts; deterministic checks run alongside (see `ai/verification/deterministic/checks.py`).
+- **Self-Critique** — Every structured result passes through a critique stage before scoring.
+- **Human Feedback Loop** — Corrections from the Human Review tab are stored and queried during future verifications.
+- **Risk Scoring** — Critical / High / Medium / Low findings plus a 0–100 risk score and final legal opinion.
+- **PDF Export** — Client-side report export (jsPDF) for every verification case.
 
 ---
 
@@ -100,11 +107,11 @@ flowchart TD
 
 ```bash
 git clone <repo-url>
-cd property_ocr
+cd cleartitle
 cp .env.example .env
 ```
 
-Open `.env` and fill in **only these 3 lines** (everything else works as-is):
+Open `.env` and fill in the API keys (everything else works as-is):
 
 ```env
 SARVAM_API_KEY=your_key_here
@@ -122,13 +129,35 @@ This starts 5 services automatically:
 
 | Service | URL / Port | Purpose |
 |---|---|---|
-| **App (FastAPI)** | http://localhost:8000 | Main application |
+| **App (FastAPI + React SPA)** | http://localhost:8000 | Main application — open `/#/app` for the dashboard |
 | **phpMyAdmin** | http://localhost:8080 | Browse MySQL data in browser |
 | **MySQL** | `127.0.0.1:3307` | Database (exposed for GUI tools) |
-| **Redis** | internal only | Celery broker |
-| **Celery Worker** | internal only | Background task processing |
+| **Redis** | internal only | Celery broker + state store |
+| **Celery Worker** | internal only | Background task processing (`--concurrency=2`) |
 
-> On subsequent runs just use `docker compose up` (no `--build` needed unless you change code).
+> On subsequent runs just use `docker compose up`. Rebuild with `docker compose up --build` after changing code — the React SPA is baked into the image.
+
+---
+
+## 🖥️ Frontend Development (Without Docker)
+
+The React app lives in `frontend/`. It has its own dev server (Express + Vite HMR) on port 3000:
+
+```bash
+cd frontend
+npm install
+cp .env.example .env   # optional: AI_API_KEY for the /api/verify-property mock demo
+npm run dev            # http://localhost:3000
+```
+
+| Command | Description |
+|---|---|
+| `npm run dev` | Dev server (Express + Vite middleware) on :3000 |
+| `npm run build` | Build the Vite frontend + bundle the server to `dist/` |
+| `npm run lint` | Type-check with `tsc --noEmit` |
+| `npm start` | Run the production server from `dist/` |
+
+When deployed via Docker, the built SPA is served by FastAPI from `frontend/dist`.
 
 ---
 
@@ -136,11 +165,9 @@ This starts 5 services automatically:
 
 ### Option A — phpMyAdmin (browser, zero install)
 
-Open **http://localhost:8080** — you'll see all tables (`cases`, `documents`, `cross_doc_verifications`, etc.) and can browse/query data directly.
+Open **http://localhost:8080** — you'll see all tables (`cases`, `documents`, `verifications`, etc.) and can browse/query data directly.
 
-### Option B — VS Code Database Client extension
-
-Add a new connection in the Database Client (or SQLTools) extension:
+### Option B — MySQL Workbench / DBeaver / TablePlus
 
 ```
 Host:     127.0.0.1
@@ -150,43 +177,152 @@ Password: property_pass_123
 Database: property_ocr_v2
 ```
 
-### Option C — MySQL Workbench / DBeaver / TablePlus
-
-Same credentials as Option B — connect to `127.0.0.1:3307`.
-
-### Option D — Terminal (no GUI needed)
+### Option C — Terminal (no GUI needed)
 
 ```bash
 docker compose exec mysql mysql -u property_user -pproperty_pass_123 property_ocr_v2
 ```
 
-Then run any SQL: `SHOW TABLES;`, `SELECT * FROM cases;`, etc.
+---
+
+## 🔌 API Endpoints
+
+### Pipeline & Cases
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/cases` | List cases (MySQL + filesystem fallback) |
+| `POST` | `/api/upload` | Upload PDFs and initialize a new case |
+| `POST` | `/api/process/{case_id}` | Trigger the async OCR + structuring pipeline |
+| `GET` | `/api/status/{case_id}` | Real-time pipeline status |
+| `POST` | `/api/retry/{case_id}` | Retry failed documents |
+| `POST` | `/api/case/{case_id}/upload` | Add more documents to an existing case |
+| `POST` | `/api/clear` | Wipe all cases |
+| `DELETE` | `/api/case/{case_id}` | Delete a single case (Redis + MySQL + files) |
+
+### Documents & Structured Data
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/case/{case_id}/bundle` | All processed documents in a case |
+| `GET` | `/api/result/{case_id}/{doc_id}` | OCR text + structured JSON for one document |
+| `GET` | `/api/case/{case_id}/ocr-raw` | List merged OCR files for a case |
+| `GET` | `/api/case/{case_id}/doc/{doc_id}/ocr-raw` | Full OCR text for a specific document |
+| `GET` | `/api/case/{case_id}/files` | File-tree listing for a case |
+| `GET` | `/api/case/{case_id}/documents` | Document rows for a case |
+| `POST` | `/api/case/{case_id}/doc/{doc_id}/replace` | Replace a document file |
+| `POST` | `/api/case/{case_id}/doc/{doc_id}/skip` | Mark a document as skipped |
+
+### Verification & Analytics
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/verify/{case_id}` | Run cross-document verification |
+| `GET` | `/api/verify/{case_id}/report` | Latest verification report (full enriched payload) |
+| `GET` | `/api/verify/{case_id}/per-doc` | Per-document verification notes |
+| `POST` | `/api/verify/{case_id}/feedback` | Submit human feedback (stored in vector store) |
+| `GET` | `/api/verify/learnings/stats` | Count of stored learnings |
+| `GET` | `/api/analytics/token-usage` | Per-case token, latency, and cost stats |
+| `GET` | `/api/analytics/cost-dashboard` | Cost dashboard data |
+| `GET` | `/api/analytics/quota-tracking` | API quota tracking |
+| `GET` | `/health` | Health check |
+| `GET` | `/metrics` | Prometheus metrics |
 
 ---
 
-## 🛠️ Manual Setup (Without Docker)
+## 📂 Project Structure
+
+```
+cleartitle/
+│
+├── backend/                        # FastAPI + Celery
+│   ├── main.py                     # FastAPI entrypoint (serves API + React SPA)
+│   ├── celery_app.py               # Celery configuration
+│   ├── logger.py                   # Logging utility
+│   │
+│   ├── routers/                    # HTTP layer
+│   │   ├── cases.py                # Upload, process, status, retry, delete
+│   │   ├── documents.py            # Result, bundle, OCR raw, replace/skip
+│   │   └── verification.py         # Verification, feedback & analytics
+│   │
+│   ├── application/                # Use-case orchestration
+│   │   ├── pipeline/               # orchestrator, state machine, context
+│   │   └── verification/           # runner, reporting, feedback
+│   │
+│   ├── workers/                    # Celery task executors
+│   │   ├── stages.py               # Individual pipeline stage tasks
+│   │   ├── tasks.py                # Task declarations
+│   │   ├── stage_adapter.py        # Stage context builder
+│   │   ├── idempotency.py          # Idempotency guards
+│   │   └── finalize.py             # Case finalization
+│   │
+│   ├── ai/                         # AI capabilities
+│   │   ├── classification/         # Document type classifier
+│   │   ├── extraction/             # Groq / Gemini structurers
+│   │   ├── verification/           # Cross-doc verifier + deterministic checks
+│   │   ├── critique/               # Self-critique pass
+│   │   ├── scoring/                # Risk scoring
+│   │   ├── rag/                    # Statute RAG + vector store
+│   │   └── prompts/                # Prompt templates & schemas
+│   │
+│   ├── infrastructure/             # Framework adapters
+│   │   ├── integrations/           # Sarvam OCR, Gemini, model router, preprocessor
+│   │   ├── database/               # Connection, migrations, repositories
+│   │   ├── cache/                  # Redis state store, rate limiter
+│   │   ├── storage/                # File service & utils
+│   │   └── locking/                # Redis locks
+│   │
+│   ├── observability/              # Logging, metrics, tracing
+│   ├── domain/                     # State machine domain model
+│   ├── shared/                     # Constants & helpers
+│   └── app/                        # App configuration
+│
+├── frontend/                       # React SPA (Vite)
+│   ├── src/
+│   │   ├── components/             # Landing-page sections (Navbar, Hero, FAQ, ...)
+│   │   ├── dashboard/              # Verification dashboard (upload, report, history)
+│   │   ├── api/backend.ts          # API client
+│   │   ├── data/                   # Landing content
+│   │   ├── App.tsx                 # Route: homepage / + dashboard /#/app
+│   │   ├── index.css               # Tailwind theme + brand fonts
+│   │   └── main.tsx
+│   ├── public/                     # Favicon, static assets
+│   ├── server.ts                   # Dev server (Express + Vite middleware)
+│   └── index.html
+│
+├── uploads/                        # Uploaded PDF storage (bind-mounted)
+├── outputs/                        # OCR + structured outputs (bind-mounted)
+├── data/                           # Qdrant vector DB (bind-mounted)
+├── docker-compose.yml
+├── Dockerfile
+└── requirements.txt
+```
+
+---
+
+## 🎨 UI Design System
+
+The frontend follows a warm, editorial design system shared by the landing page and dashboard:
+
+- **Palette** — Cream background (`#FFF8F2`), warm stone neutrals, and an orange brand scale (`#ea580c`, `#f97316`, amber `#fbbf24`). Semantic status colors (emerald / amber / rose) preserved for verification results.
+- **Typography** — Inter (body), Plus Jakarta Sans (display/headings), Instrument Serif (accent italics). Loaded once from Google Fonts in `frontend/index.html`.
+- **Icons** — lucide-react (no emoji).
+- **Dashboard** (`/#/app`) — Custom CSS (`dashboard.css`) with CSS-token theming: cards, badges, metric tiles, log viewers, evidence drawers, property sheets, finding rows, and PDF export.
+
+---
+
+## 🛠️ Manual Setup (Backend, Without Docker)
 
 <details>
-<summary>Click to expand — for local development without Docker</summary>
+<summary>Click to expand — for local backend development without Docker</summary>
 
-**Prerequisites:** Python 3.10+, MySQL 8.0, Redis
-
----
+**Prerequisites:** Python 3.11+, MySQL 8.0, Redis
 
 ### Step 1 — Create the database
-
-Connect to your local MySQL and run:
 
 ```sql
 CREATE DATABASE IF NOT EXISTS property_ocr_v2
   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
----
-
 ### Step 2 — Configure environment
-
-Copy the template and fill in your credentials:
 
 ```bash
 # Windows
@@ -196,7 +332,7 @@ copy .env.example .env
 cp .env.example .env
 ```
 
-Open `.env` and update these values to match your local MySQL:
+Update these values to match your local MySQL:
 
 ```env
 MYSQL_HOST=127.0.0.1
@@ -207,42 +343,20 @@ MYSQL_DATABASE=property_ocr_v2
 REDIS_URL=redis://localhost:6379/0
 ```
 
----
-
 ### Step 3 — Install dependencies
 
-**Windows (PowerShell):**
-```powershell
+```bash
 python -m venv venv
-.\venv\Scripts\Activate.ps1
+# Windows:  .\venv\Scripts\Activate.ps1
+# Linux/macOS: source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-**Linux / macOS:**
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
+### Step 4 — Run the application (3 terminals)
 
----
+**Terminal 1 — Redis:** `redis-server`
 
-### Step 4 — Run the application
-
-You need **3 terminals open simultaneously**.
-
-**Terminal 1 — Redis**
-
-Windows:
-```powershell
-& "$env:TEMP\redis\redis-server.exe"
-```
-Linux / macOS:
-```bash
-redis-server
-```
-
-**Terminal 2 — Celery Worker**
+**Terminal 2 — Celery Worker:**
 
 Windows:
 ```powershell
@@ -253,9 +367,7 @@ Linux / macOS:
 celery -A backend.celery_app worker --loglevel=info --concurrency=2
 ```
 
-> **Note:** `--pool=solo` is Windows-only. Linux/macOS use the default pool which supports concurrency natively.
-
-**Terminal 3 — FastAPI Server**
+**Terminal 3 — FastAPI Server:**
 
 Windows:
 ```powershell
@@ -266,106 +378,10 @@ Linux / macOS:
 uvicorn backend.main:app --reload --port 8000
 ```
 
-Then open **http://localhost:8000** in your browser.
+Open **http://localhost:8000** in your browser.
 
 </details>
 
-
 ---
 
-## 🔌 API Endpoints
-
-### Pipeline & Cases
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/upload` | Upload PDFs and initialize a new case |
-| `POST` | `/api/process/{case_id}` | Trigger async OCR + structuring pipeline |
-| `GET` | `/api/status/{case_id}` | Real-time pipeline status |
-| `POST` | `/api/retry/{case_id}` | Retry failed documents |
-
-### Documents & Structured Data
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/case/{case_id}/bundle` | All processed documents in a case |
-| `GET` | `/api/result/{case_id}/{doc_id}` | OCR text + structured JSON for one document |
-| `GET` | `/api/case/{case_id}/ocr-raw` | List merged OCR files for a case |
-| `GET` | `/api/case/{case_id}/doc/{doc_id}/ocr-raw` | Full OCR text for a specific document |
-| `POST` | `/api/case/{case_id}/doc/{doc_id}/replace` | Replace a document file |
-| `POST` | `/api/case/{case_id}/doc/{doc_id}/skip` | Mark a document as skipped |
-
-### Verification & Analytics
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/verify/{case_id}` | Run cross-document verification |
-| `GET` | `/api/verify/{case_id}/report` | Latest verification report (full enriched payload) |
-| `GET` | `/api/verify/{case_id}/per-doc` | Per-document verification notes |
-| `POST` | `/api/verify/{case_id}/feedback` | Submit human feedback (stored in Qdrant) |
-| `GET` | `/api/analytics/token-usage` | Per-case token, latency, and cost stats |
-
----
-
-## 📂 Project Structure
-
-```
-property_ocr/
-│
-├── backend/
-│   ├── main.py                        # FastAPI entrypoint ("Property Verification Engine")
-│   ├── celery_app.py                  # Celery configuration
-│   ├── logger.py                      # Logging utility
-│   │
-│   ├── routers/
-│   │   ├── cases.py                   # Upload & pipeline handlers
-│   │   ├── documents.py               # Document retrieval, OCR raw, replace/skip
-│   │   └── verification.py            # Verification, feedback & analytics endpoints
-│   │
-│   ├── services/
-│   │   ├── pipeline_orchestrator.py   # Celery task coordination
-│   │   ├── preprocessor.py            # Image enhancement & deskewing
-│   │   ├── sarvam_ocr.py              # Sarvam AI OCR client
-│   │   ├── ocr_merger.py              # OCR chunk consolidation
-│   │   ├── doc_classifier.py          # Document type classifier
-│   │   ├── groq_structurer.py         # Primary Groq JSON structurer
-│   │   ├── gemini_structurer.py       # Fallback Gemini JSON structurer
-│   │   ├── cross_doc_verifier.py      # Cross-document legal checker
-│   │   ├── verification_engine.py     # Verification orchestrator + payload formatter
-│   │   ├── vector_store.py            # Qdrant human-feedback repository
-│   │   └── mysql_store.py             # Unified MySQL V2 store wrapper
-│   │
-│   ├── tasks/
-│   │   └── pipeline_tasks.py          # Celery task executors
-│   │
-│   └── utils/
-│       └── file_utils.py              # File handling utility helpers
-│
-├── frontend/
-│   ├── index.html                     # Single-page admin dashboard
-│   ├── logo.png                       # Custom branding logo
-│   ├── css/
-│   │   └── styles.css                 # Full design system (1200+ lines)
-│   └── js/
-│       ├── api.js                     # API call handlers
-│       ├── app.js                     # App events, sidebar toggle, filter logic
-│       ├── history.js                 # Historical case panel & polling
-│       ├── pdf_report.js              # Client-side PDF report generation
-│       └── ui.js                      # Dynamic rendering — doc panels, field summary
-│
-├── uploads/                           # Uploaded PDF storage
-├── requirements.txt                   # Python dependencies
-└── README.md                          # This file
-```
-
----
-
-## 🎨 UI Design System
-
-The frontend uses a custom CSS design system (`frontend/css/styles.css`) with:
-
-- **Color tokens** — `--navy`, `--blue`, `--lblue`, `--green`, `--red`, `--amber`, `--gray`, `--border`, `--lgray`
-- **Typography** — `Segoe UI` / system-ui, `JetBrains Mono` for code/IDs
-- **Components** — Cards, badges, metric tiles, step indicators, drawers, property sheets, finding rows, risk lists
-- **Layout** — 100vh fixed flexbox grid, collapsible sidebar with cubic-bezier transitions, independent scroll panels
-
----
-
-*Last updated: 4 July 2026*
+*Last updated: 3 August 2026*
