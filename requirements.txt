@@ -25,17 +25,12 @@ mysql-connector-python==9.1.0
 
 # Validation
 pydantic==2.8.2
+email-validator==2.2.0
+
+# Auth
+bcrypt==4.2.1
+PyJWT==2.10.1
 
 # Celery + Redis for distributed task processing
 celery==5.4.0
 redis==4.6.0
-
-# Agentic verification engine
-qdrant-client==1.18.0
-
-# Observability refactor dependencies
-python-json-logger==2.0.7
-prometheus_client==0.21.0
-opentelemetry-sdk==1.28.0
-opentelemetry-exporter-otlp-proto-grpc==1.28.0
-opentelemetry-instrumentation-celery==0.49b0

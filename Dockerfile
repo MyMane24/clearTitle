@@ -1,4 +1,12 @@
-# ── Build stage: install dependencies ─────────────────────────────────────────
+# ── Build stage: frontend React SPA ───────────────────────────────────────────
+FROM node:20-alpine AS frontend-build
+WORKDIR /ui
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+# ── Runtime stage: FastAPI backend ─────────────────────────────────────────────
 FROM python:3.11-slim
 
 # System dependencies
@@ -25,9 +33,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ ./backend/
 COPY frontend/ ./frontend/
 
+# Copy the React SPA (served by FastAPI at /)
+COPY --from=frontend-build /ui/dist ./frontend/dist
+
 # Pre-create directories that the app writes to at runtime.
 # These are bind-mounted as volumes in docker-compose.yml so data persists.
-RUN mkdir -p uploads outputs/structured outputs/raw_ocr data/qdrant_db
+RUN mkdir -p uploads outputs/structured outputs/raw_ocr
 
 # Default command: run the FastAPI server
 # The worker service overrides this CMD in docker-compose.yml

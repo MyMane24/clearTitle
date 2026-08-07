@@ -23,10 +23,9 @@ services:
     image: mysql:8.0
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
+      MYSQL_ROOT_HOST: '%'
       MYSQL_DATABASE:      ${MYSQL_DATABASE}
-      MYSQL_USER:          ${MYSQL_USER}
-      MYSQL_PASSWORD:      ${MYSQL_PASSWORD}
     volumes:
       - mysql_data:/var/lib/mysql
     # Expose port 3307 on the host so GUI tools (MySQL Workbench, DBeaver, TablePlus)
@@ -52,8 +51,8 @@ services:
     environment:
       PMA_HOST:     mysql
       PMA_PORT:     3306
-      PMA_USER:     ${MYSQL_USER}
-      PMA_PASSWORD: ${MYSQL_PASSWORD}
+      PMA_USER:     root
+      PMA_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
     ports:
       - "127.0.0.1:8080:80"
 
@@ -75,6 +74,7 @@ services:
       # Override localhost references so they point to Docker service names
       MYSQL_HOST: mysql
       REDIS_URL:  redis://redis:6379/0
+      TZ: Asia/Kolkata
     ports:
       - "8000:8000"
     volumes:
@@ -82,9 +82,6 @@ services:
       # on the host machine across container restarts.
       - ./uploads:/app/uploads
       - ./outputs:/app/outputs
-      # Qdrant uses local file mode (path="./data/qdrant_db") — mount the
-      # data directory so the vector DB persists between restarts.
-      - ./data:/app/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 15s
@@ -114,11 +111,11 @@ services:
     environment:
       MYSQL_HOST: mysql
       REDIS_URL:  redis://redis:6379/0
+      TZ: Asia/Kolkata
     volumes:
       # Worker also reads/writes uploads and outputs
       - ./uploads:/app/uploads
       - ./outputs:/app/outputs
-      - ./data:/app/data
 
 # ── Named volumes ────────────────────────────────────────────────────────────
 # Docker manages these — data survives `docker compose down`.
