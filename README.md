@@ -1,6 +1,6 @@
 # clearTitle — AI Property Title Verification
 
-An end-to-end property title verification platform for **Karnataka property documents**. clearTitle extracts structured JSON from scanned PDFs (Sarvam Vision OCR), runs single-pass LLM structuring and per-document verification (Groq / Gemini), executes cross-document legal verification with deterministic risk checks, and presents everything in a warm, premium dashboard — with a landing page that explains the product.
+An end-to-end property title verification platform for **Karnataka property documents**. clearTitle extracts structured JSON from scanned PDFs (Sarvam Vision OCR), runs single-pass LLM structuring with a Gemini/Groq fallback chain, builds a **title chain** and runs **cross-document verification** on every case, and presents everything in a warm, premium dashboard — with a landing page that explains the product.
 
 ---
 
@@ -9,40 +9,40 @@ An end-to-end property title verification platform for **Karnataka property docu
 ```mermaid
 flowchart TD
     subgraph Frontend["Frontend Layer (React SPA)"]
-        UI["🖥️ clearTitle SPA\nReact 19 + Vite + TypeScript\nLanding page (/) + Dashboard (/#/app)"]
+        UI["🧑💻 clearTitle SPA\nReact 19 + Vite + TypeScript\nLanding page (/) + Dashboard (/#/app)"]
         DASH["Verification Dashboard\nUpload · Processing · Results · Verify · History"]
+        AUTH["Auth Screen\nRegister / Login / Link guest case"]
         HOME["Landing sections\nHero · Pipeline · Audit demo · FAQ"]
     end
 
     subgraph API["API Gateway Layer (FastAPI)"]
-        R_CASES["📁 Cases Router\n/api/upload · /api/cases · /api/process\n/api/status · /api/retry · /api/clear"]
-        R_DOCS["📄 Documents Router\n/api/result · /api/case/{id}/bundle\nreplace / skip / ocr-raw / files"]
-        R_VERIFY["⚖️ Verification Router\n/api/verify/* · /api/verify/*/feedback\n/api/analytics/token-usage · /metrics"]
+        R_AUTH["🔐 Auth Router\n/api/auth/register · /login · /me"]
+        R_CASES["📁 Cases Router\n/api/upload · /api/cases · /api/process\n/api/status · /api/retry · /api/clear\nreplace / skip / case upload / link"]
+        R_RESULTS["📊 Results Router\n/api/results/{id} · /api/results/{id}/analyze"]
     end
 
     subgraph Orchestration["Async Task Queue"]
-        CELERY["Celery Workers\nbackend/workers/* (stages, tasks, finalize)"]
+        CELERY["Celery Workers\nbackend/workers/* (stages, finalize, title_chain_tasks)"]
         REDIS_BROKER[(Redis Broker / State Store)]
     end
 
-    subgraph Pipeline["Processing Pipeline"]
-        PREPROC["① Preprocess\n(denoise & deskew)\ninfrastructure/integrations/preprocessor.py"]
-        OCR["② Sarvam OCR\n(Scanned PDF ➔ Raw Text)\ninfrastructure/integrations/sarvam/ocr_client.py"]
-        CLASSIFY["③ Classify\n(Keyword + LLM classification)\nai/classification/classifier.py"]
-        STRUCTURE["④ Structurer + Per-Doc Verification\n(Groq primary, Gemini fallback)\nai/extraction/*"]
-        CRITIQUE["⑤ Self-Critique\nai/critique/self_critique.py"]
-        SCORE["⑥ Risk Scoring\ndeterministic checks + ai/scoring"]
+    subgraph Pipeline["Document Pipeline (per PDF, 6 stages)"]
+        PREPROC["① Preprocess\n(denoise & deskew)\nintegrations/ocr/preprocessor.py"]
+        OCR["② Sarvam OCR\n(Scanned PDF ➔ Raw Text)\nintegrations/ocr/sarvam_client.py"]
+        MERGE["③ Merge Chunks\nintegrations/ocr/ocr_merger.py"]
+        CLASSIFY["④ Classify\n(Keyword-based)\nservices/classifier.py"]
+        STRUCTURE["⑤ Structure\n(Gemini primary, Groq fallback)\nservices/extract.py + integrations/llm/*"]
+        PERSIST["⑥ Persist\n(save JSON + tokens/cost to MySQL)\nworkers/stages.py"]
     end
 
-    subgraph Verification["Verification Layer"]
-        V_ENG["Verification Orchestrator\napplication/verification/runner.py"]
-        CROSS_DOC["Cross-Doc Verifier\nai/verification/cross_doc.py"]
-        STATUTE["Statute RAG\nai/rag/statute_rag.py"]
-        VECTOR_DB[("Vector Store\nHuman-feedback repository")]
+    subgraph Analysis["Case-Level Analysis (after finalize)"]
+        FINALIZE["Finalize\n(recompute status + queue analysis)\nworkers/finalize.py"]
+        TITLE["Title Chain\nservices/title_chain.py"]
+        VERIFY["Verification\nservices/verify.py"]
     end
 
     subgraph Storage["Storage Layer"]
-        MYSQL[("MySQL\nCases, Documents & Reports")]
+        MYSQL[("MySQL\nusers, cases, documents,\ntitle_chains, verification_results")]
         REDIS[(Redis State Store)]
         FS[("File System\nuploads/ & outputs/")]
     end
@@ -51,39 +51,35 @@ flowchart TD
     DASH -->|"HTTP API Requests"| API
     R_CASES -->|"Dispatches tasks"| CELERY
     CELERY -->|"Reads/writes status"| REDIS
-    CELERY --> PREPROC --> OCR --> CLASSIFY --> STRUCTURE --> CRITIQUE --> SCORE
+    CELERY --> PREPROC --> OCR --> MERGE --> CLASSIFY --> STRUCTURE --> PERSIST
+    PERSIST -->|"chord"| FINALIZE
+    FINALIZE --> TITLE --> VERIFY
     STRUCTURE -->|"Saves structured data"| MYSQL
-    R_VERIFY --> V_ENG
-    V_ENG -->|"1. Fetches case bundle"| MYSQL
-    V_ENG -->|"2. Generates report"| CROSS_DOC
-    CROSS_DOC -->|"Queries statute + learnings"| STATUTE
-    STATUTE --> VECTOR_DB
-    V_ENG -->|"3. Stores final report"| MYSQL
-    R_VERIFY -->|"Post-verification corrections"| VECTOR_DB
+    TITLE -->|"Saves title chain"| MYSQL
+    VERIFY -->|"Saves verification + verdict"| MYSQL
 ```
 
 ### Key Components
 
 | Component | Technology | Description |
 |---|---|---|
-| **Frontend** | React 19, Vite 6, TypeScript, Tailwind CSS 4 | Landing page + admin dashboard with upload pipeline, results, verification report, and case history |
-| **API Layer** | FastAPI, Uvicorn | Async REST API for cases, documents, analytics, and verification |
-| **Async Tasks** | Celery, Redis | Idempotent background stages — preprocess, OCR, classify, structure, critique, score, finalize |
-| **OCR Service** | Sarvam AI Vision OCR | High-accuracy OCR for mixed English/Kannada text with table extraction |
-| **Structuring** | Groq (Llama-3) / Gemini | Single-pass JSON field extraction with per-document verification notes |
-| **Verification** | Groq Llama-3.3-70B + deterministic checks | Cross-document legal checks, self-critique, and risk scoring |
-| **RAG / Learnings** | Qdrant (local file mode) | Statute retrieval and persistent human-feedback corrections |
-| **Relational DB** | MySQL | Unified tables for cases, documents, verification reports, and feedback |
+| **Frontend** | React 19, Vite 6, TypeScript, Tailwind CSS 4 | Landing page + admin dashboard with upload pipeline, results, title-chain timeline, verification table, and case history |
+| **API Layer** | FastAPI, Uvicorn | Async REST API with JWT auth for cases, documents, results, and analysis |
+| **Async Tasks** | Celery, Redis | Idempotent background stages — preprocess, OCR, merge, classify, structure, persist, finalize, title-chain, verify |
+| **OCR Service** | Sarvam AI Vision OCR | High-accuracy OCR for mixed English/Kannada text; chunks >10-page PDFs with overlap |
+| **Structuring** | Gemini 2.5 Flash (primary) / Groq (fallback) | Single-pass JSON field extraction per document type |
+| **Analysis** | Gemini 2.5 Flash | Title-chain build + cross-document verification per case |
+| **Relational DB** | MySQL | Unified tables for users, cases, documents, title chains, and verification results |
 
 ---
 
 ## 🧠 Verification Features
 
-- **Per-Document Checks** — Stamp duty ratios, witness counts, GPA authorizations, and date ordering verified inside LLM prompts; deterministic checks run alongside (see `ai/verification/deterministic/checks.py`).
-- **Self-Critique** — Every structured result passes through a critique stage before scoring.
-- **Human Feedback Loop** — Corrections from the Human Review tab are stored and queried during future verifications.
-- **Risk Scoring** — Critical / High / Medium / Low findings plus a 0–100 risk score and final legal opinion.
-- **PDF Export** — Client-side report export (jsPDF) for every verification case.
+- **Title Chain** — every EC ledger transaction is classified (`THE_SD`, `PREDECESSOR_TITLE`, `SUBSEQUENT_TRANSFER`, `DIVERGENT_BRANCH`, `ENCUMBRANCE`, `UNRELATED`), sorted chronologically, and merged into a timeline.
+- **Cross-Document Verification** — a field-by-field comparison (property identifiers, dates, parties, consideration) between the Sale Deed and the EC ledger, with a deterministic `VERIFIED` / `NOT_VERIFIED` / `N/A` verdict.
+- **Self-Service Re-run** — every completed case can re-run the title-chain + verification pass (`POST /api/results/{case_id}/analyze`).
+- **Idempotent Stages** — Celery `acks_late` + per-stage idempotency guards make re-runs and retries safe.
+- **Human-in-the-Loop** — failed or unclassified documents can be replaced or skipped; retries resume the pipeline for just those documents.
 
 ---
 
@@ -96,6 +92,8 @@ flowchart TD
 | **Municipal & Tax** | `KHATA`, `PROPERTY_TAX_ASSESSMENT`, `TAX_RECEIPT`, `E_PAYMENT_RECEIPT` |
 | **Revenue & Clearances** | `MUTATION`, `CONVERSION_ORDER`, `POSSESSION_CERTIFICATE` |
 | **Legal & Others** | `RTC_PAHANI`, `LEGAL_HEIR_CERTIFICATE`, `COURT_ORDER` |
+
+> Classification is keyword-based (filename first, then OCR content, English + Kannada). A document that cannot be classified is marked `classification_failed` and the UI asks you to replace or skip it.
 
 ---
 
@@ -165,65 +163,94 @@ When deployed via Docker, the built SPA is served by FastAPI from `frontend/dist
 
 ### Option A — phpMyAdmin (browser, zero install)
 
-Open **http://localhost:8080** — you'll see all tables (`cases`, `documents`, `verifications`, etc.) and can browse/query data directly.
+Open **http://localhost:8080** — you'll see all tables (`users`, `cases`, `documents`, `title_chains`, `verification_results`) and can browse/query data directly.
 
 ### Option B — MySQL Workbench / DBeaver / TablePlus
 
 ```
 Host:     127.0.0.1
 Port:     3307          ← not 3306, to avoid conflict with any local MySQL
-User:     property_user
-Password: property_pass_123
+User:     root
+Password: password       (or whatever MYSQL_ROOT_PASSWORD is in your .env)
 Database: property_ocr_v2
 ```
 
 ### Option C — Terminal (no GUI needed)
 
 ```bash
-docker compose exec mysql mysql -u property_user -pproperty_pass_123 property_ocr_v2
+docker compose exec mysql mysql -u root -ppassword property_ocr_v2
 ```
 
 ---
 
 ## 🔌 API Endpoints
 
+### Auth
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/auth/register` | Register a new account |
+| `POST` | `/api/auth/login` | Log in, returns a JWT |
+| `GET` | `/api/auth/me` | Current user (requires Bearer token) |
+
 ### Pipeline & Cases
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/cases` | List cases (MySQL + filesystem fallback) |
+| `GET` | `/api/cases` | List cases (requires auth) |
 | `POST` | `/api/upload` | Upload PDFs and initialize a new case |
 | `POST` | `/api/process/{case_id}` | Trigger the async OCR + structuring pipeline |
-| `GET` | `/api/status/{case_id}` | Real-time pipeline status |
+| `GET` | `/api/status/{case_id}` | Real-time pipeline status (progress, log, verification status) |
 | `POST` | `/api/retry/{case_id}` | Retry failed documents |
 | `POST` | `/api/case/{case_id}/upload` | Add more documents to an existing case |
-| `POST` | `/api/clear` | Wipe all cases |
-| `DELETE` | `/api/case/{case_id}` | Delete a single case (Redis + MySQL + files) |
-
-### Documents & Structured Data
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/case/{case_id}/bundle` | All processed documents in a case |
-| `GET` | `/api/result/{case_id}/{doc_id}` | OCR text + structured JSON for one document |
-| `GET` | `/api/case/{case_id}/ocr-raw` | List merged OCR files for a case |
-| `GET` | `/api/case/{case_id}/doc/{doc_id}/ocr-raw` | Full OCR text for a specific document |
-| `GET` | `/api/case/{case_id}/files` | File-tree listing for a case |
-| `GET` | `/api/case/{case_id}/documents` | Document rows for a case |
+| `POST` | `/api/case/{case_id}/link` | Link a guest case to the logged-in account |
 | `POST` | `/api/case/{case_id}/doc/{doc_id}/replace` | Replace a document file |
 | `POST` | `/api/case/{case_id}/doc/{doc_id}/skip` | Mark a document as skipped |
+| `POST` | `/api/clear` | Wipe all cases |
+| `DELETE` | `/api/case/{case_id}` | Delete a single case (MySQL + files) |
 
-### Verification & Analytics
+### Results & Analysis
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/verify/{case_id}` | Run cross-document verification |
-| `GET` | `/api/verify/{case_id}/report` | Latest verification report (full enriched payload) |
-| `GET` | `/api/verify/{case_id}/per-doc` | Per-document verification notes |
-| `POST` | `/api/verify/{case_id}/feedback` | Submit human feedback (stored in vector store) |
-| `GET` | `/api/verify/learnings/stats` | Count of stored learnings |
-| `GET` | `/api/analytics/token-usage` | Per-case token, latency, and cost stats |
-| `GET` | `/api/analytics/cost-dashboard` | Cost dashboard data |
-| `GET` | `/api/analytics/quota-tracking` | API quota tracking |
-| `GET` | `/health` | Health check |
-| `GET` | `/metrics` | Prometheus metrics |
+| `GET` | `/api/results/{case_id}` | Full results payload: case info, documents + structured JSON, title chain, verification |
+| `POST` | `/api/results/{case_id}/analyze` | (Re)run the title-chain + verification pass for a completed case |
+
+### Misc
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/health` | Health check + API-key presence |
+| `GET` | `/` | React SPA (built) or `frontend/index.html` |
+
+> Most case endpoints accept an optional JWT. Guest (anonymous) cases work without auth, but case data can only be accessed by its owner once linked. Verification results are locked for guest previews in the UI until sign-in.
+
+---
+
+## 🧩 The Document Pipeline
+
+Every uploaded PDF goes through **6 stages**, each its own idempotent Celery task, chained and joined by a **chord** that runs one chain per document in parallel:
+
+```
+DOC_001 ──► preprocess ──► ocr ──► merge ──► classify ──► structure ──► persist ──┐
+DOC_002 ──► preprocess ──► ocr ──► merge ──► classify ──► structure ──► persist ──┼──► finalize ──► title chain ──► verify
+DOC_003 ──► preprocess ──► ocr ──► merge ──► classify ──► structure ──► persist ──┘
+```
+
+| # | Stage | Work |
+|---|---|---|
+| 1 | **Preprocess** | CLAHE contrast, denoise, deskew, sharpen via OpenCV → enhanced PDF (non-fatal: falls back to raw PDF) |
+| 2 | **OCR** | Sarvam OCR (Kannada+English); ≤10 pages → one job, >10 pages → overlapping 10-page chunks in parallel |
+| 3 | **Merge** | Deduplicate overlapping pages, re-join split tables, strip base64 blobs → `full_text` with page separators |
+| 4 | **Classify** | Keyword match (filename first, then content) → document type |
+| 5 | **Structure** | LLM fills the strict per-type JSON schema (Gemini primary, Groq fallback) |
+| 6 | **Persist** | Save JSON + tokens/cost/model to MySQL, write final file to `outputs/` |
+
+**Then, once** (case level):
+
+| Stage | Work |
+|---|---|
+| **Finalize** | Recompute case status (`complete` / `partial` / `failed`), release the pipeline lock, and queue the analysis only when every document structured |
+| **Title chain** | One Gemini call — classify every EC ledger entry and merge it onto the SD's property schedule |
+| **Verification** | One Gemini call — field-by-field SD vs EC comparison → deterministic `VERIFIED` / `NOT_VERIFIED` / `N/A` verdict |
+
+The dashboard keeps polling `/api/status/{case_id}` through the analysis phase and only shows the final report once `verification_status` is set — so you always see the title chain + verdict, never just the structured JSON.
 
 ---
 
@@ -231,53 +258,59 @@ docker compose exec mysql mysql -u property_user -pproperty_pass_123 property_oc
 
 ```
 cleartitle/
-│
 ├── backend/                        # FastAPI + Celery
-│   ├── main.py                     # FastAPI entrypoint (serves API + React SPA)
-│   ├── celery_app.py               # Celery configuration
+│   ├── main.py                     # FastAPI entrypoint (API + React SPA)
+│   ├── celery_app.py               # Celery config (acks_late, timeouts, retries)
+│   ├── config.py                   # ALL env vars in one place
 │   ├── logger.py                   # Logging utility
 │   │
-│   ├── routers/                    # HTTP layer
-│   │   ├── cases.py                # Upload, process, status, retry, delete
-│   │   ├── documents.py            # Result, bundle, OCR raw, replace/skip
-│   │   └── verification.py         # Verification, feedback & analytics
+│   ├── routers/                    # HTTP layer (thin: validate → call service)
+│   │   ├── auth.py                 #   /register, /login, /me
+│   │   ├── cases.py                #   upload, process, status, retry, replace, skip, delete, clear
+│   │   └── results.py              #   /results/{id}, /results/{id}/analyze
 │   │
-│   ├── application/                # Use-case orchestration
-│   │   ├── pipeline/               # orchestrator, state machine, context
-│   │   └── verification/           # runner, reporting, feedback
+│   ├── services/                   # Business logic (no HTTP, no Celery)
+│   │   ├── orchestrator.py         #   builds Celery chains + chords
+│   │   ├── classifier.py           #   keyword-based doc-type detection
+│   │   ├── extract.py              #   OCR retry + LLM fallback-chain driver
+│   │   ├── title_chain.py          #   build title tree from SD + EC ledger
+│   │   ├── verify.py               #   cross-document verification pass
+│   │   ├── results.py              #   assemble /api/results payload
+│   │   ├── extraction_prompts.py   #   Gemini prompt builders
+│   │   ├── auth.py                 #   JWT + bcrypt helpers
+│   │   └── schemas/                #   per-doc-type JSON extraction schemas
 │   │
-│   ├── workers/                    # Celery task executors
-│   │   ├── stages.py               # Individual pipeline stage tasks
-│   │   ├── tasks.py                # Task declarations
-│   │   ├── stage_adapter.py        # Stage context builder
-│   │   ├── idempotency.py          # Idempotency guards
-│   │   └── finalize.py             # Case finalization
+│   ├── workers/                    # Celery layer (thin task wrappers)
+│   │   ├── tasks.py                #   6 idempotent stage tasks
+│   │   ├── stages.py               #   the actual stage logic (preprocess→persist)
+│   │   ├── stage_adapter.py        #   task → stage.invoke adapter
+│   │   ├── idempotency.py          #   skip-already-done guard
+│   │   ├── finalize.py             #   chord callback: recompute status + queue analysis
+│   │   ├── title_chain_tasks.py    #   build_title_chain_task + verify_case_task
+│   │   └── context.py              #   StageContext (dependencies handed to stages)
 │   │
-│   ├── ai/                         # AI capabilities
-│   │   ├── classification/         # Document type classifier
-│   │   ├── extraction/             # Groq / Gemini structurers
-│   │   ├── verification/           # Cross-doc verifier + deterministic checks
-│   │   ├── critique/               # Self-critique pass
-│   │   ├── scoring/                # Risk scoring
-│   │   ├── rag/                    # Statute RAG + vector store
-│   │   └── prompts/                # Prompt templates & schemas
+│   ├── domain/state_machine.py     # Stage enum + status→stage mapping (pure logic)
 │   │
-│   ├── infrastructure/             # Framework adapters
-│   │   ├── integrations/           # Sarvam OCR, Gemini, model router, preprocessor
-│   │   ├── database/               # Connection, migrations, repositories
-│   │   ├── cache/                  # Redis state store, rate limiter
-│   │   ├── storage/                # File service & utils
-│   │   └── locking/                # Redis locks
+│   ├── integrations/               # Adapters to external/plumbing systems
+│   │   ├── llm/                    #   gemini_client, gemini_executor, groq_executor,
+│   │   │                           #   model_router, rate_limiter, analysis_executor
+│   │   ├── ocr/                    #   sarvam_client, ocr_merger, preprocessor
+│   │   ├── redis/                  #   client, state_store, lock
+│   │   └── storage/                #   file_utils, file_service
 │   │
-│   ├── observability/              # Logging, metrics, tracing
-│   ├── domain/                     # State machine domain model
-│   ├── shared/                     # Constants & helpers
-│   └── app/                        # App configuration
+│   ├── database/
+│   │   ├── connection.py           #  MySQL connection helper
+│   │   ├── migrations.py           #  DDL bootstrap (runs at startup)
+│   │   └── repositories/           #  SQL access (case, document, title_chain,
+│   │                               #  verification, verification_results, user)
+│   │
+│   ├── shared/constants.py         # doc-type + status string constants
+│   └── tests/                      # pytest suite (e.g. title-chain enrichment)
 │
 ├── frontend/                       # React SPA (Vite)
 │   ├── src/
 │   │   ├── components/             # Landing-page sections (Navbar, Hero, FAQ, ...)
-│   │   ├── dashboard/              # Verification dashboard (upload, report, history)
+│   │   ├── dashboard/              # Verification dashboard (upload, report, history, auth)
 │   │   ├── api/backend.ts          # API client
 │   │   ├── data/                   # Landing content
 │   │   ├── App.tsx                 # Route: homepage / + dashboard /#/app
@@ -289,11 +322,13 @@ cleartitle/
 │
 ├── uploads/                        # Uploaded PDF storage (bind-mounted)
 ├── outputs/                        # OCR + structured outputs (bind-mounted)
-├── data/                           # Qdrant vector DB (bind-mounted)
+├── docs/                           # Architecture guide + pipeline issues analysis
 ├── docker-compose.yml
 ├── Dockerfile
 └── requirements.txt
 ```
+
+> `docs/ARCHITECTURE_OVERVIEW.md` is the source of truth for how the system works and how to build retry/fallback/error handling on top of it.
 
 ---
 
@@ -304,7 +339,7 @@ The frontend follows a warm, editorial design system shared by the landing page 
 - **Palette** — Cream background (`#FFF8F2`), warm stone neutrals, and an orange brand scale (`#ea580c`, `#f97316`, amber `#fbbf24`). Semantic status colors (emerald / amber / rose) preserved for verification results.
 - **Typography** — Inter (body), Plus Jakarta Sans (display/headings), Instrument Serif (accent italics). Loaded once from Google Fonts in `frontend/index.html`.
 - **Icons** — lucide-react (no emoji).
-- **Dashboard** (`/#/app`) — Custom CSS (`dashboard.css`) with CSS-token theming: cards, badges, metric tiles, log viewers, evidence drawers, property sheets, finding rows, and PDF export.
+- **Dashboard** (`/#/app`) — Custom CSS (`dashboard.css`) with CSS-token theming: cards, badges, metric tiles, log viewers, title-chain timeline, verification tables, and guest-preview lock for anonymous users.
 
 ---
 
@@ -380,8 +415,16 @@ uvicorn backend.main:app --reload --port 8000
 
 Open **http://localhost:8000** in your browser.
 
+### Lint & tests
+
+```bash
+ruff check backend        # backend lint
+cd frontend && npm run lint   # frontend type-check (tsc --noEmit)
+pytest backend/tests      # backend unit tests
+```
+
 </details>
 
 ---
 
-*Last updated: 3 August 2026*
+*Last updated: 10 August 2026*
