@@ -1,100 +1,81 @@
 """
-Property OCR Pipeline — FastAPI Application
+ClearTitle — Property OCR Pipeline FastAPI Application
 Entry point: uvicorn backend.main:app --reload --port 8000
 """
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
-from dotenv import load_dotenv
-import os
-import logging
 
-load_dotenv()
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
-# Codex/sandbox launches can inject a dead local proxy (127.0.0.1:9).
-for proxy_var in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
-    if os.getenv(proxy_var, "").startswith("http://127.0.0.1:9"):
-        os.environ.pop(proxy_var, None)
+from backend.config import CORS_ORIGINS, GEMINI_API_KEY, GROQ_API_KEY, SARVAM_API_KEY
+from backend.logger import get_logger
+from backend.routers import auth as auth_router
+from backend.routers import cases as cases_router
+from backend.routers import results as results_router
 
-from backend.observability.logging import configure_json_logging
-from backend.observability.tracing import configure_tracing
-from prometheus_client import make_asgi_app
-
-configure_json_logging()
-configure_tracing()
-
-from backend.routers import router as pipeline_router
+logger = get_logger(__name__)
 
 # ── Ensure required directories exist ─────────────────────────────────────────
 for d in ["uploads", "outputs/structured", "outputs/raw_ocr"]:
     Path(d).mkdir(parents=True, exist_ok=True)
 
-logger = logging.getLogger(__name__)
-
-# ── Allowed CORS origins ──────────────────────────────────────────────────────
-ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",")
-
 # ── Lifespan (replaces deprecated @app.on_event) ─────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: init DB tables once, init statute RAG
-    from backend.services.mysql_store import ensure_tables
+    # Startup: init DB tables once
+    from backend.database.migrations import ensure_tables
     try:
         ensure_tables()
     except Exception as e:
         logger.warning("Failed to initialize database tables: %s", e)
-
-    try:
-        from backend.services.statute_rag import initialize_statute_store
-        initialize_statute_store()
-    except Exception as e:
-        logger.warning("Failed to initialize statute store: %s", e)
-
     yield
-
-    # Shutdown (if needed)
-    pass
 
 
 # ── App ────────────────────────────────────────────────────────────────────────
 app = FastAPI(
-    title="Property Verification Engine",
-    description="Sarvam OCR + Groq Structuring for property documents",
-    version="1.0.0",
+    title="ClearTitle Property Verification Engine",
+    description="Sarvam OCR + LLM structuring + title-chain verification for property documents",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
-# Mount Prometheus /metrics endpoint
-app.mount("/metrics", make_asgi_app())
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=True,
 )
 
 # ── API routes ─────────────────────────────────────────────────────────────────
-app.include_router(pipeline_router, prefix="/api")
+app.include_router(auth_router.router, prefix="/api")
+app.include_router(cases_router.router, prefix="/api")
+app.include_router(results_router.router, prefix="/api")
 
-# ── Serve frontend ─────────────────────────────────────────────────────────────
-FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
-
-@app.get("/", response_class=FileResponse)
-async def serve_ui():
-    return FileResponse(FRONTEND / "index.html")
-
-app.mount("/static", StaticFiles(directory=str(FRONTEND)), name="static")
 
 @app.get("/health")
 async def health():
     return {
         "status": "ok",
-        "sarvam_key": bool(os.getenv("SARVAM_API_KEY")),
-        "groq_key":   bool(os.getenv("GROQ_API_KEY")),
-        "gemini_key": bool(os.getenv("GEMINI_API_KEY")),
+        "sarvam_key": bool(SARVAM_API_KEY),
+        "groq_key":   bool(GROQ_API_KEY),
+        "gemini_key": bool(GEMINI_API_KEY),
     }
+
+
+# ── Serve frontend ─────────────────────────────────────────────────────────────
+FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
+SPA_DIST = FRONTEND / "dist"
+
+app.mount("/static", StaticFiles(directory=str(FRONTEND / "public")), name="static")
+
+if SPA_DIST.exists():
+    app.mount("/", StaticFiles(directory=str(SPA_DIST), html=True), name="spa")
+else:
+    @app.get("/", response_class=FileResponse)
+    async def serve_ui():
+        return FileResponse(FRONTEND / "index.html")
