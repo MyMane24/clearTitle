@@ -43,6 +43,8 @@ export interface StatusResponse {
   progress?: number;
   completed_docs?: number;
   total_docs?: number;
+  verification_status?: string | null;
+  verdict?: string | null;
   log?: string[];
   results?: any[];
   errors?: any[];

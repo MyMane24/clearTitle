@@ -22,6 +22,8 @@ interface LogEntry { text: string; cls: string }
 
 const COMPLETE_STATUSES = ['complete', 'completed', 'partial'];
 
+const ANALYSIS_WAIT_MS = 8 * 60 * 1000;
+
 function logClass(line: string): string {
   if (line.includes("✗") || line.toLowerCase().includes("failed")) return "log-err";
   if (line.includes("✓") || line.toLowerCase().includes("complete")) return "log-ok";
@@ -360,6 +362,7 @@ export function VerificationDashboard() {
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const analysisWaitStartRef = useRef<number>(0);
 
   const addLog = useCallback((msg: string, cls = 'log-info') => {
     setLogs(prev => [...prev.slice(-200), { text: msg, cls }]);
@@ -561,6 +564,7 @@ export function VerificationDashboard() {
 
   const startPolling = (caseId: string) => {
     stopPolling();
+    analysisWaitStartRef.current = 0;
     pollRef.current = setInterval(() => pollStatus(caseId), 2000);
   };
 
@@ -575,10 +579,25 @@ export function VerificationDashboard() {
       if (s.log && s.log.length) {
         setLogs(s.log.slice(-200).map(l => ({ text: l, cls: logClass(l) })));
       }
-      if (COMPLETE_STATUSES.includes(s.status) || s.status === "failed") {
+
+      const isTerminal = COMPLETE_STATUSES.includes(s.status) || s.status === "failed";
+
+      if (isTerminal) {
+        // Docs are structured but the title-chain + verification pass is still
+        // running in the background. Keep polling until it lands (or a cap).
+        const waitForAnalysis = s.status === "complete" && !s.verification_status;
+        if (waitForAnalysis) {
+          if (!analysisWaitStartRef.current) analysisWaitStartRef.current = Date.now();
+          if (Date.now() - analysisWaitStartRef.current < ANALYSIS_WAIT_MS) {
+            updateProgress(100, "All documents structured – finishing title analysis…");
+            return;
+          }
+        }
         stopPolling();
+        analysisWaitStartRef.current = 0;
         updateProgress(100, "Pipeline complete");
         await showResults(caseId);
+        loadCases();
       }
     } catch (e: any) {
       addLog(`⚠ Polling error: ${e.message}`, "log-warn");

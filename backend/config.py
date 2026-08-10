@@ -51,7 +51,7 @@ GEMINI_RPM = int(os.getenv("GEMINI_RPM", "30"))
 GEMINI_TPM = int(os.getenv("GEMINI_TPM", "4000000"))
 GEMINI_BURST = int(os.getenv("GEMINI_BURST", "5"))
 GROQ_RPM = int(os.getenv("GROQ_RPM", "60"))
-GROQ_TPM = int(os.getenv("GROQ_TPM", "15000000"))
+GROQ_TPM = int(os.getenv("GROQ_TPM", "6000"))
 GROQ_BURST = int(os.getenv("GROQ_BURST", "10"))
 
 # ── Model routing ──────────────────────────────────────────────────────────────

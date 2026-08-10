@@ -163,7 +163,8 @@ def get_case_status_payload(case_id: str) -> dict:
         # 1. Fetch case info
         cursor = conn.cursor(dictionary=True)
         cursor.execute(
-            "SELECT status, total_docs, completed_docs, failed_docs, pipeline_logs "
+            "SELECT status, total_docs, completed_docs, failed_docs, "
+            "verification_status, verdict, pipeline_logs "
             "FROM cases WHERE id = %s",
             (case_id,)
         )
@@ -261,6 +262,11 @@ def get_case_status_payload(case_id: str) -> dict:
     return {
         "case_id": case_id,
         "status": case_status,
+        "completed_docs": case_row["completed_docs"],
+        "total_docs": case_row["total_docs"],
+        "failed_docs": case_row["failed_docs"],
+        "verification_status": case_row.get("verification_status"),
+        "verdict": case_row.get("verdict"),
         "files": files,
         "results": results,
         "errors": errors,

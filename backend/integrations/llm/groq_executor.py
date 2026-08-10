@@ -99,7 +99,7 @@ def structure_document(merged_ocr: dict, doc_type: str,
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.0,
-                max_tokens=32000,
+                max_tokens=5000,
             )
             latency_ms = int((time.time() - start) * 1000)
             raw_content = resp.choices[0].message.content
