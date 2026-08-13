@@ -184,9 +184,9 @@ const DuneFieldBackground: React.FC = () => {
 
     const width = holder.clientWidth || window.innerWidth;
     const height = holder.clientHeight || window.innerHeight;
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
 
-    renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false, powerPreference: 'high-performance' });
     renderer.setPixelRatio(dpr);
     renderer.setSize(width, height, false);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -196,7 +196,7 @@ const DuneFieldBackground: React.FC = () => {
     camera.position.set(0, 3.1, 9.8);
     camera.lookAt(lookTarget);
 
-    const geometry = new THREE.PlaneGeometry(72, 52, 150, 90);
+    const geometry = new THREE.PlaneGeometry(72, 52, 96, 60);
     const material = new THREE.ShaderMaterial({
       uniforms,
       vertexShader,
@@ -246,7 +246,13 @@ const DuneFieldBackground: React.FC = () => {
       uniforms.uMouse.value.set(9999, 9999);
     };
 
+    let inView = true;
+    let running = false;
+
     const renderFrame = () => {
+      frameId = requestAnimationFrame(renderFrame);
+      if (!running) return;
+
       const elapsed = clock.getElapsedTime();
       uniforms.uTime.value = elapsed;
 
@@ -262,21 +268,49 @@ const DuneFieldBackground: React.FC = () => {
 
       if (renderer && scene && camera) {
         renderer.render(scene, camera);
-        frameId = requestAnimationFrame(renderFrame);
       }
     };
+
+    const start = () => {
+      running = true;
+      if (frameId === null) frameId = requestAnimationFrame(renderFrame);
+    };
+
+    const stop = () => {
+      running = false;
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId);
+        frameId = null;
+      }
+    };
+
+    const syncRunning = () => {
+      if (inView && !document.hidden) start();
+      else stop();
+    };
+
+    const observer = new IntersectionObserver((entries) => {
+      inView = entries[0]?.isIntersecting ?? true;
+      syncRunning();
+    });
+    observer.observe(holder);
+
+    const onVisibilityChange = () => syncRunning();
 
     handleResize();
     window.addEventListener('resize', handleResize, { passive: true });
     window.addEventListener('mousemove', onMouseMove, { passive: true });
     document.documentElement.addEventListener('mouseleave', onMouseLeave);
-    frameId = requestAnimationFrame(renderFrame);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    start();
 
     return () => {
-      if (frameId !== null) cancelAnimationFrame(frameId);
+      stop();
+      observer.disconnect();
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('mousemove', onMouseMove);
       document.documentElement.removeEventListener('mouseleave', onMouseLeave);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
 
       if (dotsMesh) {
         dotsMesh.geometry.dispose();

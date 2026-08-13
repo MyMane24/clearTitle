@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { API, setToken, AuthResponse } from '../api/backend';
 import clearTitleLogo from '../assets/clearTitle.png';
 
@@ -42,7 +43,9 @@ export function AuthScreen({ onAuthed }: Props) {
   return (
     <div className="ctd-root auth-root">
       <div className="auth-card">
-        <img src={clearTitleLogo} className="auth-logo" alt="clearTitle" />
+        <Link to="/" className="auth-logo-link" title="Back to home">
+          <img src={clearTitleLogo} className="auth-logo" alt="clearTitle" />
+        </Link>
         <h2 className="auth-title">
           {mode === 'login' ? 'Sign in to ClearTitle' : 'Create your account'}
         </h2>

@@ -74,7 +74,18 @@ SPA_DIST = FRONTEND / "dist"
 app.mount("/static", StaticFiles(directory=str(FRONTEND / "public")), name="static")
 
 if SPA_DIST.exists():
-    app.mount("/", StaticFiles(directory=str(SPA_DIST), html=True), name="spa")
+    assets_dir = SPA_DIST / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+    @app.get("/{full_path:path}", response_class=FileResponse)
+    async def spa(full_path: str):
+        # SPA fallback: serve the built file if it exists, otherwise index.html
+        # so client-side routes like /app survive a refresh / direct visit.
+        candidate = (SPA_DIST / full_path).resolve()
+        if candidate.is_relative_to(SPA_DIST.resolve()) and candidate.is_file():
+            return candidate
+        return FileResponse(SPA_DIST / "index.html")
 else:
     @app.get("/", response_class=FileResponse)
     async def serve_ui():

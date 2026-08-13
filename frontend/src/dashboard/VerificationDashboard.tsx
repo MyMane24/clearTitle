@@ -1,15 +1,17 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import './dashboard.css';
 import {
-  API, AuthResponse, CaseListItem, CaseResults, HealthStatus,
+  API, AuthResponse, AuthUser, CaseListItem, CaseResults, HealthStatus,
   StatusResponse, TitleChainEntry, VerificationItem, getToken, setToken,
 } from '../api/backend';
-import { AuthScreen } from './AuthScreen';
-import { DocPanel } from './utils';
+import { DocSummary } from './utils';
 import clearTitleLogo from '../assets/clearTitle.png';
 import {
-  AlertTriangle, ArrowRight, BarChart3, Bot, CheckCircle2, FileText, FileUp,
-  FlaskConical, FolderOpen, List, Lock, Play, RefreshCw, Trash2, Upload, X, LogOut,
+  AlertTriangle, ArrowRight, BarChart3, Bot, CheckCircle2,
+  FileText, FileUp, FlaskConical, FolderOpen, Lock, LogIn,
+  LogOut, Menu, MinusCircle, Play, Plus, RefreshCw, ShieldCheck, Sparkles,
+  Trash2, Upload, X, XCircle,
 } from 'lucide-react';
 
 type View = 'upload' | 'processing' | 'results';
@@ -23,6 +25,18 @@ interface LogEntry { text: string; cls: string }
 const COMPLETE_STATUSES = ['complete', 'completed', 'partial'];
 
 const ANALYSIS_WAIT_MS = 8 * 60 * 1000;
+
+function profileInitials(u: AuthUser): string {
+  const name = (u.full_name || '').trim();
+  if (name) {
+    const parts = name.split(/\s+/).filter(Boolean);
+    const first = parts[0]?.[0] || '';
+    const last = parts.length > 1 ? parts[parts.length - 1][0] || '' : '';
+    return (first + last).toUpperCase() || '?';
+  }
+  const email = (u.email || '').trim();
+  return email ? email.slice(0, 2).toUpperCase() : '?';
+}
 
 function logClass(line: string): string {
   if (line.includes("✗") || line.toLowerCase().includes("failed")) return "log-err";
@@ -74,73 +88,128 @@ function partyNames(list: any[]): string {
     .join('; ') || '—';
 }
 
+function partyInitials(name: string): string {
+  const parts = name.replace(/^(Smt\.|Sri\.|Shri\.|Dr\.|Mr\.|Mrs\.|Ms\.|Late\s*)/i, "").split(/\s+/).filter(Boolean);
+  const first = parts[0]?.[0] || "";
+  const last = parts.length > 1 ? parts[parts.length - 1][0] || "" : "";
+  return (first + last).toUpperCase() || "?";
+}
+
+function partyList(list: any[]): string[] {
+  return (list || [])
+    .map(v => (typeof v === 'string' ? v : v?.entity_name || ''))
+    .filter(Boolean);
+}
+
 function ChainCard({ e, tone }: { e: TitleChainEntry; tone: string }) {
+  const vendors = partyList(e.parties?.vendors);
+  const purchasers = partyList(e.parties?.purchasers);
+  const financials = e.financials
+    ? (typeof e.financials === 'string' ? e.financials : JSON.stringify(e.financials))
+    : '';
+
   return (
-    <div className={`chain-card${tone ? ' ' + tone : ''}`}>
-      <div className="chain-head">
-        <strong>{e.transaction_type || "Transaction"}</strong>
-        <span className="badge badge-blue">Entry {e.transaction_index ?? "—"}</span>
+    <div className={`chain-detail${tone ? ' tone-' + tone : ''}`}>
+      <div className="chain-detail-hero">
+        <div className="chain-detail-hero-top">
+          <span className="chain-detail-type">{e.transaction_type || "Transaction"}</span>
+          <span className="chain-detail-entry">Entry {e.transaction_index ?? "—"}</span>
+        </div>
+        {e.chain_role && (
+          <span className={`chain-role role-${e.chain_role.toLowerCase()}`}>
+            {CHAIN_ROLE_LABELS[e.chain_role] || e.chain_role}
+          </span>
+        )}
+        {e.execution_date && <div className="chain-detail-date">{fmtChainDate(e.execution_date)}</div>}
       </div>
-      {e.chain_role && (
-        <div className={`chain-role role-${e.chain_role.toLowerCase()}`}>
-          {CHAIN_ROLE_LABELS[e.chain_role] || e.chain_role}
+
+      <div className="chain-detail-body">
+        <div className="chain-facts">
+          {e.property_identity && (
+            <div className="chain-fact">
+              <span className="chain-fact-label">Property</span>
+              <span className="chain-fact-value">{e.property_identity}</span>
+            </div>
+          )}
+          {e.share_fraction && (
+            <div className="chain-fact">
+              <span className="chain-fact-label">Share</span>
+              <span className="chain-fact-value">{e.share_fraction}</span>
+            </div>
+          )}
+          {e.portion && (
+            <div className="chain-fact">
+              <span className="chain-fact-label">Portion</span>
+              <span className="chain-fact-value">{e.portion}</span>
+            </div>
+          )}
+          {e.registration_reference && (
+            <div className="chain-fact">
+              <span className="chain-fact-label">Registration</span>
+              <span className="chain-fact-value">{e.registration_reference}</span>
+            </div>
+          )}
         </div>
-      )}
-      {e.portion && (
-        <div className="chain-field chain-portion"><span>Portion:</span> {e.portion}</div>
-      )}
-      <div className="chain-date">{e.execution_date ? `Date: ${e.execution_date}` : ""}</div>
-      {e.property_identity && (
-        <div className="chain-field"><span>Property:</span> {e.property_identity}</div>
-      )}
-      {e.registration_reference && (
-        <div className="chain-field"><span>Registration:</span> {e.registration_reference}</div>
-      )}
-      {e.share_fraction && (
-        <div className="chain-field"><span>Share:</span> {e.share_fraction}</div>
-      )}
-      {e.parties && (
-        <div className="chain-field">
-          <span>From:</span> {partyNames(e.parties?.vendors)}
-          <div className="chain-field"><span>To:</span> {partyNames(e.parties?.purchasers)}</div>
-        </div>
-      )}
-      {e.financials && (
-        <div className="chain-field">
-          <span>Financials:</span>{' '}
-          {typeof e.financials === 'string' ? e.financials : JSON.stringify(e.financials)}
-        </div>
-      )}
-      {e.explanation && <div className="chain-explanation">{e.explanation}</div>}
+
+        {(vendors.length > 0 || purchasers.length > 0) && (
+          <div className="chain-transfer">
+            <div className="chain-transfer-col">
+              <span className="chain-transfer-label">From</span>
+              {vendors.length ? vendors.map((v, i) => (
+                <div className="chain-party" key={`v${i}`}>
+                  <span className="chain-party-avatar">{partyInitials(v)}</span>
+                  <span className="chain-party-name">{v}</span>
+                </div>
+              )) : <div className="chain-party-none">—</div>}
+            </div>
+            <div className="chain-transfer-arrow">→</div>
+            <div className="chain-transfer-col">
+              <span className="chain-transfer-label">To</span>
+              {purchasers.length ? purchasers.map((p, i) => (
+                <div className="chain-party" key={`p${i}`}>
+                  <span className="chain-party-avatar">{partyInitials(p)}</span>
+                  <span className="chain-party-name">{p}</span>
+                </div>
+              )) : <div className="chain-party-none">—</div>}
+            </div>
+          </div>
+        )}
+
+        {financials && (
+          <div className="chain-block">
+            <span className="chain-fact-label">Consideration / Financials</span>
+            <div className="chain-block-value">{financials}</div>
+          </div>
+        )}
+
+        {e.explanation && (
+          <div className="chain-note">
+            <Sparkles size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>{e.explanation}</span>
+          </div>
+        )}
+      </div>
+
       {e.source && <div className="chain-source">source: {e.source}</div>}
     </div>
   );
 }
 
-function ChainList({ entries, tone }: { entries: TitleChainEntry[]; tone: string }) {
-  return (
-    <div className="chain-timeline">
-      {entries.map((e, i) => (
-        <div className="chain-item" key={e.transaction_index ?? i}>
-          <div className="chain-marker">
-            <span className="chain-dot">{i + 1}</span>
-            {i < entries.length - 1 && <span className="chain-line" />}
-          </div>
-          <ChainCard e={e} tone={tone} />
-        </div>
-      ))}
-    </div>
-  );
+function toneFor(e: TitleChainEntry): string {
+  const role = e.chain_role || "";
+  if (role === "THE_SD") return "sd";
+  if (role === "PREDECESSOR_TITLE") return "predecessor";
+  if (role === "SUBSEQUENT_TRANSFER") return "subsequent";
+  if (role === "DIVERGENT_BRANCH") return "divergent";
+  if (role === "ENCUMBRANCE") return "encumbrance";
+  return "";
 }
 
-function ChainSection({ title, entries, tone }: { title: string; entries: TitleChainEntry[]; tone: string }) {
-  if (!entries.length) return null;
-  return (
-    <>
-      <div className="chain-section-title">{title}</div>
-      <ChainList entries={entries} tone={tone} />
-    </>
-  );
+function fmtChainDate(value?: string | null): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return value;
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function ChainTimeline({ chain, status, titleStory }: {
@@ -148,6 +217,10 @@ function ChainTimeline({ chain, status, titleStory }: {
   status?: string;
   titleStory?: string;
 }) {
+  const [selected, setSelected] = useState<TitleChainEntry | null>(null);
+
+  useEffect(() => { setSelected(null); }, [chain]);
+
   if (status === 'no_transactions') {
     return (
       <div className="vr-sheet-empty warn">
@@ -159,44 +232,241 @@ function ChainTimeline({ chain, status, titleStory }: {
     return <div className="vr-sheet-empty">No title chain entries yet. Title chain is built once all documents are structured.</div>;
   }
 
+  const cards: Array<{ entry: TitleChainEntry; label: string }> = [];
   const hasRoles = chain.some(e => e.chain_role);
   if (!hasRoles) {
-    return (
-      <div>
-        {titleStory && <div className="chain-story">{titleStory}</div>}
-        <ChainList entries={chain} tone="" />
-      </div>
-    );
+    chain.forEach(e => cards.push({ entry: e, label: "" }));
+  } else {
+    const pushSection = (entries: TitleChainEntry[], label: string) =>
+      entries.forEach(e => cards.push({ entry: e, label }));
+    const sd = chain.find(e => e.chain_role === 'THE_SD');
+    const predecessors = chain.filter(e => e.chain_role === 'PREDECESSOR_TITLE');
+    const subsequent = chain.filter(e => e.chain_role === 'SUBSEQUENT_TRANSFER');
+    const divergent = chain.filter(e => e.chain_role === 'DIVERGENT_BRANCH');
+    const encumbrances = chain.filter(e => e.chain_role === 'ENCUMBRANCE');
+    const others = chain.filter(e => !e.chain_role);
+    if (sd) pushSection([sd], "This Sale Deed");
+    pushSection(predecessors, "Chain of title before this Sale Deed");
+    pushSection(subsequent, "Transfers after this Sale Deed (review)");
+    pushSection(divergent, "Other transactions on this property (different portions)");
+    pushSection(encumbrances, "Encumbrances — mortgages, leases, agreements");
+    pushSection(others, "Other entries");
   }
 
-  const sd = chain.find(e => e.chain_role === 'THE_SD');
-  const predecessors = chain.filter(e => e.chain_role === 'PREDECESSOR_TITLE');
-  const subsequent = chain.filter(e => e.chain_role === 'SUBSEQUENT_TRANSFER');
-  const divergent = chain.filter(e => e.chain_role === 'DIVERGENT_BRANCH');
-  const encumbrances = chain.filter(e => e.chain_role === 'ENCUMBRANCE');
-  const others = chain.filter(e => !e.chain_role);
+  const dateOf = (e: TitleChainEntry) => {
+    const d = new Date(e.execution_date || "");
+    return isNaN(d.getTime()) ? null : d.getTime();
+  };
+
+  cards.sort((a, b) => {
+    const da = dateOf(a.entry), db = dateOf(b.entry);
+    if (da != null && db != null && da !== db) return da - db;
+    return (a.entry.transaction_index ?? 0) - (b.entry.transaction_index ?? 0);
+  });
+
+  let lastLabel = "";
 
   return (
     <div className="chain-tree">
       {titleStory && <div className="chain-story">{titleStory}</div>}
-      {sd && (
-        <>
-          <div className="chain-section-title">This Sale Deed</div>
-          <div className="chain-timeline">
-            <div className="chain-item">
-              <div className="chain-marker">
-                <span className="chain-dot sd">SD</span>
+      <div className="chain-timeline">
+        {cards.map((c, i) => {
+          const showLabel = c.label && c.label !== lastLabel;
+          lastLabel = c.label;
+          const e = c.entry;
+          const tone = toneFor(e);
+          return (
+            <div key={`${e.transaction_index ?? 'n'}-${i}`}>
+              {showLabel && <div className="chain-tl-label">{c.label}</div>}
+              <div className="chain-item">
+                <div className="chain-marker">
+                  <span className={`chain-dot${tone ? ' ' + tone : ''}`}>{e.transaction_index ?? "•"}</span>
+                  {i < cards.length - 1 && <span className="chain-line" />}
+                </div>
+                <div
+                  className={`chain-card chain-tl-card${tone ? ' ' + tone : ''}`}
+                  onClick={() => setSelected(e)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setSelected(e); } }}
+                >
+                  <div className="chain-tl-top">
+                    <span className="chain-tl-type">{e.transaction_type || "Transaction"}</span>
+                    {e.chain_role && (
+                      <span className={`chain-role role-${e.chain_role.toLowerCase()}`}>
+                        {CHAIN_ROLE_LABELS[e.chain_role] || e.chain_role}
+                      </span>
+                    )}
+                  </div>
+                  <div className="chain-tl-meta">
+                    {e.execution_date && <span className="chain-tl-date">{fmtChainDate(e.execution_date)}</span>}
+                    {e.portion && <span className="chain-tl-portion">{e.portion}</span>}
+                    {e.share_fraction && <span>{e.share_fraction}</span>}
+                  </div>
+                  {e.parties && (
+                    <div className="chain-tl-parties">
+                      <span>{partyNames(e.parties?.vendors)}</span>
+                      <span className="chain-tl-arrow">→</span>
+                      <span>{partyNames(e.parties?.purchasers)}</span>
+                    </div>
+                  )}
+                  <span className="chain-tl-view">View details</span>
+                </div>
               </div>
-              <ChainCard e={sd} tone="sd" />
             </div>
+          );
+        })}
+      </div>
+
+      {selected && (
+        <div className="chain-popup-backdrop" onClick={() => setSelected(null)}>
+          <div className="chain-popup" role="dialog" aria-modal="true" aria-label="Transaction details" onClick={e => e.stopPropagation()}>
+            <button className="chain-popup-close" aria-label="Close" onClick={() => setSelected(null)}>
+              <X size={18} />
+            </button>
+            <ChainCard e={selected} tone={toneFor(selected)} />
           </div>
-        </>
+        </div>
       )}
-      <ChainSection title="Chain of title before this Sale Deed" entries={predecessors} tone="predecessor" />
-      <ChainSection title="Transfers after this Sale Deed (review)" entries={subsequent} tone="subsequent" />
-      <ChainSection title="Other transactions on this property (different portions)" entries={divergent} tone="divergent" />
-      <ChainSection title="Encumbrances — mortgages, leases, agreements" entries={encumbrances} tone="encumbrance" />
-      <ChainSection title="Other entries" entries={others} tone="" />
+    </div>
+  );
+}
+
+function vrfStatusClass(s: string): string {
+  const up = (s || "N/A").toUpperCase();
+  if (up === "VERIFIED") return "ok";
+  if (up === "NOT_VERIFIED") return "fail";
+  return "na";
+}
+
+const FIELD_ORDER: RegExp[] = [
+  /vendor/i,
+  /purchaser|buyer/i,
+  /survey|cts/i,
+  /locality|project name/i,
+  /execution|registration/i,
+];
+
+function fieldRank(name: string): number {
+  const idx = FIELD_ORDER.findIndex(r => r.test(name));
+  return idx === -1 ? 999 : idx;
+}
+
+const ABBR = /^(smt|sri|shri|dr|mr|mrs|ms|no|nos|fig|vs|etc|sd|ec|gpa|plot|st|rd|pvt|ltd)\.?$/i;
+
+function splitSummary(text: string): string[] {
+  const chunks = text.split(/\s+-\s+(?=[A-Z])/);
+  const sentences: string[] = [];
+  for (const chunk of chunks) {
+    let buf = "";
+    let prev = "";
+    for (let i = 0; i < chunk.length; i++) {
+      const ch = chunk[i];
+      const next = chunk[i + 1] || "";
+      const nextNext = chunk[i + 2] || "";
+      const wordBefore = chunk.slice(0, i).split(/\s+/).pop() || "";
+      const isSentenceEnd =
+        (ch === "." || ch === "!" || ch === "?") &&
+        next === " " &&
+        /[a-z0-9)]/.test(prev) &&
+        /[A-Z]/.test(nextNext) &&
+        !ABBR.test(wordBefore);
+      buf += ch;
+      if (isSentenceEnd) {
+        sentences.push(buf.trim());
+        buf = "";
+      }
+      prev = ch;
+    }
+    if (buf.trim()) sentences.push(buf.trim());
+  }
+  return sentences
+    .map(s => s.replace(/^[-•*]\s*/, "").trim())
+    .filter(Boolean)
+    .filter(s => !/^these include:?$/i.test(s) && !/^they include:?$/i.test(s));
+}
+
+function TypewriterBullets({ sentences, speed = 14 }: { sentences: string[]; speed?: number }) {
+  const total = sentences.reduce((n, s) => n + s.length + 1, 0);
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    setCount(0);
+    let i = 0;
+    const id = window.setInterval(() => {
+      i += 1;
+      setCount(i);
+      if (i >= total) window.clearInterval(id);
+    }, speed);
+    return () => window.clearInterval(id);
+  }, [total, speed]);
+
+  let remaining = count;
+  const items: Array<{ text: string; done: boolean }> = [];
+  for (const s of sentences) {
+    if (remaining >= s.length + 1) {
+      items.push({ text: s, done: true });
+      remaining -= s.length + 1;
+    } else {
+      items.push({ text: s.slice(0, Math.max(remaining, 0)), done: false });
+      remaining = 0;
+      break;
+    }
+  }
+
+  return (
+    <ul className="vrf-summary-list">
+      {items.map((it, i) => (
+        <li key={i} className={it.done ? "done" : "typing"}>
+          {it.text}
+          {!it.done && <span className="vrf-typing-caret" />}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function FieldRow({ it, index }: { it: VerificationItem; index: number }) {
+  const [open, setOpen] = useState(false);
+  const s = (it.status || "N/A").toUpperCase();
+  const cls = vrfStatusClass(s);
+  const Icon = s === "VERIFIED" ? CheckCircle2 : s === "NOT_VERIFIED" ? XCircle : MinusCircle;
+
+  return (
+    <div
+      className={`vrf-field ${cls}${open ? " open" : ""}`}
+      style={{ animationDelay: `${Math.min(index * 55, 600)}ms` }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      onClick={() => setOpen(o => !o)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          setOpen(o => !o);
+        }
+      }}
+    >
+      <span className="vrf-field-icon"><Icon size={16} /></span>
+      <span className="vrf-field-name">{it.field || "—"}</span>
+      <span className={`vrf-badge ${cls}`}>{s}</span>
+
+      <div className="vrf-evidence">
+        <div className="vrf-evidence-row">
+          <span className="vrf-evidence-label">Sale Deed</span>
+          <span className="vrf-evidence-value">{it.sd_value != null && it.sd_value !== "" ? String(it.sd_value) : "—"}</span>
+        </div>
+        <div className="vrf-evidence-row">
+          <span className="vrf-evidence-label">EC Ledger</span>
+          <span className="vrf-evidence-value">{it.ec_value != null && it.ec_value !== "" ? String(it.ec_value) : "—"}</span>
+        </div>
+        {it.notes ? (
+          <div className="vrf-evidence-note">
+            <span className="vrf-evidence-label">Conclusion</span>
+            <span className="vrf-evidence-value">{it.notes}</span>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -207,58 +477,52 @@ function VerifyResults({ verification, locked, onUnlock }: {
   onUnlock?: () => void;
 }) {
   const items: VerificationItem[] = verification.items || [];
+  const orderedItems = [...items].sort((a, b) => fieldRank(a.field || "") - fieldRank(b.field || ""));
   const summary = verification.summary || {};
-  const counts: Record<string, number> = summary.counts || {};
-  const verdict = (verification.verdict || "N/A").toUpperCase();
-  const verdictCls = verdict === "VERIFIED" ? "badge-green" : verdict === "NOT_VERIFIED" ? "badge-red" : "badge-amber";
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const verdict = String(verification.verdict || summary.verdict || "N/A").toUpperCase();
+  const heroCls = vrfStatusClass(verdict);
+  const HeroIcon = verdict === "VERIFIED" ? ShieldCheck : verdict === "NOT_VERIFIED" ? XCircle : MinusCircle;
+  const summarySentences = summary.overall_comment ? splitSummary(String(summary.overall_comment)) : [];
 
   return (
-    <div>
-      <div className="metrics-row">
-        <div className="metric-box">
-          <div className="val"><span className={`badge ${verdictCls}`}>{verdict}</span></div>
-          <div className="lbl">Verdict</div>
+    <div className="vrf">
+      <div className={`vrf-hero ${heroCls}`}>
+        <div className="vrf-hero-icon"><HeroIcon size={34} /></div>
+        <div className="vrf-hero-text">
+          <span className="vrf-hero-label">Case Verdict</span>
+          <span className="vrf-hero-verdict">{verdict}</span>
         </div>
-        <div className="metric-box"><div className="val">{counts.VERIFIED ?? 0}</div><div className="lbl">Verified</div></div>
-        <div className="metric-box"><div className="val">{counts.NOT_VERIFIED ?? 0}</div><div className="lbl">Not verified</div></div>
-        <div className="metric-box"><div className="val">{counts['N/A'] ?? 0}</div><div className="lbl">N/A</div></div>
-        <div className="metric-box"><div className="val">{items.length}</div><div className="lbl">Fields checked</div></div>
       </div>
-
-      {summary.overall_comment && (
-        <div className="verify-comment">{summary.overall_comment}</div>
-      )}
 
       {locked ? (
         <div className="guest-lock">
           <Lock size={22} />
           <p><strong>Field-by-field verification is locked.</strong></p>
-          <p>Sign in to see the full verification table for every field.</p>
+          <p>Sign in to see the full verification for every field.</p>
           {onUnlock && <button className="btn btn-primary" onClick={onUnlock}>Sign in to unlock</button>}
         </div>
-      ) : items.length === 0 ? (
+      ) : orderedItems.length === 0 ? (
         <div className="vr-sheet-empty">Verification has not run yet.</div>
       ) : (
-        <table className="verify-table">
-          <thead>
-            <tr><th>Field</th><th>Sale Deed</th><th>EC Ledger</th><th>Status</th><th>Notes</th></tr>
-          </thead>
-          <tbody>
-            {items.map((it, i) => {
-              const s = (it.status || "N/A").toUpperCase();
-              const cls = s === "VERIFIED" ? "vstatus-ok" : s === "NOT_VERIFIED" ? "vstatus-fail" : "vstatus-na";
-              return (
-                <tr key={i}>
-                  <td className="verify-field" data-label="Field">{it.field}</td>
-                  <td data-label="Sale Deed">{it.sd_value != null ? String(it.sd_value) : "—"}</td>
-                  <td data-label="EC Ledger">{it.ec_value != null ? String(it.ec_value) : "—"}</td>
-                  <td data-label="Status"><span className={`vstatus ${cls}`}>{s}</span></td>
-                  <td className="verify-notes" data-label="Notes">{it.notes || ""}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="vrf-fields">
+          {orderedItems.map((it, i) => <FieldRow key={i} it={it} index={i} />)}
+        </div>
+      )}
+
+      {summarySentences.length > 0 && (
+        <div className="vrf-summary">
+          {summaryOpen ? (
+            <div className="vrf-summary-body">
+              <div className="vrf-summary-title"><Sparkles size={15} /> Summary</div>
+              <TypewriterBullets sentences={summarySentences} />
+            </div>
+          ) : (
+            <button className="vrf-summary-toggle" onClick={() => setSummaryOpen(true)}>
+              <Sparkles size={15} /> View Summary
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -343,10 +607,10 @@ function GuestReportPreview({ results, onSignIn, onNewCase }: {
 }
 
 export function VerificationDashboard() {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [auth, setAuth] = useState<AuthResponse | null>(null);
   const [authLoading, setAuthLoading] = useState(!!getToken());
-  const [showAuth, setShowAuth] = useState(false);
-  const pendingLinkRef = useRef<string | null>(null);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [files, setFiles] = useState<SlotFile[]>([]);
   const [currentCaseId, setCurrentCaseId] = useState<string | null>(null);
@@ -362,6 +626,7 @@ export function VerificationDashboard() {
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const analysisTimerRef = useRef<number | null>(null);
   const analysisWaitStartRef = useRef<number>(0);
 
   const addLog = useCallback((msg: string, cls = 'log-info') => {
@@ -393,12 +658,15 @@ export function VerificationDashboard() {
     return () => { cancelled = true; };
   }, []);
 
+  // Clear any pending verification-polling timer on unmount.
+  useEffect(() => () => {
+    if (analysisTimerRef.current) clearTimeout(analysisTimerRef.current);
+  }, []);
+
   const logout = () => {
     setToken(null);
     setAuth(null);
     setAuthLoading(false);
-    setShowAuth(false);
-    pendingLinkRef.current = null;
     stopPolling();
     sessionStorage.removeItem("currentCaseId");
     setResults(null);
@@ -407,26 +675,8 @@ export function VerificationDashboard() {
     setView('upload');
   };
 
-  const handleAuthed = async (a: AuthResponse) => {
-    setAuth(a);
-    setShowAuth(false);
-    loadCases();
-    const linkCase = pendingLinkRef.current;
-    pendingLinkRef.current = null;
-    if (linkCase) {
-      try { await API.link(linkCase); } catch { /* ignore */ }
-      try {
-        const data = await API.getResults(linkCase);
-        setResults(data);
-        const docs = data.documents.filter(d => d.status === "structured");
-        if (docs.length > 0) setActiveDocId(String(docs[0].doc_id));
-      } catch { /* ignore */ }
-    }
-  };
-
   const openAuth = (linkCaseId?: string) => {
-    if (linkCaseId) pendingLinkRef.current = linkCaseId;
-    setShowAuth(true);
+    navigate(linkCaseId ? `/login?link=${encodeURIComponent(linkCaseId)}` : '/login');
   };
 
   // ── Health check ──
@@ -515,12 +765,6 @@ export function VerificationDashboard() {
   const clearFiles = () => {
     setFiles([]);
     setCurrentCaseId(null);
-  };
-
-  const clearAllData = async () => {
-    if (!confirm("This will clear ALL Redis data and purge pending Celery tasks. The page will reload. Continue?")) return;
-    try { await API.clearAll(); } catch { /* ignore */ }
-    window.location.reload();
   };
 
   // ── Processing ──
@@ -632,20 +876,62 @@ export function VerificationDashboard() {
     }
   };
 
+  // ── Link a case after signing in via /login?link=<caseId> ──
+  useEffect(() => {
+    const linkCase = searchParams.get('link');
+    if (!linkCase || authLoading) return;
+    if (!auth) {
+      setSearchParams({}, { replace: true });
+      return;
+    }
+    (async () => {
+      try { await API.link(linkCase); } catch { /* ignore */ }
+      loadResultsFor(linkCase);
+      setSearchParams({}, { replace: true });
+    })();
+  }, [searchParams, auth, authLoading]);
+
   const runAnalysis = async () => {
     if (!currentCaseId) return;
     setAnalyzing(true);
+    const before = results?.verification?.updated_at || null;
     try {
       await API.analyze(currentCaseId);
       addLog("⏳ Title-chain + verification queued…", "log-info");
-      setTimeout(() => {
-        API.getResults(currentCaseId).then(setResults).catch(() => { });
-        setAnalyzing(false);
-      }, 4000);
     } catch (e: any) {
       addLog(`✗ Analyze failed: ${e.message}`, "log-err");
       setAnalyzing(false);
+      return;
     }
+
+    const startedAt = Date.now();
+    const POLL_MS = 3000;
+    const tick = async () => {
+      try {
+        const fresh = await API.getResults(currentCaseId);
+        const ver = fresh.verification;
+        const done = !!ver &&
+          ver.status &&
+          (ver.status === 'complete' || ver.status === 'error' || ver.status === 'skipped') &&
+          ver.updated_at && ver.updated_at !== before;
+        if (done || Date.now() - startedAt > ANALYSIS_WAIT_MS) {
+          setResults(fresh);
+          setAnalyzing(false);
+          addLog(
+            done
+              ? "✓ Verification refreshed with latest results"
+              : "⚠ Verification still running — showing latest available results",
+            done ? "log-ok" : "log-warn"
+          );
+          return;
+        }
+        analysisTimerRef.current = window.setTimeout(tick, POLL_MS);
+      } catch (e: any) {
+        addLog(`⚠ Checking results failed: ${e.message}`, "log-warn");
+        analysisTimerRef.current = window.setTimeout(tick, POLL_MS);
+      }
+    };
+    await tick();
   };
 
   // ── Results actions ──
@@ -719,10 +1005,6 @@ export function VerificationDashboard() {
     );
   }
 
-  if (showAuth) {
-    return <AuthScreen onAuthed={handleAuthed} />;
-  }
-
   const needsAction = statusData?.needs_action || [];
   const activeDoc = results?.documents?.find(d => String(d.doc_id) === String(activeDocId));
   const chain = results?.title_chain?.chain || [];
@@ -736,19 +1018,49 @@ export function VerificationDashboard() {
     <div className="ctd-root">
       {/* Header */}
       <div className="header">
-        <img src={clearTitleLogo} className="header-logo" alt="clearTitle" />
+        {auth && (
+          <button
+            className="vr-sidebar-toggle"
+            onClick={() => setSidebarCollapsed(c => !c)}
+            title="Case history"
+            aria-label="Toggle case history"
+            aria-expanded={!sidebarCollapsed}
+          >
+            <Menu size={18} />
+          </button>
+        )}
+        <Link to="/" className="header-logo-link" title="Back to home">
+          <img src={clearTitleLogo} className="header-logo" alt="clearTitle" />
+        </Link>
         <div>
           <p>Karnataka Property Title Verification</p>
-          {auth && <p className="header-user">{auth.user.email}</p>}
         </div>
-        <div className="health-dot">
-          <div className={`dot${healthOk ? '' : ' red'}`}></div>
-          <span>{healthText}</span>
+        <div className="header-actions">
+          <div className="health-dot">
+            <div className={`dot${healthOk ? '' : ' red'}`}></div>
+            <span>{healthText}</span>
+          </div>
+          {auth && (
+            <button className="btn btn-primary header-newcase" onClick={backToUpload} title="Start a new case">
+              <Plus size={14} style={{ verticalAlign: '-2px', marginRight: 5 }} /> New Case
+            </button>
+          )}
           {auth ? (
-            <button className="header-logout" title="Sign out" onClick={logout}><LogOut size={14} /></button>
+            <div className="profile">
+              <button className="profile-avatar" title="Account">
+                {profileInitials(auth.user)}
+              </button>
+              <div className="profile-popup">
+                <div className="profile-popup-name">{auth.user.full_name || 'User'}</div>
+                <div className="profile-popup-email">{auth.user.email}</div>
+                <button className="profile-logout" onClick={logout}>
+                  <LogOut size={13} /> Sign out
+                </button>
+              </div>
+            </div>
           ) : (
             <button className="btn btn-primary header-signin" onClick={() => openAuth()}>
-              <LogOut size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} /> Sign in
+              <LogIn size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} /> Sign in
             </button>
           )}
         </div>
@@ -758,7 +1070,7 @@ export function VerificationDashboard() {
         {/* Sidebar */}
         {auth && (
           <div className={`sidebar${sidebarCollapsed ? ' collapsed' : ''}`}>
-            <div className="sidebar-header"><List size={14} /> Case History</div>
+            <div className="sidebar-header">Case History</div>
             <div className="sidebar-list">
               {cases.length === 0 ? (
                 <div className="sidebar-empty">No cases yet. Upload documents to get started.</div>
@@ -860,7 +1172,6 @@ export function VerificationDashboard() {
                   <Play size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> Verify Title
                 </button>
                 <button className="btn btn-secondary" onClick={clearFiles}><X size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> Clear Files</button>
-                <button className="btn btn-danger" style={{ marginLeft: 'auto' }} onClick={clearAllData}><Trash2 size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> Clear All Data</button>
               </div>
             </div>
           )}
@@ -894,25 +1205,95 @@ export function VerificationDashboard() {
               />
             ) : (
             <>
-              {/* Uploaded Docs & Extractions */}
-              <div className="card">
+              {/* Action required — only shown when there are unresolved docs or errors */}
+              {(needsAction.length > 0 || (statusData?.errors || []).length > 0) && (
+                <div className="card">
+                  <div className="card-title">
+                    <AlertTriangle size={16} style={{ verticalAlign: '-2px', marginRight: 8 }} />Action Required
+                  </div>
+                  {needsAction.map((d: any) => (
+                    <div key={d.doc_id} style={{ marginTop: 12, padding: 12, background: 'var(--white)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                      <p style={{ fontSize: 14, marginBottom: 10 }}><strong>{d.filename}</strong> — document type not recognised</p>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        <button className="btn btn-secondary" onClick={() => skipDoc(d.doc_id)}><CheckCircle2 size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> Continue without this document</button>
+                        <button className="btn btn-primary" onClick={() => document.getElementById(`replace-input-${d.doc_id}`)?.click()}><Upload size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> Upload a replacement document</button>
+                        <input
+                          type="file"
+                          id={`replace-input-${d.doc_id}`}
+                          accept=".pdf"
+                          style={{ display: 'none' }}
+                          onChange={e => {
+                            const f = e.target.files?.[0];
+                            if (f) replaceDoc(d.doc_id, f);
+                            e.target.value = "";
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  {(statusData?.errors || []).length > 0 && (
+                    <>
+                      <div style={{ marginTop: 14 }}>
+                        {(statusData?.errors || []).map((e: any, i: number) => (
+                          <div className="error-item" key={i}>
+                            <strong>{e.doc_id}</strong> — Step: {e.step}<br />
+                            <code style={{ fontSize: 11 }}>{e.error}</code>
+                          </div>
+                        ))}
+                      </div>
+                      {(statusData?.errors || []).some((e: any) => e.step !== "classify" || !e.action_required) && (
+                        <div style={{ marginTop: 12 }}>
+                          <button className="btn btn-primary" onClick={retryFailed}><RefreshCw size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> Retry Failed</button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+
+
+              {/* Verification Results */}
+              <div className="card plain">
                 <div className="card-title">
-                  <FolderOpen size={16} style={{ verticalAlign: '-2px', marginRight: 8 }} />Uploaded Docs &amp; Extractions
-                  <button className="btn btn-secondary" style={{ float: 'right' }} onClick={backToUpload}>
-                    <ArrowRight size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> New Case
+                  <FlaskConical size={16} style={{ verticalAlign: '-2px', marginRight: 8 }} />Verification Results
+                </div>
+                {verification ? (
+                  <VerifyResults
+                    verification={verification}
+                    locked={!auth}
+                    onUnlock={() => openAuth(currentCaseId || undefined)}
+                  />
+                ) : (
+                  <div className="vr-sheet-empty">
+                    Verification has not run yet. Click “Run / Re-run Verification” once all documents are structured.
+                  </div>
+                )}
+                <div className="vrf-actions">
+                  <button
+                    className="btn btn-primary"
+                    disabled={!allComplete || analyzing}
+                    onClick={runAnalysis}
+                  >
+                    <RefreshCw size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+                    {analyzing ? 'Analyzing…' : 'Run / Re-run Verification'}
                   </button>
                 </div>
-                <div className="metrics-row">
-                  <div className="metric-box">
-                    <div className="val"><span className={`badge ${caseBadgeClass(caseInfo?.status || '')}`}>{caseInfo?.status || '—'}</span></div>
-                    <div className="lbl">Case status</div>
-                  </div>
-                  <div className="metric-box"><div className="val">{results.documents.filter(d => d.status === 'structured').length}</div><div className="lbl">Structured</div></div>
-                  <div className="metric-box"><div className="val">{results.documents.filter(d => d.status === 'failed' || d.status === 'classification_failed').length}</div><div className="lbl">Failed</div></div>
-                  <div className="metric-box"><div className="val">{caseInfo?.total_docs ?? 0}</div><div className="lbl">Total docs</div></div>
-                  <div className="metric-box"><div className="val">{verdictBadge(caseInfo?.verdict)}</div><div className="lbl">Verdict</div></div>
-                </div>
+              </div>
 
+              {/* Title Chain */}
+              <div className="card plain">
+                <div className="card-title">
+                  <Bot size={16} style={{ verticalAlign: '-2px', marginRight: 8 }} />Title Chain Timeline
+                </div>
+                <ChainTimeline chain={chain} status={titleChainStatus} titleStory={titleStory} />
+              </div>
+
+              {/* Uploaded Docs & Extractions */}
+              <div className="card plain">
+                <div className="card-title">
+                  <FolderOpen size={16} style={{ verticalAlign: '-2px', marginRight: 8 }} />Uploaded Docs &amp; Extractions
+                </div>
                 {results.documents.length > 0 ? (
                   <div className="doc-tabs">
                     {results.documents.map(d => (
@@ -927,101 +1308,13 @@ export function VerificationDashboard() {
                   </div>
                 ) : null}
 
-                {activeDoc && activeDoc.status === 'structured' && auth && (
-                  <DocPanel res={{ ...activeDoc, structured: activeDoc.structured || activeDoc.structured_json }} />
-                )}
-                {activeDoc && activeDoc.status === 'structured' && !auth && (
-                  <div className="guest-lock">
-                    <Lock size={22} />
-                    <p><strong>{activeDoc.filename}</strong></p>
-                    <p>Extracted fields are locked in guest mode. Sign in to view the full details for this {activeDoc.document_type || 'document'}.</p>
-                    <button className="btn btn-primary" onClick={() => openAuth(currentCaseId || undefined)}>Sign in to unlock</button>
-                  </div>
+                {activeDoc && activeDoc.status === 'structured' && (
+                  <DocSummary res={{ ...activeDoc, structured: activeDoc.structured || activeDoc.structured_json }} />
                 )}
                 {activeDoc && activeDoc.status !== 'structured' && (
                   <div className="vr-sheet-empty">
                     <AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
                     {activeDoc.filename} — {activeDoc.error || activeDoc.status}
-                  </div>
-                )}
-
-                {needsAction.length > 0 && (
-                  <div style={{ marginTop: 16, padding: 16, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10 }}>
-                    <strong style={{ color: '#b45309' }}><AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> Document Requires Your Decision</strong>
-                    {needsAction.map((d: any) => (
-                      <div key={d.doc_id} style={{ marginTop: 12, padding: 12, background: 'var(--white)', borderRadius: 8, border: '1px solid var(--border)' }}>
-                        <p style={{ fontSize: 14, marginBottom: 10 }}><strong>{d.filename}</strong> — document type not recognised</p>
-                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                          <button className="btn btn-secondary" onClick={() => skipDoc(d.doc_id)}><CheckCircle2 size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> Continue without this document</button>
-                          <button className="btn btn-primary" onClick={() => document.getElementById(`replace-input-${d.doc_id}`)?.click()}><Upload size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> Upload a replacement document</button>
-                          <input
-                            type="file"
-                            id={`replace-input-${d.doc_id}`}
-                            accept=".pdf"
-                            style={{ display: 'none' }}
-                            onChange={e => {
-                              const f = e.target.files?.[0];
-                              if (f) replaceDoc(d.doc_id, f);
-                              e.target.value = "";
-                            }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {(statusData?.errors || []).length > 0 && (
-                  <div style={{ marginTop: 14 }}>
-                    <strong style={{ color: 'var(--red)' }}><AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> Errors</strong>
-                    <div style={{ marginTop: 8 }}>
-                      {(statusData?.errors || []).map((e: any, i: number) => (
-                        <div className="error-item" key={i}>
-                          <strong>{e.doc_id}</strong> — Step: {e.step}<br />
-                          <code style={{ fontSize: 11 }}>{e.error}</code>
-                        </div>
-                      ))}
-                      {(statusData?.errors || []).some((e: any) => e.step !== "classify" || !e.action_required) && (
-                        <div style={{ marginTop: 12 }}>
-                          <button className="btn btn-primary" onClick={retryFailed}><RefreshCw size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> Retry Failed</button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Section 2 — Title Chain */}
-              <div className="card">
-                <div className="card-title">
-                  <Bot size={16} style={{ verticalAlign: '-2px', marginRight: 8 }} />Title Chain Timeline
-                </div>
-                <ChainTimeline chain={chain} status={titleChainStatus} titleStory={titleStory} />
-              </div>
-
-              {/* Section 3 — Verification Results */}
-              <div className="card">
-                <div className="card-title">
-                  <FlaskConical size={16} style={{ verticalAlign: '-2px', marginRight: 8 }} />Verification Results
-                  <button
-                    className="btn btn-primary"
-                    style={{ float: 'right' }}
-                    disabled={!allComplete || analyzing}
-                    onClick={runAnalysis}
-                  >
-                    <RefreshCw size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-                    {analyzing ? 'Analyzing…' : 'Run / Re-run Verification'}
-                  </button>
-                </div>
-                {verification ? (
-                  <VerifyResults
-                    verification={verification}
-                    locked={!auth}
-                    onUnlock={() => openAuth(currentCaseId || undefined)}
-                  />
-                ) : (
-                  <div className="vr-sheet-empty">
-                    Verification has not run yet. Click “Run / Re-run Verification” once all documents are structured.
                   </div>
                 )}
               </div>

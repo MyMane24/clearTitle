@@ -35,6 +35,8 @@ MATCH_RESPONSE_SCHEMA = {
         {
             "transaction_index": 25,
             "chain_role": "THE_SD | PREDECESSOR_TITLE | SUBSEQUENT_TRANSFER | DIVERGENT_BRANCH | ENCUMBRANCE | UNRELATED",
+            "edge_type": "forward | backward | branch",
+            "graph_from": "transaction_index | 'root'",
             "portion": "the exact share/portion of the property this entry covers, e.g. '1/2 undivided share', 'balance share with building'",
             "share_fraction": "1/2",
             "property_identity": "Plot/CTS/Survey + locality for this entry",
@@ -122,6 +124,49 @@ def _fallback_role(entry: dict, sd_identity: dict) -> str:
     if e_date and sd_date and e_date > sd_date:
         return "SUBSEQUENT_TRANSFER"
     return "PREDECESSOR_TITLE"
+
+
+BACKWARD_KEYWORDS = ("cancellation", "reconveyance", "revocation", "restitution", "surrender")
+
+
+def _normalize_edge_type(raw) -> str | None:
+    if not raw:
+        return None
+    v = str(raw).lower()
+    if "backward" in v or "reverse" in v:
+        return "backward"
+    if "branch" in v or "side" in v:
+        return "branch"
+    if "forward" in v:
+        return "forward"
+    return None
+
+
+def _fallback_edge_type(entry: dict) -> str:
+    """Deterministic edge type when the LLM did not provide one."""
+    role = str(entry.get("chain_role") or "").upper()
+    if role in ("ENCUMBRANCE", "DIVERGENT_BRANCH"):
+        return "branch"
+    ttype = (entry.get("transaction_type") or "").lower()
+    if any(k in ttype for k in BACKWARD_KEYWORDS):
+        return "backward"
+    return "forward"
+
+
+def _normalize_graph_from(raw, last_main_idx: int | None) -> str | int | None:
+    if raw is None:
+        return last_main_idx if last_main_idx is not None else "root"
+    if isinstance(raw, bool):
+        return last_main_idx if last_main_idx is not None else "root"
+    if isinstance(raw, int):
+        return raw
+    s = str(raw).strip()
+    if s.lower() == "root":
+        return "root"
+    try:
+        return int(s)
+    except (TypeError, ValueError):
+        return last_main_idx if last_main_idx is not None else "root"
 
 
 def _default_identity(entry: dict) -> str:
@@ -261,6 +306,18 @@ def build_title_chain(case_id: str) -> dict:
         "quoting the key words of its description (e.g. '1/2 undivided share').\n"
         "- share_fraction: the fraction conveyed (e.g. '1/2'), or null.\n"
         "- property_identity: consolidated Plot/CTS/Survey + locality.\n"
+        "- edge_type: forward if title moves to a NEW owner (sale, gift, "
+        "conveyance, partition); backward if the document CANCELLS or reverts "
+        "title (cancellation of agreement, reconveyance, revocation) — title "
+        "returns to the earlier owner; branch if it is an encumbrance "
+        "(mortgage/lease/agreement-to-sell) or a divergent portion on the "
+        "side of the main title line.\n"
+        "- graph_from: the transaction_index of the entry that title flows "
+        "into this one from. Use 'root' when this is the earliest/original "
+        "owner step of the title line. For branch entries, use the "
+        "transaction_index of the owner's title step this document burdens or "
+        "attaches to. Reason logically per case — the graph must tell the "
+        "true ownership story of THIS property.\n"
         "- explanation: 1-2 plain sentences a layperson understands — who owned "
         "what share, who it was sold to, and how it relates to the share the SD "
         "conveys.\n\n"
@@ -306,6 +363,8 @@ def build_title_chain(case_id: str) -> dict:
             role = ""
         enrichment[idx] = {
             "chain_role": role,
+            "edge_type": _normalize_edge_type(item.get("edge_type")),
+            "graph_from": item.get("graph_from"),
             "portion": item.get("portion"),
             "share_fraction": item.get("share_fraction"),
             "property_identity": item.get("property_identity"),
@@ -330,6 +389,7 @@ def build_title_chain(case_id: str) -> dict:
     )
 
     chain = []
+    last_main_idx: int | None = None
     for e in matched_entries:
         entry = {k: v for k, v in e.items() if k != "_idx"}
         idx = e.get("_idx")
@@ -344,7 +404,13 @@ def build_title_chain(case_id: str) -> dict:
         entry["share_fraction"] = meta.get("share_fraction") or e.get("share_fraction")
         entry["property_identity"] = meta.get("property_identity") or _default_identity(e)
         entry["explanation"] = meta.get("explanation") or _default_explanation(entry, sd_identity)
+        edge_type = meta.get("edge_type") or _fallback_edge_type(entry)
+        graph_from = _normalize_graph_from(meta.get("graph_from"), last_main_idx)
+        entry["edge_type"] = edge_type
+        entry["graph_from"] = graph_from
         chain.append(entry)
+        if entry["chain_role"] != "ENCUMBRANCE":
+            last_main_idx = idx
 
     save_title_chain(
         case_id=case_id, status="complete", chain=chain,
