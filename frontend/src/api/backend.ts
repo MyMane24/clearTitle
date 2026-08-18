@@ -80,6 +80,7 @@ export interface TitleChainEntry {
   chain_role?: string;
   is_sale_deed_entry?: boolean;
   is_title_transfer?: boolean;
+  is_agreement_to_sell?: boolean;
   portion?: string | null;
   share_fraction?: string | null;
   property_identity?: string | null;
