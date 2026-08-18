@@ -1,8 +1,8 @@
 import React from 'react';
 import {
-  ArrowDownRight, ArrowUpRight, Building2, CalendarDays, Check, ChevronLeft,
-  ChevronRight, FileText, Fingerprint, Hash, Landmark, LandPlot, MapPin, Route,
-  Ruler, ShieldCheck, Users, Wallet,
+  ArrowDownRight, ArrowUpRight, Building2, Check, ChevronLeft,
+  ChevronRight, FileText, LandPlot, MapPin, Route,
+  Ruler, Users, Wallet,
 } from 'lucide-react';
 
 const AVATAR_COLORS = ['#ea580c', '#0891b2', '#7c3aed', '#059669', '#d97706', '#dc2626'];
@@ -101,43 +101,47 @@ function BoundaryPlot({ bounds }: { bounds: Record<string, unknown> }) {
   const hasW = isFilled(bounds.west);
   if (!hasN && !hasS && !hasE && !hasW) return null;
 
-  const sides: { dir: string; key: string; cls: string }[] = [
-    { dir: 'N', key: 'north', cls: 'ds-plot-n h' },
-    { dir: 'E', key: 'east', cls: 'ds-plot-e' },
-    { dir: 'S', key: 'south', cls: 'ds-plot-s h' },
-    { dir: 'W', key: 'west', cls: 'ds-plot-w' },
-  ];
-  const filled = sides.filter(s => isFilled(bounds[s.key]));
-
-  const topRow = hasN ? 'n n n' : '. . .';
-  const midRow = `${hasW ? 'w' : '.'} c ${hasE ? 'e' : '.'}`;
-  const botRow = hasS ? 's s s' : '. . .';
-  const cols = hasW || hasE ? 'minmax(110px, 1fr) minmax(180px, 2fr) minmax(110px, 1fr)' : '1fr';
+  const sides = [
+    { dir: 'N', key: 'north', label: 'North' },
+    { dir: 'S', key: 'south', label: 'South' },
+    { dir: 'E', key: 'east', label: 'East' },
+    { dir: 'W', key: 'west', label: 'West' },
+  ].filter(s => isFilled(bounds[s.key]));
 
   return (
-    <div className="ds-plot-wrap">
-      <div className="ds-plot-title">Boundaries</div>
-      <div
-        className="ds-plot"
-        style={{
-          gridTemplateAreas: `"${topRow}" "${midRow}" "${botRow}"`,
-          gridTemplateColumns: cols,
-        }}
-      >
-        {filled.map(s => (
-          <div className={`ds-plot-side ${s.cls} ${isRoad(bounds[s.key]) ? 'road' : ''}`} key={s.key}>
-            <span className="ds-plot-dir">{s.dir}</span>
-            {isRoad(bounds[s.key]) ? (
-              <span className="ds-plot-val road"><Route size={13} /> {fmt(bounds[s.key])}</span>
-            ) : (
-              <span className="ds-plot-val">{fmt(bounds[s.key])}</span>
-            )}
+    <div className="ds-boundaries">
+      <span className="ds-meta-label">BOUNDARIES</span>
+      <div className="ds-compass">
+        {hasN && (
+          <div className="ds-compass-side top">
+            <span className="ds-compass-dir">N</span>
+            <span className="ds-compass-val">{isRoad(bounds.north) ? <><Route size={12} /> {fmt(bounds.north)}</> : fmt(bounds.north)}</span>
           </div>
-        ))}
-        <div className="ds-plot-center">
-          <LandPlot size={26} />
-          <span>Plot</span>
+        )}
+        <div className="ds-compass-mid">
+          {hasW && (
+            <div className="ds-compass-side left">
+              <span className="ds-compass-dir">W</span>
+              <span className="ds-compass-val">{isRoad(bounds.west) ? <><Route size={12} /> {fmt(bounds.west)}</> : fmt(bounds.west)}</span>
+            </div>
+          )}
+          <div className="ds-compass-center">
+            <LandPlot size={22} />
+            <span>PROPERTY</span>
+          </div>
+          {hasE && (
+            <div className="ds-compass-side right">
+              <span className="ds-compass-dir">E</span>
+              <span className="ds-compass-val">{isRoad(bounds.east) ? <><Route size={12} /> {fmt(bounds.east)}</> : fmt(bounds.east)}</span>
+            </div>
+          )}
         </div>
+        {hasS && (
+          <div className="ds-compass-side bottom">
+            <span className="ds-compass-dir">S</span>
+            <span className="ds-compass-val">{isRoad(bounds.south) ? <><Route size={12} /> {fmt(bounds.south)}</> : fmt(bounds.south)}</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -365,7 +369,7 @@ function LedgerSection({ ledger }: { ledger: any[] }) {
   const visibleIndices = Array.from({ length: dotCount }, (_, i) => startIdx + i);
 
   return (
-    <div className="ds-section ds-section-flat">
+    <div className="ds-section">
       <div className="ds-section-title">
         <span className="ds-sec-ico"><FileText size={15} /></span>
         <span>Historical Ledger {total > 1 ? `(${idx + 1} of ${total})` : ''}</span>
@@ -410,20 +414,7 @@ export function DocSummary({ res }: { res: DocSummaryData }) {
   const prop = s.property_schedule || s.property_identification || {};
   const measure = prop.measurements || {};
   const bounds = prop.boundaries || {};
-  const stat = s.statutory_valuation_endorsement || {};
   const payments = Array.isArray(fin.payment_breakdown) ? fin.payment_breakdown : [];
-
-  const overview: { icon: React.ReactNode; label: string; value: string }[] = [];
-  if (docType) overview.push({ icon: <Fingerprint size={13} />, label: 'Document Type', value: docType });
-  if (isFilled(meta.execution_date)) overview.push({ icon: <CalendarDays size={13} />, label: 'Executed On', value: fmt(meta.execution_date) });
-  if (isFilled(meta.registration_date)) overview.push({ icon: <CalendarDays size={13} />, label: 'Registered On', value: fmt(meta.registration_date) });
-  if (isFilled(meta.issuing_office)) overview.push({ icon: <Landmark size={13} />, label: 'Issuing Office', value: fmt(meta.issuing_office) });
-  if (isFilled(meta.registration_number)) overview.push({ icon: <Hash size={13} />, label: 'Registration No.', value: fmt(meta.registration_number) });
-  if (isFilled(meta.application_number)) overview.push({ icon: <Hash size={13} />, label: 'Application No.', value: fmt(meta.application_number) });
-  if (isFilled(meta.certificate_number)) overview.push({ icon: <Hash size={13} />, label: 'Certificate No.', value: fmt(meta.certificate_number) });
-  if (isFilled(meta.search_start_date) || isFilled(meta.search_end_date)) {
-    overview.push({ icon: <CalendarDays size={13} />, label: 'Search Period', value: `${fmt(meta.search_start_date)} — ${fmt(meta.search_end_date)}` });
-  }
 
   const vendors = Array.isArray(parties.vendors) ? parties.vendors : [];
   const purchasers = Array.isArray(parties.purchasers) ? parties.purchasers : [];
@@ -448,63 +439,130 @@ export function DocSummary({ res }: { res: DocSummaryData }) {
     || isFilled(bounds.north) || isFilled(bounds.east) || isFilled(bounds.west) || isFilled(bounds.south);
   const hasFin = isFilled(fin.declared_consideration_amount) || isFilled(fin.stamp_duty_paid_amount)
     || isFilled(fin.total_registration_fees) || payments.length > 0;
-  const hasStat = Object.values(stat).some(isFilled);
 
   return (
     <div className="ds">
-      <div className="ds-head">
-        <div className="ds-title">
-          <div className="ds-title-icon"><FileText size={20} /></div>
-          <div>
-            <div className="ds-filename">{res.filename || 'Document'}</div>
-            <div className="ds-sub">
-              {docType && <span className="badge badge-blue">{docType}</span>}
-              <span className="ds-status"><Check size={12} /> Complete</span>
-            </div>
-          </div>
+      {/* ── Top Metadata Grid ── */}
+      <div className="ds-meta-grid">
+        <div className="ds-meta-cell">
+          <span className="ds-meta-label">DOCUMENT TYPE</span>
+          <span className="ds-meta-value headline">{docType || '—'}</span>
         </div>
+        {isFilled(meta.execution_date) && (
+          <div className="ds-meta-cell">
+            <span className="ds-meta-label">EXECUTED DATE</span>
+            <span className="ds-meta-value mono">{fmt(meta.execution_date)}</span>
+          </div>
+        )}
+        {isFilled(meta.registration_date) && (
+          <div className="ds-meta-cell">
+            <span className="ds-meta-label">REGISTERED DATE</span>
+            <span className="ds-meta-value mono">{fmt(meta.registration_date)}</span>
+          </div>
+        )}
+        {isFilled(meta.registration_number) && (
+          <div className="ds-meta-cell">
+            <span className="ds-meta-label">REGISTRATION NO</span>
+            <span className="ds-meta-value mono accent">{fmt(meta.registration_number)}</span>
+          </div>
+        )}
+        {isFilled(meta.issuing_office) && (
+          <div className="ds-meta-cell">
+            <span className="ds-meta-label">ISSUING OFFICE</span>
+            <span className="ds-meta-value mono">{fmt(meta.issuing_office)}</span>
+          </div>
+        )}
+        {isFilled(meta.application_number) && (
+          <div className="ds-meta-cell">
+            <span className="ds-meta-label">APPLICATION NO</span>
+            <span className="ds-meta-value mono">{fmt(meta.application_number)}</span>
+          </div>
+        )}
+        {isFilled(meta.certificate_number) && (
+          <div className="ds-meta-cell">
+            <span className="ds-meta-label">CERTIFICATE NO</span>
+            <span className="ds-meta-value mono">{fmt(meta.certificate_number)}</span>
+          </div>
+        )}
+        {(isFilled(meta.search_start_date) || isFilled(meta.search_end_date)) && (
+          <div className="ds-meta-cell">
+            <span className="ds-meta-label">SEARCH PERIOD</span>
+            <span className="ds-meta-value mono">{fmt(meta.search_start_date)} — {fmt(meta.search_end_date)}</span>
+          </div>
+        )}
       </div>
 
-      {overview.length > 0 && (
-        <div className="ds-grid">
-          {overview.map((t, i) => <FactTile key={i} icon={t.icon} label={t.label} value={t.value} />)}
+      {/* ── Parties ── */}
+      {hasParties && (
+        <div className="ds-block">
+          <h3 className="ds-block-heading">
+            <span className="ds-split-ico"><Users size={16} /></span>
+            Parties
+          </h3>
+          <div className="ds-parties">
+            <PartyCol title="Vendors (Seller)" icon={<Building2 size={13} />} people={vendors} />
+            <PartyCol title="Purchasers (Buyer)" icon={<Users size={13} />} people={purchasers} />
+          </div>
         </div>
       )}
 
-      <SearchCriteriaSection crit={s.search_criteria} />
-      <LedgerSection ledger={Array.isArray(s.historical_ledger) ? s.historical_ledger : []} />
-
-      {hasParties && (
-        <Section icon={<Users size={15} />} title="Parties">
-          <div className="ds-parties">
-            <PartyCol title="Vendors" icon={<Building2 size={13} />} people={vendors} />
-            <PartyCol title="Purchasers" icon={<Users size={13} />} people={purchasers} />
-          </div>
-        </Section>
-      )}
-
+      {/* ── Property Details ── */}
       {hasProperty && !isEC && (
-        <Section icon={<Ruler size={15} />} title="Property Schedule">
-          <div className="ds-grid">
-            {propFields.map(([label, value], i) => <FactTile key={i} label={label} value={fmt(value)} />)}
+        <div className="ds-block">
+          <h3 className="ds-block-heading">
+            <span className="ds-split-ico"><Ruler size={16} /></span>
+            Property Details
+          </h3>
+          <div className="ds-prop-grid">
+            {propFields.map(([label, value], i) => (
+              <div className="ds-prop-cell" key={i}>
+                <span className="ds-meta-label">{label.toUpperCase()}</span>
+                <span className="ds-meta-value">{fmt(value)}</span>
+              </div>
+            ))}
           </div>
-          <BoundaryPlot bounds={bounds} />
-          {hasFullDesc && (
-            <div className="ds-description">
-              <div className="ds-description-label">Full Description</div>
-              <p className="ds-description-text">{fmt(prop.full_schedule_description)}</p>
+          {isFilled(prop.full_schedule_description) && (
+            <div className="ds-schedule-block">
+              <span className="ds-meta-label">SCHEDULE PROPERTY</span>
+              <span className="ds-meta-value">{fmt(prop.full_schedule_description)}</span>
             </div>
           )}
-        </Section>
+          <BoundaryPlot bounds={bounds} />
+        </div>
       )}
 
+      {/* ── Consideration & Fees ── */}
       {hasFin && (
-        <Section icon={<Wallet size={15} />} title="Financials">
-          <div className="ds-grid">
-            {isFilled(fin.declared_consideration_amount) && <FactTile label="Declared Consideration" value={money(fin.declared_consideration_amount)} />}
-            {isFilled(fin.stamp_duty_paid_amount) && <FactTile label="Stamp Duty Paid" value={money(fin.stamp_duty_paid_amount)} />}
-            {isFilled(fin.total_registration_fees) && <FactTile label="Registration Fees" value={money(fin.total_registration_fees)} />}
-            {isFilled(fin.payment_dd_reference) && <FactTile label="DD Reference" value={fmt(fin.payment_dd_reference)} />}
+        <div className="ds-block">
+          <h3 className="ds-block-heading">
+            <span className="ds-split-ico"><Wallet size={16} /></span>
+            Consideration &amp; Fees
+          </h3>
+          <div className="ds-fin-grid">
+            {isFilled(fin.declared_consideration_amount) && (
+              <div className="ds-fin-cell">
+                <span className="ds-meta-label">DECLARED CONSIDERATION</span>
+                <span className="ds-meta-value mono">{money(fin.declared_consideration_amount)}</span>
+              </div>
+            )}
+            {isFilled(fin.stamp_duty_paid_amount) && (
+              <div className="ds-fin-cell">
+                <span className="ds-meta-label">STAMP DUTY PAID</span>
+                <span className="ds-meta-value mono">{money(fin.stamp_duty_paid_amount)}</span>
+              </div>
+            )}
+            {isFilled(fin.total_registration_fees) && (
+              <div className="ds-fin-cell">
+                <span className="ds-meta-label">REGISTRATION FEES</span>
+                <span className="ds-meta-value mono">{money(fin.total_registration_fees)}</span>
+              </div>
+            )}
+            {isFilled(fin.payment_dd_reference) && (
+              <div className="ds-fin-cell">
+                <span className="ds-meta-label">DD REFERENCE</span>
+                <span className="ds-meta-value mono">{fmt(fin.payment_dd_reference)}</span>
+              </div>
+            )}
           </div>
           {payments.length > 0 && (
             <div className="ds-fin-list">
@@ -522,19 +580,16 @@ export function DocSummary({ res }: { res: DocSummaryData }) {
               ))}
             </div>
           )}
-        </Section>
+        </div>
       )}
 
-      {hasStat && (
-        <Section icon={<ShieldCheck size={15} />} title="Statutory Valuation">
-          <div className="ds-grid">
-            {isFilled(stat.estimated_market_value) && <FactTile label="Estimated Market Value" value={money(stat.estimated_market_value)} />}
-            {isFilled(stat.prevent_of_undervaluation_referred) && <FactTile label="Undervaluation Referred" value={fmt(stat.prevent_of_undervaluation_referred)} />}
-            {isFilled(stat.form_1a_communication_date) && <FactTile label="Form 1A Date" value={fmt(stat.form_1a_communication_date)} />}
-          </div>
-        </Section>
-      )}
+      {/* ── Search Criteria (for ECs) ── */}
+      <SearchCriteriaSection crit={s.search_criteria} />
 
+      {/* ── Historical Ledger (for ECs — shows parties, financials, property per transaction) ── */}
+      <LedgerSection ledger={Array.isArray(s.historical_ledger) ? s.historical_ledger : []} />
+
+      {/* ── Fallback sections for any unhandled keys ── */}
       <FallbackSections structured={s} />
     </div>
   );

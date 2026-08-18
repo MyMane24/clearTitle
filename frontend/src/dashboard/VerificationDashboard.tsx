@@ -9,7 +9,7 @@ import { DocSummary } from './utils';
 import clearTitleLogo from '../assets/clearTitle.png';
 import {
   AlertTriangle, BarChart3, Bell, Bot, Check, CheckCircle2,
-  ChevronDown, ChevronUp, Download, FileCheck2, FileText, FileUp,
+  ChevronDown, ChevronUp, FileCheck2, FileText, FileUp,
   GitMerge, Lock, LogIn, LogOut, MapPin, Menu, MinusCircle,
   Play, Plus, RefreshCw, ScanText, ShieldCheck, Sparkles,
   Trash2, Upload, Users, X, XCircle,
@@ -479,6 +479,8 @@ function PipelineTrace({ item }: { item: any }) {
   const hasEc = item.ec_value != null && item.ec_value !== '';
   const hasNote = item.notes;
   if (!hasSd && !hasEc && !hasNote) return null;
+  const status = String(item.status || (item.pass ? 'VERIFIED' : 'NOT_VERIFIED')).toUpperCase();
+  const isFail = status === 'NOT_VERIFIED';
   return (
     <div className="trace-comparison-box pipeline-trace-enter">
       {hasSd && (
@@ -496,7 +498,10 @@ function PipelineTrace({ item }: { item: any }) {
       {hasNote && (
         <div className="trace-row conclusion">
           <span className="trace-label">Conclusion</span>
-          <span className="trace-value"><CheckCircle2 size={14} /> {item.notes}</span>
+          <span className="trace-value" style={isFail ? { color: '#dc2626' } : undefined}>
+            {isFail ? <XCircle size={14} style={{ color: '#dc2626' }} /> : <CheckCircle2 size={14} />}
+            {' '}{item.notes}
+          </span>
         </div>
       )}
     </div>
@@ -654,70 +659,129 @@ function GuestReportPreview({ results, onSignIn, onNewCase }: {
     d.document_type === 'SALE_DEED' || d.structured?.document_type === 'SALE_DEED'
   );
   const s = sd?.structured || {};
-  const vendors: string[] = (s.parties?.vendors || []).map((v: any) => v.entity_name).filter(Boolean);
-  const purchasers: string[] = (s.parties?.purchasers || []).map((p: any) => p.entity_name).filter(Boolean);
-  const scheduleText = String(
-    s.property_schedule?.full_schedule_description
-      || [s.property_schedule?.cts_number, s.property_schedule?.survey_number].filter(Boolean).join(', ')
-      || (results.title_chain?.source?.sd_property
-        ? (typeof results.title_chain.source.sd_property === 'string'
-          ? results.title_chain.source.sd_property
-          : JSON.stringify(results.title_chain.source.sd_property))
-        : '')
-  );
-  const meta = s.file_metadata || {};
-  const execDate = meta.execution_date || meta.registration_date || meta.document_date || undefined;
+  const vendors: any[] = s.parties?.vendors || [];
+  const purchasers: any[] = s.parties?.purchasers || [];
+  const ps = s.property_schedule || {};
   const caseInfo = results.case;
 
+  const scheduleText = String(
+    ps.full_schedule_description
+      || [ps.cts_number, ps.survey_number].filter(Boolean).join(', ')
+      || ''
+  ).slice(0, 200);
+
   return (
-    <div className="guest-preview">
-      <div className="guest-preview-top">
-        <span className="guest-preview-badge"><Lock size={12} style={{ verticalAlign: '-2px', marginRight: 4 }} /> Guest Preview</span>
-        <span className="guest-preview-meta">{caseInfo?.case_id}{caseInfo?.status ? ` · ${caseInfo.status}` : ''}</span>
-        <button className="btn btn-secondary" style={{ marginLeft: 'auto' }} onClick={onNewCase}>New Case</button>
+    <div className="gp-shell">
+      {/* Top Header */}
+      <div className="gp-header">
+        <div className="gp-header-left">
+          <span className="gp-pulse" />
+          <span className="gp-case-id">CASE #{caseInfo?.case_id || '—'}</span>
+        </div>
       </div>
 
-      <div className="guest-preview-hero">
-        <h3 className="guest-preview-title">Property Summary</h3>
-        {vendors.length > 0 && (
-          <div className="guest-preview-field">
-            <div className="gp-label">Seller{vendors.length > 1 ? 's' : ''}</div>
-            <div className="gp-value">{vendors.join(', ')}</div>
+      {/* Content Stack */}
+      <div className="gp-content">
+
+        {/* Card 1: Parties */}
+        <div className="gp-card">
+          <div className="gp-card-head">
+            <div className="gp-card-label">
+              <span className="gp-card-label-text">PARTIES IDENTIFIED</span>
+            </div>
+          </div>
+          <div className="gp-parties-grid">
+            {vendors.length > 0 && vendors.map((v: any, i: number) => (
+              <div className="gp-party-cell" key={`v-${i}`}>
+                <span className="gp-party-role">VENDORS (SELLER)</span>
+                <p className="gp-party-name">{v.entity_name || '—'}</p>
+                {v.address && <p className="gp-party-addr">{v.address}</p>}
+              </div>
+            ))}
+            {purchasers.length > 0 && purchasers.map((p: any, i: number) => (
+              <div className="gp-party-cell" key={`p-${i}`}>
+                <span className="gp-party-role">PURCHASERS (BUYER)</span>
+                <p className="gp-party-name">{p.entity_name || '—'}</p>
+                {p.address && <p className="gp-party-addr">{p.address}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Card 2: Property Details */}
+        {(ps.survey_number || ps.plot_number || ps.project_name || ps.floor_location || ps.dimensions || ps.super_built_up_area) && (
+          <div className="gp-card">
+            <div className="gp-card-head">
+              <div className="gp-card-label">
+                <span className="gp-card-label-text">PROPERTY DETAILS</span>
+              </div>
+              {ps.plot_number && <span className="gp-card-badge">PLOT NO. {ps.plot_number}</span>}
+            </div>
+            <div className="gp-props-grid">
+              {ps.survey_number && (
+                <div className="gp-prop-cell">
+                  <span className="gp-prop-label">SURVEY</span>
+                  <p className="gp-prop-val">{ps.survey_number}</p>
+                </div>
+              )}
+              {ps.project_name && (
+                <div className="gp-prop-cell">
+                  <span className="gp-prop-label">LOCATION</span>
+                  <p className="gp-prop-val">{ps.project_name}</p>
+                </div>
+              )}
+              {(ps.floor_location || ps.dimensions || ps.super_built_up_area) && (
+                <div className="gp-prop-cell">
+                  <span className="gp-prop-label">STRUCTURE</span>
+                  <p className="gp-prop-val gp-prop-truncate">
+                    {[ps.floor_location, ps.dimensions, ps.super_built_up_area].filter(Boolean).join(', ')}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         )}
-        {purchasers.length > 0 && (
-          <div className="guest-preview-field">
-            <div className="gp-label">Purchaser{purchasers.length > 1 ? 's' : ''}</div>
-            <div className="gp-value">{purchasers.join(', ')}</div>
-          </div>
-        )}
+
+        {/* Card 3: Blurred teaser */}
         {scheduleText && (
-          <div className="guest-preview-field">
-            <div className="gp-label">Property Schedule</div>
-            <div className="gp-value">{scheduleText}</div>
+          <div className="gp-card gp-card-blurred">
+            <span className="gp-blur-label">HISTORICAL TITLE DEVOLUTION &amp; ENCUMBRANCES</span>
+            <p className="gp-blur-text">{scheduleText}...</p>
           </div>
         )}
-        {execDate && (
-          <div className="guest-preview-field">
-            <div className="gp-label">Execution Date</div>
-            <div className="gp-value">{execDate}</div>
+
+        {/* Floating Lock Overlay */}
+        <div className="gp-lock-overlay">
+          <div className="gp-lock-box">
+            <div className="gp-lock-icon-wrap">
+              <Lock size={24} />
+            </div>
+            <div className="gp-lock-text">
+              <h2 className="gp-lock-title">Full Due Diligence Findings Locked</h2>
+              <p className="gp-lock-sub">
+                Authenticate your session to inspect the complete 3-stage devolution timeline, check prior share exposure alerts, and export title scrutiny sheets.
+              </p>
+            </div>
+            <button className="gp-lock-cta" onClick={onSignIn}>
+              <Lock size={14} />
+              <span>Sign in to Unlock Full Findings</span>
+            </button>
+            <div className="gp-lock-trust">
+              <span>✓ Instant Access</span>
+              <span>•</span>
+              <span>✓ Zero Setup</span>
+              <span>•</span>
+              <span>✓ Scrutiny Ready</span>
+            </div>
           </div>
-        )}
-        {!vendors.length && !purchasers.length && !scheduleText && (
-          <div className="guest-preview-field">
-            <div className="gp-label">Property</div>
-            <div className="gp-value muted">The summary will appear here once the Sale Deed is processed.</div>
-          </div>
-        )}
+        </div>
+
       </div>
 
-      <div className="guest-preview-lock">
-        <div className="guest-preview-lock-icon"><Lock size={26} /></div>
-        <p className="guest-preview-lock-title">Full verification report is locked</p>
-        <p className="guest-preview-lock-sub">Sign in to unlock the complete title chain and field-by-field verification report.</p>
-        <button className="btn btn-primary guest-preview-cta" onClick={onSignIn}>
-          <Lock size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> Sign in to Unlock Full Report
-        </button>
+      {/* Bottom Meta */}
+      <div className="gp-footer">
+        <span>Protected by 256-Bit Cryptographic Vault</span>
+        <span>Forensic Title Scrutiny Session</span>
       </div>
     </div>
   );
@@ -1039,6 +1103,14 @@ export function VerificationDashboard() {
     })();
   }, [searchParams, auth, authLoading]);
 
+  // ── Auto-link guest case on login (no ?link= param) ──
+  useEffect(() => {
+    if (authLoading || !auth) return;
+    const caseId = sessionStorage.getItem("currentCaseId");
+    if (!caseId || searchParams.get('link')) return;
+    API.link(caseId).catch(() => {});
+  }, [auth, authLoading, searchParams]);
+
   const runAnalysis = async () => {
     if (!currentCaseId) return;
     setAnalyzing(true);
@@ -1268,14 +1340,14 @@ const titleChainStatus = results?.title_chain?.status;
           if (window.innerWidth <= 800 && !sidebarCollapsed) setSidebarCollapsed(true);
         }}>
           {/* Report Section Navigation */}
-          {view === 'results' && (
+          {view === 'results' && auth && (
             <div className="report-nav-bar">
               <div className="report-nav-container">
                 <button
                   className={`report-tab-btn ${activeReportTab === 'verification' ? 'active' : ''}`}
                   onClick={() => setActiveReportTab('verification')}
                 >
-                  <FileCheck2 size={16} style={{ color: activeReportTab === 'verification' ? '#d97706' : '#94a3b8' }} />
+                  <FileCheck2 size={16} style={{ color: activeReportTab === 'verification' ? '#ea580c' : '#6b7280' }} />
                   <span>VERIFICATION REPORT</span>
                   <span className="tab-badge-complete">COMPLETE</span>
                 </button>
@@ -1284,7 +1356,7 @@ const titleChainStatus = results?.title_chain?.status;
                   className={`report-tab-btn ${activeReportTab === 'title-chain' ? 'active' : ''}`}
                   onClick={() => setActiveReportTab('title-chain')}
                 >
-                  <GitMerge size={16} style={{ color: activeReportTab === 'title-chain' ? '#d97706' : '#94a3b8' }} />
+                  <GitMerge size={16} style={{ color: activeReportTab === 'title-chain' ? '#ea580c' : '#6b7280' }} />
                   <span>TITLE CHAIN</span>
                 </button>
 
@@ -1292,7 +1364,7 @@ const titleChainStatus = results?.title_chain?.status;
                   className={`report-tab-btn ${activeReportTab === 'docs' ? 'active' : ''}`}
                   onClick={() => setActiveReportTab('docs')}
                 >
-                  <ScanText size={16} style={{ color: activeReportTab === 'docs' ? '#d97706' : '#94a3b8' }} />
+                  <ScanText size={16} style={{ color: activeReportTab === 'docs' ? '#ea580c' : '#6b7280' }} />
                   <span>DOCS EXTRACTIONS</span>
                 </button>
               </div>
@@ -1398,6 +1470,14 @@ const titleChainStatus = results?.title_chain?.status;
 
           {view === 'results' && results && (
             <div className="report-main-wrap">
+              {!auth ? (
+                <GuestReportPreview
+                  results={results}
+                  onSignIn={() => openAuth(currentCaseId || undefined)}
+                  onNewCase={() => setView('upload')}
+                />
+              ) : (
+              <>
               {/* Action Required Banner (if any errors or unclassified docs) */}
               {(needsAction.length > 0 || (statusData?.errors || []).length > 0) && (
                 <div className="card" style={{ marginBottom: 24 }}>
@@ -1533,9 +1613,6 @@ const titleChainStatus = results?.title_chain?.status;
                         <span className="chain-milestones-dot" />
                         {sortedChain.length} TRANSACTIONS LINKED
                       </span>
-                      <button className="chain-export" onClick={() => window.print()}>
-                        <Download size={15} /> Export chain
-                      </button>
                     </div>
                   </div>
 
@@ -1548,11 +1625,11 @@ const titleChainStatus = results?.title_chain?.status;
               {activeReportTab === 'docs' && (
                 <div className="tab-pane active">
                   <div style={{ marginBottom: 24 }}>
-                    <span className="font-mono" style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                    <span className="font-mono" style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
                       UPLOADED DOCUMENTS • CASE {currentCaseId || caseInfo?.case_id || 'A722E83D'}
                     </span>
-                    <h1 style={{ fontSize: 28, fontWeight: 800, color: '#0f172a', margin: '4px 0 2px 0' }}>Document extractions</h1>
-                    <p style={{ fontSize: 12, color: '#64748b' }}>Structured data extracted from official records. Verify attributes against original PDFs.</p>
+                    <h1 style={{ fontSize: 32, fontWeight: 700, color: '#292524', margin: '6px 0 4px 0', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Document extractions</h1>
+                    <p style={{ fontSize: 14, color: '#6b7280', margin: 0 }}>Structured data extracted from official records. Verify attributes against original PDFs.</p>
                   </div>
 
                   {/* Sub Document Tabs (Dynamic from results.documents) */}
@@ -1566,11 +1643,17 @@ const titleChainStatus = results?.title_chain?.status;
                             className={`doc-sub-tab ${isSel ? 'active' : ''}`}
                             onClick={() => setActiveDocId(String(d.doc_id))}
                           >
-                            <FileText size={16} style={{ color: isSel ? '#d97706' : '#94a3b8' }} />
-                            <span>{d.filename || `DOC-${d.doc_id}`}</span>
-                            <span className="badge-verified-sm" style={{ fontSize: 9 }}>
-                              {d.status === 'structured' ? 'STRUCTURED' : d.status}
+                            <FileText size={18} style={{ color: isSel ? '#ea580c' : '#6b7280' }} />
+                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: isSel ? 700 : 400, color: isSel ? '#292524' : '#6b7280' }}>
+                              {d.filename || `DOC-${d.doc_id}`}
                             </span>
+                            {d.status === 'structured' && (
+                              <span style={{
+                                marginLeft: 4, fontSize: 10, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
+                                letterSpacing: '0.05em', color: '#059669', background: '#d1fae5',
+                                padding: '2px 8px', borderRadius: 999,
+                              }}>STRUCTURED</span>
+                            )}
                           </button>
                         );
                       })}
@@ -1599,6 +1682,8 @@ const titleChainStatus = results?.title_chain?.status;
                     </div>
                   )}
                 </div>
+              )}
+              </>
               )}
             </div>
           )}

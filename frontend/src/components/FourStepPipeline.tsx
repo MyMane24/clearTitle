@@ -142,7 +142,7 @@ export const FourStepPipeline: React.FC<PipelineProps> = () => {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center relative">
 
           {/* SVG SYSTEM DESIGN EDGES OVERLAY WITH ARROWHEADS & ANIMATED DATA PACKETS */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none hidden lg:block z-0" xmlns="http://www.w3.org/2000/svg">
+          <svg className="absolute inset-0 w-full h-full pointer-events-none hidden lg:block z-0" viewBox="0 0 100 100" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
             <defs>
               {/* Arrowhead Markers for System Design Edges */}
               <marker id="arrowOrange" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
@@ -167,7 +167,7 @@ export const FourStepPipeline: React.FC<PipelineProps> = () => {
             {/* Edge 1: Sale Deeds Node ➔ Verification Engine (with Arrowhead & Moving Packet) */}
             <path 
               id="path-edge-1"
-              d="M 27% 22% C 32% 22%, 34% 50%, 39% 50%" 
+              d="M 27 22 C 32 22, 34 50, 39 50" 
               stroke="url(#edgeGradOrange)" 
               strokeWidth={activeDocIdx === 0 ? "3.5" : "2"} 
               fill="none" 
@@ -176,14 +176,14 @@ export const FourStepPipeline: React.FC<PipelineProps> = () => {
             />
             {activeDocIdx === 0 && (
               <circle r="5" fill="#ea580c" className="shadow-lg">
-                <animateMotion path="M 27% 22% C 32% 22%, 34% 50%, 39% 50%" dur="1.4s" repeatCount="indefinite" />
+                <animateMotion path="M 27 22 C 32 22, 34 50, 39 50" dur="1.4s" repeatCount="indefinite" />
               </circle>
             )}
 
             {/* Edge 2: Encumbrance Cert Node ➔ Verification Engine (with Arrowhead & Moving Packet) */}
             <path 
               id="path-edge-2"
-              d="M 27% 50% L 39% 50%" 
+              d="M 27 50 L 39 50" 
               stroke="url(#edgeGradOrange)" 
               strokeWidth={activeDocIdx === 1 ? "3.5" : "2"} 
               fill="none" 
@@ -192,14 +192,14 @@ export const FourStepPipeline: React.FC<PipelineProps> = () => {
             />
             {activeDocIdx === 1 && (
               <circle r="5" fill="#ea580c" className="shadow-lg">
-                <animateMotion path="M 27% 50% L 39% 50%" dur="1.4s" repeatCount="indefinite" />
+                <animateMotion path="M 27 50 L 39 50" dur="1.4s" repeatCount="indefinite" />
               </circle>
             )}
 
             {/* Edge 3: e-Khata Node ➔ Verification Engine (with Arrowhead & Moving Packet) */}
             <path 
               id="path-edge-3"
-              d="M 27% 78% C 32% 78%, 34% 50%, 39% 50%" 
+              d="M 27 78 C 32 78, 34 50, 39 50" 
               stroke="url(#edgeGradOrange)" 
               strokeWidth={activeDocIdx === 2 ? "3.5" : "2"} 
               fill="none" 
@@ -208,13 +208,13 @@ export const FourStepPipeline: React.FC<PipelineProps> = () => {
             />
             {activeDocIdx === 2 && (
               <circle r="5" fill="#ea580c" className="shadow-lg">
-                <animateMotion path="M 27% 78% C 32% 78%, 34% 50%, 39% 50%" dur="1.4s" repeatCount="indefinite" />
+                <animateMotion path="M 27 78 C 32 78, 34 50, 39 50" dur="1.4s" repeatCount="indefinite" />
               </circle>
             )}
 
             {/* Edge 4: Verification Engine ➔ Top Box (Blockchain Storage) */}
             <path 
-              d="M 61% 45% C 66% 45%, 68% 18%, 72% 18%" 
+              d="M 61 45 C 66 45, 68 18, 72 18" 
               stroke="url(#edgeGradEmerald)" 
               strokeWidth="2.5" 
               fill="none" 
@@ -222,12 +222,12 @@ export const FourStepPipeline: React.FC<PipelineProps> = () => {
               className="animate-electric-flow" 
             />
             <circle r="4" fill="#059669">
-              <animateMotion path="M 61% 45% C 66% 45%, 68% 18%, 72% 18%" dur="1.8s" repeatCount="indefinite" />
+              <animateMotion path="M 61 45 C 66 45, 68 18, 72 18" dur="1.8s" repeatCount="indefinite" />
             </circle>
 
             {/* Edge 5: Verification Engine ➔ Bottom Box (Streamed Results) */}
             <path 
-              d="M 61% 55% C 66% 55%, 68% 62%, 72% 62%" 
+              d="M 61 55 C 66 55, 68 62, 72 62" 
               stroke="url(#edgeGradEmerald)" 
               strokeWidth="2.5" 
               fill="none" 
@@ -235,7 +235,7 @@ export const FourStepPipeline: React.FC<PipelineProps> = () => {
               className="animate-electric-flow-fast" 
             />
             <circle r="4" fill="#059669">
-              <animateMotion path="M 61% 55% C 66% 55%, 68% 62%, 72% 62%" dur="1.6s" repeatCount="indefinite" />
+              <animateMotion path="M 61 55 C 66 55, 68 62, 72 62" dur="1.6s" repeatCount="indefinite" />
             </circle>
           </svg>
 
