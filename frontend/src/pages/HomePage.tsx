@@ -6,8 +6,8 @@ import { LiveVerificationSection } from '../components/LiveVerificationSection';
 import { ProblemSolutionSection } from '../components/ProblemSolutionSection';
 import { FourStepPipeline } from '../components/FourStepPipeline';
 import { InteractiveAuditDemo } from '../components/InteractiveAuditDemo';
-import { ProductSnapshots } from '../components/ProductSnapshots';
-import { MarketAndRevenue } from '../components/MarketAndRevenue';
+import { SavingsCalculator } from '../components/SavingsCalculator';
+import { WhoWeEmpower } from '../components/WhoWeEmpower';
 import { FaqSection } from '../components/FaqSection';
 import { CtaFooter } from '../components/CtaFooter';
 import { ScrollToTopButton } from '../components/ScrollToTopButton';
@@ -57,13 +57,11 @@ export function HomePage() {
       {/* Interactive AI Audit Playground & Scanner */}
       <InteractiveAuditDemo />
 
-      {/* Product Readiness & Snapshots */}
-      <ProductSnapshots />
+      {/* Savings Calculator */}
+      <SavingsCalculator />
 
-      {/* Market Segments, Pricing & Financial Projections */}
-      <MarketAndRevenue
-        onStartAudit={goToApp}
-      />
+      {/* Who We Empower */}
+      <WhoWeEmpower />
 
       {/* FAQs */}
       <FaqSection />

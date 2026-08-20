@@ -32,16 +32,10 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAudit, onNavigate }) => {
   };
 
   return (
-    <header className={`sticky top-0 z-50 w-full ${
-      scrolled ? 'pt-3 sm:pt-4 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto' : 'pt-0 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto'
+    <header className={`sticky top-0 z-50 w-full transition-all duration-300 ${
+      scrolled ? 'bg-white/95 backdrop-blur-md border-b border-stone-200/80 shadow-[0_8px_30px_rgb(0,0,0,0.07)]' : 'bg-[#FFF8F2] border-b border-stone-200/30'
     }`}>
-      <div className={`
-        w-full transition-[background-color,border-color,border-radius,box-shadow,backdrop-filter] duration-300 ease-out flex items-center justify-between
-        ${scrolled 
-          ? 'bg-white/95 backdrop-blur-md border border-stone-200/80 rounded-2xl sm:rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.07)] px-5 sm:px-6 py-2.5 sm:py-3' 
-          : 'bg-transparent border-b border-stone-200/40 px-2 sm:px-4 py-4 sm:py-5 shadow-none rounded-none'
-        }
-      `}>
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
         
         {/* Logo */}
         <Link
@@ -52,7 +46,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAudit, onNavigate }) => {
           <img
             src={clearTitleLogo}
             alt="clearTitle"
-            className="h-8 sm:h-9 w-auto object-contain group-hover:scale-105 transition-transform"
+            className="h-10 sm:h-12 w-auto object-contain group-hover:scale-105 transition-transform"
           />
         </Link>
 
@@ -64,24 +58,26 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAudit, onNavigate }) => {
           >
             The Problem
           </button>
-          <button 
-            onClick={() => handleNavClick('solution')} 
+          <Link
+            to="/how-it-works"
+            onClick={() => setMobileMenuOpen(false)}
             className="hover:text-stone-900 transition-colors cursor-pointer"
           >
             How it Works
-          </button>
+          </Link>
           <button 
             onClick={() => handleNavClick('live-demo')} 
             className="hover:text-stone-900 transition-colors flex items-center gap-1.5 cursor-pointer text-[#ea580c] font-semibold"
           >
             <Sparkles className="w-3.5 h-3.5 text-[#ea580c]" /> Live AI Audit
           </button>
-          <button 
-            onClick={() => handleNavClick('pricing')} 
+          <Link
+            to="/pricing"
+            onClick={() => setMobileMenuOpen(false)}
             className="hover:text-stone-900 transition-colors cursor-pointer"
           >
             Pricing
-          </button>
+          </Link>
         </nav>
 
         {/* Right Actions */}
@@ -132,24 +128,26 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAudit, onNavigate }) => {
           >
             The Problem
           </button>
-          <button 
-            onClick={() => handleNavClick('solution')} 
+          <Link
+            to="/how-it-works"
+            onClick={() => setMobileMenuOpen(false)}
             className="block w-full text-left py-2 text-stone-700 font-medium text-sm hover:text-stone-900"
           >
             How it Works
-          </button>
+          </Link>
           <button 
             onClick={() => handleNavClick('live-demo')} 
             className="block w-full text-left py-2 text-[#ea580c] font-semibold text-sm flex items-center gap-2"
           >
             <Sparkles className="w-4 h-4 text-[#ea580c]" /> Live AI Audit
           </button>
-          <button 
-            onClick={() => handleNavClick('pricing')} 
+          <Link
+            to="/pricing"
+            onClick={() => setMobileMenuOpen(false)}
             className="block w-full text-left py-2 text-stone-700 font-medium text-sm hover:text-stone-900"
           >
             Pricing & Plans
-          </button>
+          </Link>
           <div className="pt-2 border-t border-stone-100 flex flex-col gap-2">
             <Link
               to="/login"

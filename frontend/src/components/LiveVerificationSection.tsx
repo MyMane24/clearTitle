@@ -7,24 +7,28 @@ interface LiveVerificationSectionProps {
 
 export const LiveVerificationSection: React.FC<LiveVerificationSectionProps> = ({ onStartAudit }) => {
   return (
-    <section id="live-verification" className="py-24 lg:py-32 bg-[#FFF8F2]">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center max-w-3xl mx-auto mb-10">
-          <span className="text-xs font-medium uppercase tracking-widest text-[#f97316] bg-orange-100 border border-orange-200 px-3 py-1 rounded-full inline-block mb-3">
+    <section id="live-verification" className="relative py-24 px-6 bg-[#FAF9F6] text-slate-900 overflow-hidden">
+      <div className="absolute inset-0 bg-dot-pattern opacity-60 pointer-events-none" />
+      <div className="absolute top-1/4 -left-32 w-96 h-96 bg-orange-400/10 rounded-full blur-[110px] pointer-events-none" />
+      <div className="absolute bottom-10 -right-32 w-96 h-96 bg-amber-300/10 rounded-full blur-[110px] pointer-events-none" />
+
+      <div className="max-w-5xl mx-auto relative z-10 space-y-12">
+        <div className="text-center max-w-3xl mx-auto space-y-3">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-orange-50 border border-orange-200/90 text-[#ea580c] font-mono text-[11px] font-bold tracking-widest uppercase shadow-xs">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#ea580c] animate-pulse" />
             LIVE TITLE VERIFICATION
-          </span>
-          <h3 className="text-2xl sm:text-4xl font-bold text-stone-900 tracking-tight">
+          </div>
+
+          <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-950 leading-tight whitespace-nowrap">
             See the verification engine in action.
-          </h3>
-          <p className="mt-4 text-sm sm:text-base text-stone-600 leading-relaxed">
-            A real audit of a Belagavi property — every deed, EC, and e-Khata cross-checked
-            against government registries in seconds, with blockchain proof anchored on Polygon.
+          </h2>
+
+          <p className="text-slate-600 text-sm sm:text-base leading-relaxed max-w-2xl mx-auto">
+            A real audit of a Belagavi property — every deed, EC, and e-Khata cross-checked against government registries in seconds, with blockchain proof anchored on Polygon.
           </p>
         </div>
 
-        <div className="relative rounded-2xl bg-white/70 p-2 sm:p-3 ring-1 ring-stone-200/70 shadow-xl shadow-orange-500/5 backdrop-blur-sm">
-          <AuditReportCard onStartAudit={onStartAudit} />
-        </div>
+        <AuditReportCard onStartAudit={onStartAudit} />
       </div>
     </section>
   );

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight, Play, Lock, FileCheck, Cpu } from 'lucide-react';
+import { ArrowRight, Play } from 'lucide-react';
 import DuneFieldBackground from './DuneFieldBackground';
 
 interface HeroSectionProps {
@@ -65,21 +65,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onStartAudit, onSeeDem
 
         </div>
 
-        {/* Feature Badges Line — pinned at bottom */}
-        <div className="flex flex-wrap items-center justify-center gap-6 sm:gap-8 text-xs sm:text-sm font-bold text-stone-700">
-          <div className="flex items-center gap-1.5">
-            <Lock className="w-4 h-4 text-orange-500" />
-            <span>Encrypted &amp; On-chain</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Cpu className="w-4 h-4 text-orange-500" />
-            <span>Vernacular VLM AI (Kannada / Hindi)</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <FileCheck className="w-4 h-4 text-orange-500" />
-            <span>ULPIN (14-Digit Bhu-Aadhar)</span>
-          </div>
-        </div>
+
 
       </div>
     </section>
