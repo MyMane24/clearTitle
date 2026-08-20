@@ -32,32 +32,32 @@ REASONING_DOC_TYPES = {
 }
 
 DEFAULT_ROUTING_MAP = {
-    "E_PAYMENT_RECEIPT": {"provider": "groq", "model": "llama-3.1-8b-instant"},
-    "TAX_RECEIPT": {"provider": "groq", "model": "llama-3.1-8b-instant"},
-    "PROPERTY_TAX_ASSESSMENT": {"provider": "groq", "model": "llama-3.1-8b-instant"},
-    "PROPERTY_REGISTER_CARD": {"provider": "groq", "model": "llama-3.1-8b-instant"},
+    "E_PAYMENT_RECEIPT": {"provider": "groq", "model": "gemma2-9b-it"},
+    "TAX_RECEIPT": {"provider": "groq", "model": "gemma2-9b-it"},
+    "PROPERTY_TAX_ASSESSMENT": {"provider": "groq", "model": "gemma2-9b-it"},
+    "PROPERTY_REGISTER_CARD": {"provider": "groq", "model": "gemma2-9b-it"},
     "SALE_DEED": {"provider": "gemini", "model": "gemini-2.5-flash"},
     "ENCUMBRANCE_CERTIFICATE": {"provider": "gemini", "model": "gemini-2.5-flash"},
     "GIFT_DEED": {"provider": "gemini", "model": "gemini-2.5-flash"},
     "PARTITION_DEED": {"provider": "gemini", "model": "gemini-2.5-flash"},
     "KHATA": {"provider": "groq", "model": "llama-3.3-70b-versatile"},
-    "MUTATION": {"provider": "groq", "model": "llama-3.1-8b-instant"},
-    "RTC_PAHANI": {"provider": "groq", "model": "llama-3.1-8b-instant"},
+    "MUTATION": {"provider": "groq", "model": "gemma2-9b-it"},
+    "RTC_PAHANI": {"provider": "groq", "model": "gemma2-9b-it"},
     "LEGAL_HEIR_CERTIFICATE": {"provider": "groq", "model": "llama-3.3-70b-versatile"},
     "COURT_ORDER": {"provider": "gemini", "model": "gemini-2.5-flash"},
-    "POSSESSION_CERTIFICATE": {"provider": "groq", "model": "llama-3.1-8b-instant"},
-    "CONVERSION_ORDER": {"provider": "groq", "model": "llama-3.1-8b-instant"},
-    "CDP_PLAN": {"provider": "groq", "model": "llama-3.1-8b-instant"},
-    "RERA_CERTIFICATE": {"provider": "groq", "model": "llama-3.1-8b-instant"},
-    "LITIGATION_AFFIDAVIT": {"provider": "groq", "model": "llama-3.1-8b-instant"},
-    "ALLOTMENT_LETTER": {"provider": "groq", "model": "llama-3.1-8b-instant"},
+    "POSSESSION_CERTIFICATE": {"provider": "groq", "model": "gemma2-9b-it"},
+    "CONVERSION_ORDER": {"provider": "groq", "model": "gemma2-9b-it"},
+    "CDP_PLAN": {"provider": "groq", "model": "gemma2-9b-it"},
+    "RERA_CERTIFICATE": {"provider": "groq", "model": "gemma2-9b-it"},
+    "LITIGATION_AFFIDAVIT": {"provider": "groq", "model": "gemma2-9b-it"},
+    "ALLOTMENT_LETTER": {"provider": "groq", "model": "gemma2-9b-it"},
     "BUILDING_LICENSE": {"provider": "gemini", "model": "gemini-2.5-flash"},
     "COMPLETION_CERTIFICATE": {"provider": "gemini", "model": "gemini-2.5-flash"},
 }
 
 FALLBACK_CHAIN = [
     {"provider": "groq", "model": "llama-3.3-70b-versatile"},
-    {"provider": "groq", "model": "llama-3.1-8b-instant"},
+    {"provider": "groq", "model": "gemma2-9b-it"},
     {"provider": "gemini", "model": "gemini-2.5-flash"},
 ]
 
@@ -85,7 +85,7 @@ def resolve_model(doc_type: str) -> tuple[str, str]:
         return route["provider"], route["model"]
     if doc_type in REASONING_DOC_TYPES:
         return "gemini", "gemini-2.5-flash"
-    return "groq", "llama-3.1-8b-instant"
+    return "groq", "gemma2-9b-it"
 
 
 def get_fallback_chain(doc_type: str) -> list[tuple[str, str]]:

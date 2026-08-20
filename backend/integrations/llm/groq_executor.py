@@ -22,7 +22,7 @@ logger = get_logger(__name__)
 
 GROQ_MODELS = [
     "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
+    "gemma2-9b-it",
 ]
 
 # Import shared schemas
