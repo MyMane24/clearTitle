@@ -2135,10 +2135,10 @@
 .ctd-root .chain-node-body{
   flex:1; min-width:0;
   border-bottom:1px solid rgba(226,232,240,.9);
-  padding-bottom:48px;
-  display:flex; flex-direction:column; gap:32px;
+  padding-bottom:20px;
+  display:flex; flex-direction:column; gap:14px;
 }
-.ctd-root .chain-node.last .chain-node-body{ border-bottom:none; padding-bottom:24px; }
+.ctd-root .chain-node.last .chain-node-body{ border-bottom:none; padding-bottom:16px; }
 .ctd-root .chain-node-meta{
   display:flex; align-items:flex-end; flex-wrap:wrap; gap:16px 40px;
 }
@@ -2166,19 +2166,19 @@
 .ctd-root .chain-entry-badge.badge-indigo{ background:#e0e7ff; color:#3730a3; border-color:#c7d2fe; }
 .ctd-root .chain-entry-badge.badge-slate{ background:#f1f5f9; color:#334155; border-color:#e2e8f0; }
 .ctd-root .chain-node-sections{
-  display:grid; grid-template-columns:1fr; gap:40px;
+  display:grid; grid-template-columns:1fr; gap:16px;
 }
 @media(min-width:768px){
-  .ctd-root .chain-node-sections{ grid-template-columns:1fr 1fr; gap:40px; }
-  .ctd-root .chain-node-section.alt{ border-left:1px solid #e2e8f0; padding-left:40px; }
+  .ctd-root .chain-node-sections{ grid-template-columns:1fr 1fr; gap:16px; }
+  .ctd-root .chain-node-section.alt{ border-left:1px solid #e2e8f0; padding-left:16px; }
 }
 .ctd-root .chain-node-section-head{
   display:flex; align-items:center; gap:8px;
   font-weight:700; font-size:16px; color:#0f172a;
-  border-bottom:1px solid #e2e8f0; padding-bottom:8px; margin-bottom:20px;
+  border-bottom:1px solid #e2e8f0; padding-bottom:6px; margin-bottom:12px;
 }
 .ctd-root .chain-section-icon{ color:#94a3b8; flex-shrink:0; }
-.ctd-root .chain-party-grid{ display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+.ctd-root .chain-party-grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
 .ctd-root .chain-party{ min-width:0; }
 .ctd-root .chain-party-name{
   font-weight:700; font-size:14px; color:#0f172a; line-height:1.35; margin-top:4px;
@@ -2630,7 +2630,6 @@
   margin: 0 auto;
   box-shadow: 0 4px 12px rgba(234,88,12,.25);
 }
-.ctd-root .gp-lock-text{}
 .ctd-root .gp-lock-title{
   font-family:'Plus Jakarta Sans',sans-serif;
   font-size: 20px;
@@ -4225,6 +4224,78 @@
 .ctd-root .summary-head-btn:hover .summary-head-arrow {
   transform: translateY(1px);
   opacity: 1;
+}
+
+.ctd-root .chain-prop-inline {
+  margin-top: 2px;
+}
+
+.ctd-root .chain-prop-labels-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.ctd-root .chain-prop-text-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  transition: color 0.15s ease;
+}
+
+.ctd-root .chain-prop-text-btn:hover {
+  color: #64748b;
+}
+
+.ctd-root .chain-prop-text-btn .chain-node-label {
+  margin-top: 0;
+}
+
+.ctd-root .chain-prop-text-btn-alert {
+  color: #d97706;
+}
+
+.ctd-root .chain-prop-text-btn-alert:hover {
+  color: #92400e;
+}
+
+.ctd-root .chain-prop-text-btn .chain-alert-icon {
+  color: #d97706;
+}
+
+.ctd-root .chain-prop-inline-content {
+  margin-top: 2px;
+  padding: 4px 0;
+}
+
+.ctd-root .chain-prop-inline-content .chain-prop-wide-value {
+  font-size: 13px;
+  color: #1e293b;
+  line-height: 1.5;
+}
+
+.ctd-root .chain-prop-inline-content .chain-node-value {
+  font-size: 13px;
+}
+
+.ctd-root .chain-prop-inline-content .chain-node-value.amber {
+  color: #b45309;
+}
+
+.ctd-root .chain-prop-inline-content .chain-alert-inline {
+  font-size: 12px;
+  color: #92400e;
+  line-height: 1.5;
 }
 
 /* ── Docs Extractions Tab Bar ── */
