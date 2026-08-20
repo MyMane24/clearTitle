@@ -20,5 +20,10 @@ data/
 # Scratch directory
 scratch/
 
+# Docs & IDE
+docs/
+.vscode/
+*.local
+
 # Docker — do NOT ignore .env.example (it is safe to commit)
 docker-compose.override.yml
