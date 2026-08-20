@@ -7,7 +7,7 @@ interface LiveVerificationSectionProps {
 
 export const LiveVerificationSection: React.FC<LiveVerificationSectionProps> = ({ onStartAudit }) => {
   return (
-    <section id="live-verification" className="relative py-24 px-6 bg-[#FAF9F6] text-slate-900 overflow-hidden">
+    <section id="live-verification" className="relative py-14 sm:py-24 px-4 sm:px-6 bg-[#FAF9F6] text-slate-900 overflow-hidden">
       <div className="absolute inset-0 bg-dot-pattern opacity-60 pointer-events-none" />
       <div className="absolute top-1/4 -left-32 w-96 h-96 bg-orange-400/10 rounded-full blur-[110px] pointer-events-none" />
       <div className="absolute bottom-10 -right-32 w-96 h-96 bg-amber-300/10 rounded-full blur-[110px] pointer-events-none" />
@@ -19,7 +19,7 @@ export const LiveVerificationSection: React.FC<LiveVerificationSectionProps> = (
             LIVE TITLE VERIFICATION
           </div>
 
-          <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-950 leading-tight whitespace-nowrap">
+          <h2 className="text-2xl sm:text-3xl md:text-5xl font-extrabold tracking-tight text-slate-950 leading-tight">
             See the verification engine in action.
           </h2>
 
