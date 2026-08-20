@@ -6,9 +6,8 @@ import {
   StatusResponse, TitleChainEntry, VerificationItem, getToken, setToken,
 } from '../api/backend';
 import { DocSummary } from './utils';
-import clearTitleLogo from '../assets/clearTitle.png';
 import {
-  AlertTriangle, BarChart3, Bell, Bot, Check, CheckCircle2,
+  AlertTriangle, BarChart3, Bell, Check, CheckCircle2,
   ChevronDown, ChevronUp, FileCheck2, FileText, FileUp,
   GitMerge, Lock, LogIn, LogOut, MapPin, Menu, MinusCircle,
   Play, Plus, RefreshCw, ScanText, ShieldCheck, Sparkles,
@@ -303,29 +302,14 @@ function ChainTimeline({ chain, status }: {
                   </div>
                 </div>
 
-                {(schedule || e.portion) && (
-                  <div className="chain-prop-band">
-                    {schedule && (
-                      <div className={scheduleLong ? 'chain-prop-band-wide' : undefined}>
-                        <span className="chain-node-label">SCHEDULE PROPERTY</span>
-                        <p className="chain-prop-wide-value">{schedule}</p>
-                      </div>
-                    )}
-                    {e.portion && (
-                      <div className={portionLong ? 'chain-prop-band-wide' : undefined}>
-                        <span className="chain-node-label">CONVEYED PORTION</span>
-                        <p className="chain-node-value amber">{e.portion}</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {isAdvisory && e.explanation && (
-                  <div className="chain-alert">
-                    <AlertTriangle size={20} className="chain-alert-icon" />
-                    <span><strong>Title Exposure Identified:</strong> {e.explanation}</span>
-                  </div>
-                )}
+                <ChainPropertyDropdown
+                  schedule={schedule}
+                  scheduleLong={scheduleLong}
+                  portion={e.portion || null}
+                  portionLong={portionLong}
+                  isAdvisory={isAdvisory}
+                  explanation={e.explanation || null}
+                />
               </div>
             </div>
           );
@@ -590,6 +574,64 @@ function SummaryReveal({ text }: { text: string }) {
         </div>
       )}
     </>
+  );
+}
+
+function ChainPropertyDropdown({ schedule, scheduleLong, portion, portionLong, isAdvisory, explanation }: {
+  schedule: string | null;
+  scheduleLong: boolean;
+  portion: string | null;
+  portionLong: boolean;
+  isAdvisory: boolean;
+  explanation: string | null;
+}) {
+  const [openField, setOpenField] = useState<string | null>(null);
+  const hasSchedule = !!schedule;
+  const hasPortion = !!portion;
+  const hasAdvisory = isAdvisory && !!explanation;
+  if (!hasSchedule && !hasPortion && !hasAdvisory) return null;
+
+  const toggle = (field: string) => setOpenField(prev => prev === field ? null : field);
+
+  return (
+    <div className="chain-prop-inline">
+      <div className="chain-prop-labels-row">
+        {hasSchedule && (
+          <button className="chain-prop-text-btn" onClick={() => toggle('schedule')}>
+            <span className="chain-node-label">SCHEDULE PROPERTY</span>
+            {openField === 'schedule' ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+          </button>
+        )}
+        {hasPortion && (
+          <button className="chain-prop-text-btn" onClick={() => toggle('portion')}>
+            <span className="chain-node-label">CONVEYED PORTION</span>
+            {openField === 'portion' ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+          </button>
+        )}
+        {hasAdvisory && (
+          <button className="chain-prop-text-btn chain-prop-text-btn-alert" onClick={() => toggle('advisory')}>
+            <AlertTriangle size={12} className="chain-alert-icon" />
+            <span className="chain-node-label">TITLE EXPOSURE IDENTIFIED</span>
+            {openField === 'advisory' ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+          </button>
+        )}
+      </div>
+      {openField === 'schedule' && schedule && (
+        <div className="chain-prop-inline-content">
+          <p className={scheduleLong ? 'chain-prop-wide-value' : 'chain-node-value'}>{schedule}</p>
+        </div>
+      )}
+      {openField === 'portion' && portion && (
+        <div className="chain-prop-inline-content">
+          <p className="chain-node-value amber">{portion}</p>
+        </div>
+      )}
+      {openField === 'advisory' && explanation && (
+        <div className="chain-prop-inline-content">
+          <p className="chain-alert-inline">{explanation}</p>
+        </div>
+      )}
+    </div>
   );
 }
 

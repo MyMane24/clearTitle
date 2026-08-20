@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { FAQ_ITEMS } from '../data/landingData';
-import { ChevronDown, HelpCircle } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 
 export const FaqSection: React.FC = () => {
   const [openIdx, setOpenIdx] = useState<number | null>(0);

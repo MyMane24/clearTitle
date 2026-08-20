@@ -40,34 +40,6 @@ export interface PropertyAuditResult {
   blockchainCertificate: BlockchainCertificate;
 }
 
-export interface PricingPlan {
-  id: string;
-  name: string;
-  badge?: string;
-  price: string;
-  unit: string;
-  description: string;
-  features: string[];
-  cta: string;
-  isPopular?: boolean;
-}
-
-export interface MarketSegment {
-  id: string;
-  number: string;
-  title: string;
-  subtitle: string;
-  audience: string;
-}
-
-export interface CompetitorItem {
-  name: string;
-  x: number; // 0 to 100 (Slow to Fast)
-  y: number; // 0 to 100 (Basic to Full Title)
-  isClearTitle?: boolean;
-  category: string;
-}
-
 export interface FaqItem {
   question: string;
   answer: string;
