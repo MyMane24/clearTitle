@@ -3901,7 +3901,7 @@
   max-width: 56rem;
   width: 100%;
   margin: 0 auto;
-  padding: 32px 24px;
+  padding: 8px 24px 32px 24px;
   box-sizing: border-box;
 }
 
@@ -4562,4 +4562,361 @@
 .ctd-root .btn-secondary:hover {
   background: #161616;
   color: #FFFFFF;
+}
+
+.ctd-root .report-nav-bar {
+  position: relative;
+  top: 0;
+  z-index: 10;
+  width: 100%;
+  margin: 0 0 20px 0;
+  padding: 0;
+  background: transparent;
+  border-bottom: none;
+}
+
+/* ── Mobile & Responsive Overrides (Screen Width <= 768px and <= 480px) ── */
+@media (max-width: 768px) {
+  /* 1. Dashboard Top Navigation Bar */
+  .ctd-root .header {
+    padding: 10px 14px;
+    gap: 10px;
+    justify-content: space-between;
+  }
+
+  .ctd-root .ct-brand {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .ctd-root .ct-brand-title {
+    font-size: 20px;
+  }
+
+  .ctd-root .ct-brand-subtitle {
+    display: none;
+  }
+
+  .ctd-root .ct-actions {
+    gap: 10px;
+  }
+
+  .ctd-root .ct-btn-new-case {
+    padding: 8px 14px;
+    font-size: 13px;
+    gap: 4px;
+  }
+
+  .ctd-root .report-nav-bar {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    background: transparent;
+    border-bottom: 1px solid #e7e5e4;
+    margin-bottom: 12px;
+    padding: 0;
+  }
+
+  .ctd-root .report-nav-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .ctd-root .report-nav-container {
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    gap: 20px;
+    padding: 0 4px;
+    width: max-content;
+    min-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .ctd-root .report-tab-btn {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 0;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    box-shadow: none;
+    color: #6b7280;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    flex-shrink: 0;
+    cursor: pointer;
+    text-transform: uppercase;
+  }
+
+  .ctd-root .report-tab-btn:hover {
+    color: #292524;
+    border-bottom-color: #d6d3d1;
+  }
+
+  .ctd-root .report-tab-btn.active {
+    color: #292524;
+    font-weight: 700;
+    border-bottom-color: #ea580c;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .ctd-root .report-tab-btn span {
+    font-size: 11px;
+    line-height: 1;
+  }
+
+  .ctd-root .tab-badge-complete {
+    font-size: 8px;
+    background: #d1fae5;
+    color: #059669;
+    padding: 2px 6px;
+    border-radius: 999px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    margin-left: 4px;
+    margin-top: 0;
+  }
+
+  /* 4. Verification Report Display */
+  .ctd-root .report-main-wrap {
+    padding: 2px 4px 24px 4px;
+  }
+
+  .ctd-root .ct-avatar {
+    width: 34px;
+    height: 34px;
+    font-size: 12px;
+  }
+
+  .ctd-root .profile-menu {
+    right: -10px;
+    width: 240px;
+    max-width: calc(100vw - 24px);
+  }
+
+  /* 2. Sidebar Drawer on Mobile */
+  .ctd-root .app-layout {
+    position: relative;
+    flex-direction: column;
+  }
+
+  .ctd-root .sidebar {
+    position: fixed;
+    top: 56px;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    z-index: 1200;
+    box-shadow: 8px 0 32px rgba(0, 0, 0, 0.18);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    transform: translateX(0);
+  }
+
+  .ctd-root .sidebar.collapsed {
+    transform: translateX(-100%);
+    display: block !important;
+  }
+
+  .ctd-root .main-content {
+    padding: 6px 12px 24px 12px;
+  }
+
+  /* 3. Dashboard Report Section Navigation Bar (3 buttons) */
+  .ctd-root .report-nav-bar {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    background: transparent;
+    border-bottom: 1px solid #e7e5e4;
+    margin-bottom: 12px;
+    padding: 0;
+  }
+
+  /* Verdict Banner */
+  .ctd-root .verdict-banner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+    padding-bottom: 16px;
+    margin-bottom: 24px;
+  }
+
+  .ctd-root .verdict-title-text {
+    font-size: clamp(28px, 8vw, 42px);
+    word-break: break-word;
+  }
+
+  .ctd-root .verdict-banner > div:last-child {
+    text-align: left !important;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+
+  .ctd-root .checks-cleared-val {
+    font-size: 28px;
+  }
+
+  /* Pipeline Container & Nodes */
+  .ctd-root .pipeline-container {
+    margin-bottom: 24px;
+  }
+
+  .ctd-root .pipeline-line {
+    left: 15px;
+    top: 44px;
+  }
+
+  .ctd-root .pipeline-node {
+    gap: 12px;
+    padding: 10px 0;
+  }
+
+  .ctd-root .pipeline-dot {
+    width: 32px;
+    height: 32px;
+    font-size: 12px;
+    box-shadow: 0 0 0 4px #FAF9F6;
+  }
+
+  .ctd-root .pipeline-node-title {
+    font-size: 14px;
+  }
+
+  .ctd-root .pipeline-node-desc {
+    font-size: 11px;
+  }
+
+  .ctd-root .trace-comparison-box {
+    padding: 10px 12px;
+    margin-top: 8px;
+  }
+
+  .ctd-root .trace-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    margin-bottom: 8px;
+  }
+
+  .ctd-root .trace-label {
+    font-size: 9px;
+  }
+
+  .ctd-root .trace-value {
+    font-size: 11px;
+  }
+
+  /* Summary Box */
+  .ctd-root .summary-box {
+    padding-top: 16px;
+  }
+
+  .ctd-root .summary-grid {
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  /* Title Chain Tab */
+  .ctd-root .chain-page-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .ctd-root .chain-page-title {
+    font-size: 24px;
+  }
+
+  .ctd-root .chain-page-sub {
+    font-size: 12px;
+  }
+
+  /* Docs Extractions Tab */
+  .ctd-root .doc-sub-tabs {
+    padding-bottom: 4px;
+  }
+
+  .ctd-root .doc-sub-tab {
+    padding: 10px 12px;
+    font-size: 11px;
+    gap: 6px;
+  }
+
+  .ctd-root .ds-party-grid,
+  .ctd-root .ds-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px;
+  }
+
+  .ctd-root .ds-tile {
+    padding: 10px;
+  }
+
+  /* Upload View Card */
+  .ctd-root .upload-card-full {
+    padding: 18px 14px;
+    border-radius: 14px;
+  }
+
+  .ctd-root .upload-main-title {
+    font-size: 24px;
+  }
+
+  .ctd-root .upload-slot {
+    padding: 14px 12px;
+  }
+
+  .ctd-root .upload-slot-zone {
+    padding: 14px 10px;
+    font-size: 13px;
+  }
+
+  .ctd-root .btn-row {
+    flex-direction: column-reverse;
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  .ctd-root .btn-row .btn {
+    width: 100%;
+    text-align: center;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .ctd-root .header {
+    padding: 8px 10px;
+  }
+
+  .ctd-root .ct-brand-title {
+    font-size: 18px;
+  }
+
+  .ctd-root .ct-btn-new-case span {
+    display: none;
+  }
+
+  .ctd-root .ct-btn-new-case {
+    padding: 8px 10px;
+    border-radius: 50%;
+  }
+
+  .ctd-root .verdict-title-text {
+    font-size: 28px;
+  }
+
+  .ctd-root .report-tab-btn {
+    padding: 8px 6px;
+    font-size: 10px;
+  }
 }

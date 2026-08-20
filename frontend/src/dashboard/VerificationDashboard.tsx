@@ -1355,7 +1355,10 @@ const titleChainStatus = results?.title_chain?.status;
                 <div
                   key={c.id}
                   className={`sidebar-item${c.id === activeCaseId ? ' active' : ''}`}
-                  onClick={() => loadResultsFor(c.id)}
+                  onClick={() => {
+                    loadResultsFor(c.id);
+                    if (window.innerWidth <= 800) setSidebarCollapsed(true);
+                  }}
                 >
                   <div className="sidebar-item-header">
                     <span className="case-id">{c.id}</span>
@@ -1381,37 +1384,6 @@ const titleChainStatus = results?.title_chain?.status;
         <div className="main-content" onClick={() => {
           if (window.innerWidth <= 800 && !sidebarCollapsed) setSidebarCollapsed(true);
         }}>
-          {/* Report Section Navigation */}
-          {view === 'results' && auth && (
-            <div className="report-nav-bar">
-              <div className="report-nav-container">
-                <button
-                  className={`report-tab-btn ${activeReportTab === 'verification' ? 'active' : ''}`}
-                  onClick={() => setActiveReportTab('verification')}
-                >
-                  <FileCheck2 size={16} style={{ color: activeReportTab === 'verification' ? '#ea580c' : '#6b7280' }} />
-                  <span>VERIFICATION REPORT</span>
-                  <span className="tab-badge-complete">COMPLETE</span>
-                </button>
-
-                <button
-                  className={`report-tab-btn ${activeReportTab === 'title-chain' ? 'active' : ''}`}
-                  onClick={() => setActiveReportTab('title-chain')}
-                >
-                  <GitMerge size={16} style={{ color: activeReportTab === 'title-chain' ? '#ea580c' : '#6b7280' }} />
-                  <span>TITLE CHAIN</span>
-                </button>
-
-                <button
-                  className={`report-tab-btn ${activeReportTab === 'docs' ? 'active' : ''}`}
-                  onClick={() => setActiveReportTab('docs')}
-                >
-                  <ScanText size={16} style={{ color: activeReportTab === 'docs' ? '#ea580c' : '#6b7280' }} />
-                  <span>DOCS EXTRACTIONS</span>
-                </button>
-              </div>
-            </div>
-          )}
           {view === 'upload' && (
             <div className="card upload-card-full">
               <div className="upload-header-meta">
@@ -1512,6 +1484,35 @@ const titleChainStatus = results?.title_chain?.status;
 
           {view === 'results' && results && (
             <div className="report-main-wrap">
+              {auth && (
+                <div className="report-nav-bar">
+                  <div className="report-nav-container">
+                    <button
+                      className={`report-tab-btn ${activeReportTab === 'verification' ? 'active' : ''}`}
+                      onClick={() => setActiveReportTab('verification')}
+                    >
+                      <FileCheck2 size={16} style={{ color: activeReportTab === 'verification' ? '#ea580c' : '#6b7280' }} />
+                      <span>VERIFICATION REPORT</span>
+                    </button>
+
+                    <button
+                      className={`report-tab-btn ${activeReportTab === 'title-chain' ? 'active' : ''}`}
+                      onClick={() => setActiveReportTab('title-chain')}
+                    >
+                      <GitMerge size={16} style={{ color: activeReportTab === 'title-chain' ? '#ea580c' : '#6b7280' }} />
+                      <span>TITLE CHAIN</span>
+                    </button>
+
+                    <button
+                      className={`report-tab-btn ${activeReportTab === 'docs' ? 'active' : ''}`}
+                      onClick={() => setActiveReportTab('docs')}
+                    >
+                      <ScanText size={16} style={{ color: activeReportTab === 'docs' ? '#ea580c' : '#6b7280' }} />
+                      <span>DOCS EXTRACTIONS</span>
+                    </button>
+                  </div>
+                </div>
+              )}
               {!auth ? (
                 <GuestReportPreview
                   results={results}
