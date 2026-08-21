@@ -366,8 +366,11 @@ def build_title_chain(case_id: str) -> dict:
     for item in raw_entries:
         if not isinstance(item, dict):
             continue
+        tx_idx = item.get("transaction_index")
+        if tx_idx is None:
+            continue
         try:
-            idx = int(item.get("transaction_index"))
+            idx = int(tx_idx)
         except (TypeError, ValueError):
             continue
         role = str(item.get("chain_role", "")).upper()

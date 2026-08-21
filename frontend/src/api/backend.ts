@@ -111,6 +111,7 @@ export interface CaseResults {
   title_chain: {
     status?: string;
     chain: TitleChainEntry[];
+    title_story?: string | null;
     model_used?: string;
     updated_at?: string;
     source?: {
