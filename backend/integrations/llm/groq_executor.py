@@ -21,8 +21,8 @@ from backend.logger import get_logger
 logger = get_logger(__name__)
 
 GROQ_MODELS = [
-    "llama-3.3-70b-versatile",
-    "gemma2-9b-it",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
 ]
 
 # Import shared schemas
@@ -123,7 +123,11 @@ def structure_document(merged_ocr: dict, doc_type: str,
             usage = resp.usage
             input_tokens = usage.prompt_tokens if usage else len(system_msg + user_prompt) // 4
             output_tokens = usage.completion_tokens if usage else len(raw) // 4
-            cost_usd = (input_tokens / 1_000_000 * 0.59) + (output_tokens / 1_000_000 * 0.79)
+            # gpt-oss-120b: $0.15/$0.60, gpt-oss-20b: $0.075/$0.30 per 1M tokens
+            if "gpt-oss-120b" in model:
+                cost_usd = (input_tokens / 1_000_000 * 0.15) + (output_tokens / 1_000_000 * 0.60)
+            else:
+                cost_usd = (input_tokens / 1_000_000 * 0.075) + (output_tokens / 1_000_000 * 0.30)
 
             analytics = {
                 "model": model,

@@ -82,7 +82,7 @@ def structure_document(merged: dict, doc_type: str) -> dict:
                 if provider == "groq":
                     return structure_document_with_groq(
                         merged, doc_type,
-                        model_override=model if model != "llama-3.1-8b-instant" else None,
+                        model_override=model,
                         retry_count=attempt - 1,
                     )
                 else:
