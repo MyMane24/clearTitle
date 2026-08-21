@@ -192,9 +192,10 @@ function fmtChainDate(value?: string | null): string {
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-function ChainTimeline({ chain, status }: {
+function ChainTimeline({ chain, status, titleStory }: {
   chain: TitleChainEntry[];
   status?: string;
+  titleStory?: string;
 }) {
   if (status === 'no_transactions') {
     return (
@@ -204,7 +205,11 @@ function ChainTimeline({ chain, status }: {
     );
   }
   if (!chain || chain.length === 0) {
-    return <div className="vr-sheet-empty">No title chain entries yet. Title chain is built once all documents are structured.</div>;
+    return (
+      <div className="vr-sheet-empty warn">
+        {titleStory || 'No title chain entries yet. Title chain is built once all documents are structured.'}
+      </div>
+    );
   }
 
   const sorted = sortChain(chain);
@@ -1272,6 +1277,7 @@ export function VerificationDashboard() {
 const chain = results?.title_chain?.chain || [];
 const sortedChain = sortChain(chain);
 const titleChainStatus = results?.title_chain?.status;
+const titleStory = results?.title_chain?.title_story || results?.title_chain?.source?.title_story || '';
   const verification = results?.verification || null;
   const caseInfo = results?.case;
   const allComplete = caseInfo ? COMPLETE_STATUSES.includes(caseInfo.status) : false;
@@ -1660,7 +1666,7 @@ const titleChainStatus = results?.title_chain?.status;
                   </div>
 
                   {/* Connected Chronological Chain Nodes */}
-                  <ChainTimeline chain={chain} status={titleChainStatus} />
+                  <ChainTimeline chain={chain} status={titleChainStatus} titleStory={titleStory} />
                 </div>
               )}
 

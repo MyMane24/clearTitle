@@ -51,6 +51,11 @@ NO_EC_TRANSACTIONS_MESSAGE = (
     "Please upload a valid EC."
 )
 
+NO_MATCHING_PROPERTY_MESSAGE = (
+    "No transactions registered related to this property details in the "
+    "Encumbrance Certificate. The EC may belong to a different property."
+)
+
 CHAIN_ROLES = {
     "THE_SD",
     "PREDECESSOR_TITLE",
@@ -321,6 +326,13 @@ def build_title_chain(case_id: str) -> dict:
         "- explanation: 1-2 plain sentences a layperson understands — who owned "
         "what share, who it was sold to, and how it relates to the share the SD "
         "conveys.\n\n"
+        "CRITICAL RULE — NO MATCHING PROPERTY:\n"
+        "If NO EC entries match the Sale Deed property (the survey/plot/CTS "
+        "numbers and locality are completely different between the SD and ALL "
+        "EC entries), return an EMPTY \"transactions\" array []. Do NOT force "
+        "a match. Set \"title_story\" to: \"No transactions registered related "
+        "to this property details in the Encumbrance Certificate. The EC may "
+        "belong to a different property.\"\n\n"
         "EXCLUDE entries on other properties (different survey number and "
         "locality) — the LLM must not return them. INCLUDE the SD's own entry "
         "with chain_role THE_SD.\n\n"
@@ -381,6 +393,32 @@ def build_title_chain(case_id: str) -> dict:
     matched_indexes.update(idx for idx, meta in enrichment.items() if meta["chain_role"] != "UNRELATED")
 
     matched_entries = [e for e in indexed_entries if e.get("_idx") in matched_indexes]
+
+    if not matched_entries and not raw_entries:
+        title_story = result.get("title_story") or NO_MATCHING_PROPERTY_MESSAGE
+        save_title_chain(
+            case_id=case_id, status="complete", chain=[],
+            source={
+                "sale_deed_doc_id": sale_deed["doc_id"], "ec_doc_id": ec["doc_id"],
+                "sd_property": result.get("sd_property") or sd_identity,
+                "title_story": title_story,
+                "message": NO_MATCHING_PROPERTY_MESSAGE,
+            },
+            sale_deed_doc_id=sale_deed["doc_id"], ec_doc_id=ec["doc_id"],
+            input_tokens=analytics.get("input_tokens", 0),
+            output_tokens=analytics.get("output_tokens", 0),
+            latency_ms=analytics.get("latency_ms", 0),
+            cost_usd=analytics.get("cost_usd", 0),
+            model_used=analytics.get("model", GEMINI_MODEL),
+        )
+        return {
+            "case_id": case_id,
+            "status": "complete",
+            "chain": [],
+            "sd_property": result.get("sd_property") or sd_identity,
+            "title_story": title_story,
+        }
+
     if not matched_entries:
         matched_entries = list(indexed_entries)
 
