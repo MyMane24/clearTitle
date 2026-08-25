@@ -1641,7 +1641,7 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
           )}
 
           {view === 'processing' && (
-            <div className="card">
+            <div className="card plain">
               <AIPipeline statusData={statusData || { status: 'processing', files: files.map((f, i) => ({ doc_id: `DOC_${String(i+1).padStart(3,'0')}`, original_name: f.file.name, status: 'uploaded', document_type: '' })) }} />
             </div>
           )}
