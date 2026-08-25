@@ -8,6 +8,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 
 from backend.celery_app import celery_app
 from backend.config import PIPELINE_LOCK_ENABLED
@@ -31,7 +32,6 @@ from backend.database.repositories.document_repo import (
 from backend.integrations.redis.state_store import (
     add_files_to_case,
     append_log,
-    flush_all_cases,
     get_case_job,
     reset_for_retry,
     set_case_status,
@@ -450,34 +450,21 @@ async def skip_document_endpoint(
     return {"case_id": case_id, "doc_id": doc_id, "status": "skipped"}
 
 
-@router.post("/clear")
-async def clear_all_data():
-    """Flush Redis, stop active Celery tasks, and purge Celery queue."""
-    revoked_count = 0
-    try:
-        inspect = celery_app.control.inspect()
-        active = inspect.active()
-        if active:
-            for worker, tasks in active.items():
-                for task in tasks:
-                    task_id = task.get("id")
-                    if task_id:
-                        celery_app.control.revoke(task_id, terminate=True)
-                        revoked_count += 1
-    except Exception as e:
-        logger.warning("Failed to revoke active Celery tasks: %s", e)
-
-    redis_deleted = flush_all_cases()
-
-    try:
-        purged = celery_app.control.purge()
-    except Exception as e:
-        logger.warning("Failed to purge Celery queue: %s", e)
-        purged = 0
-
-    return {
-        "redis_keys_deleted": redis_deleted,
-        "celery_tasks_purged": purged,
-        "celery_tasks_revoked": revoked_count,
-        "message": "Redis state cleared and active/pending Celery tasks revoked successfully.",
-    }
+@router.get("/case/{case_id}/doc/{doc_id}/pdf")
+async def get_doc_pdf(case_id: str, doc_id: str, user: dict | None = Depends(get_optional_user)):
+    """Serve the original uploaded PDF for a document."""
+    _enforce_access(case_id, user)
+    from backend.database.repositories.document_repo import get_case_documents
+    docs = get_case_documents(case_id)
+    doc = next((d for d in docs if d["doc_id"] == doc_id), None)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    paths = doc.get("file_paths") or {}
+    raw_path = paths.get("raw")
+    if not raw_path:
+        raise HTTPException(status_code=404, detail="PDF file not found")
+    from pathlib import Path
+    pdf = Path(raw_path)
+    if not pdf.is_file():
+        raise HTTPException(status_code=404, detail="PDF file missing on disk")
+    return FileResponse(str(pdf), media_type="application/pdf", filename=doc.get("filename", f"{doc_id}.pdf"))

@@ -43,13 +43,15 @@ export interface StatusResponse {
   progress?: number;
   completed_docs?: number;
   total_docs?: number;
+  failed_docs?: number;
   verification_status?: string | null;
   verdict?: string | null;
+  title_chain_status?: string | null;
   log?: string[];
   results?: any[];
   errors?: any[];
   needs_action?: any[];
-  files?: any[];
+  files?: { doc_id: string; original_name: string; status: string; document_type: string }[];
 }
 
 export interface CaseListItem {
@@ -214,10 +216,6 @@ export const API = {
 
   async retry(caseId: string) {
     return request(`/api/retry/${caseId}`, { method: "POST" });
-  },
-
-  async clearAll() {
-    return request("/api/clear", { method: "POST" });
   },
 
   async skipDoc(caseId: string, docId: string) {

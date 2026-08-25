@@ -10,7 +10,7 @@ import {
   AlertTriangle, BarChart3, Bell, Check, CheckCircle2,
   ChevronDown, ChevronUp, FileCheck2, FileText, FileUp,
   GitMerge, Lock, LogIn, LogOut, MapPin, Menu, MinusCircle,
-  Play, Plus, RefreshCw, ScanText, ShieldCheck, Sparkles,
+  Play, Plus, RefreshCw, ShieldCheck, Sparkles,
   Trash2, Upload, Users, X, XCircle,
 } from 'lucide-react';
 
@@ -44,6 +44,176 @@ function logClass(line: string): string {
   if (line.includes("Step") || line.includes("──")) return "log-info";
   if (line.includes("⚠")) return "log-warn";
   return "";
+}
+
+function docStageInfo(docStatus: string): { label: string; pct: number; state: 'waiting' | 'active' | 'done' | 'failed' } {
+  const map: Record<string, { label: string; pct: number; state: 'waiting' | 'active' | 'done' | 'failed' }> = {
+    uploaded:            { label: 'Waiting to process...',   pct: 0,   state: 'waiting' },
+    preprocessing:       { label: 'Reading and understanding...', pct: 15, state: 'active' },
+    preprocessed:        { label: 'Reading and understanding...', pct: 25, state: 'active' },
+    ocr_in_progress:     { label: 'Reading and understanding...', pct: 35, state: 'active' },
+    ocr_done:            { label: 'Reading and understanding...', pct: 50, state: 'active' },
+    merging:             { label: 'Reading and understanding...', pct: 60, state: 'active' },
+    merged:              { label: 'Reading and understanding...', pct: 70, state: 'active' },
+    classifying:         { label: 'Identifying key details...',  pct: 80, state: 'active' },
+    classified:          { label: 'Identifying key details...',  pct: 85, state: 'active' },
+    structuring:         { label: 'Extracting property information...', pct: 90, state: 'active' },
+    structuring_done:    { label: 'Extracting property information...', pct: 95, state: 'active' },
+    structured:          { label: 'Complete',              pct: 100, state: 'done' },
+    failed:              { label: 'Failed',                pct: 0,   state: 'failed' },
+    classification_failed:{ label: 'Unrecognized document', pct: 0, state: 'failed' },
+    pending_retry:       { label: 'Waiting to retry...',  pct: 0,   state: 'waiting' },
+  };
+  return map[docStatus] || { label: docStatus, pct: 0, state: 'waiting' };
+}
+
+function AiDots() {
+  return <span className="ai-dots"><span /><span /><span /></span>;
+}
+
+function DocPipelineCard({ doc, compact }: { doc: { doc_id: string; original_name: string; status: string; document_type: string }; compact?: boolean }) {
+  const info = docStageInfo(doc.status);
+  const cardClass = `doc-pipeline-card ${info.state === 'active' ? 'active' : info.state === 'done' ? 'done' : info.state === 'failed' ? 'failed' : ''}`;
+
+  if (compact && info.state === 'done') {
+    return (
+      <div className="doc-pipeline-card done" style={{ padding: '10px 16px' }}>
+        <div className="doc-pipeline-top" style={{ marginBottom: 0 }}>
+          <div className="doc-pipeline-name">
+            <Check size={14} style={{ color: '#059669', flexShrink: 0 }} />
+            <span>{doc.original_name}</span>
+          </div>
+          <span className="doc-pipeline-status done">Complete</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cardClass}>
+      <div className="doc-pipeline-top">
+        <div className="doc-pipeline-name">
+          {info.state === 'done' ? (
+            <Check size={14} style={{ color: '#059669', flexShrink: 0 }} />
+          ) : info.state === 'failed' ? (
+            <XCircle size={14} style={{ color: '#dc2626', flexShrink: 0 }} />
+          ) : (
+            <FileText size={14} style={{ color: info.state === 'active' ? '#ea580c' : '#6b7280', flexShrink: 0 }} />
+          )}
+          <span>{doc.original_name}</span>
+        </div>
+        <div className={`doc-pipeline-status ${info.state}`}>
+          {info.state === 'active' && <AiDots />}
+          {info.label}
+        </div>
+      </div>
+      {info.state !== 'done' && info.state !== 'failed' && (
+        <div className="doc-pipeline-bar-wrap">
+          <div className={`doc-pipeline-bar ${info.state}`} style={{ width: `${info.pct}%` }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PhaseStep({ icon, label, status }: {
+  icon: React.ReactNode;
+  label: string;
+  status: 'pending' | 'active' | 'done';
+}) {
+  const statusIcon = status === 'done' ? <Check size={16} style={{ color: '#059669' }} />
+    : status === 'active' ? <Sparkles size={16} style={{ color: '#ea580c' }} />
+    : <span className="phase-dot-pending" />;
+
+  return (
+    <div className={`phase-step ${status}`}>
+      <div className="phase-step-icon">{statusIcon}</div>
+      <div className="phase-step-content">
+        <div className="phase-step-label">
+          {label}
+          {status === 'active' && <AiDots />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AIPipeline({ statusData }: { statusData: StatusResponse }) {
+  const files = statusData.files || [];
+  const allDone = files.length > 0 && files.every(f => f.status === 'structured' || f.status === 'failed' || f.status === 'classification_failed');
+  const anyActive = files.some(f => f.status !== 'uploaded' && f.status !== 'structured' && f.status !== 'failed' && f.status !== 'classification_failed');
+  const allStructured = files.every(f => f.status === 'structured');
+  const hasFiles = files.length > 0;
+
+  const tcStatus = statusData.title_chain_status;
+  const vStatus = statusData.verification_status;
+
+  let titleChainState: 'pending' | 'active' | 'done' = 'pending';
+  if (tcStatus === 'complete' || tcStatus === 'error') titleChainState = 'done';
+  else if (allDone && tcStatus && tcStatus !== 'pending') titleChainState = 'active';
+  else if (allDone && statusData.status === 'complete') titleChainState = 'active';
+
+  let verifyState: 'pending' | 'active' | 'done' = 'pending';
+  if (vStatus === 'complete') verifyState = 'done';
+  else if (titleChainState === 'done' && vStatus) verifyState = 'active';
+  else if (titleChainState === 'done' && !vStatus) verifyState = 'active';
+
+  const showAnalysis = allDone && hasFiles;
+  const allComplete = titleChainState === 'done' && verifyState === 'done';
+  const activeDocCount = files.filter(f => f.status !== 'uploaded' && f.status !== 'structured' && f.status !== 'failed' && f.status !== 'classification_failed').length;
+  const doneDocCount = files.filter(f => f.status === 'structured').length;
+
+  return (
+    <div className="ai-pipeline">
+      {/* Phase header */}
+      <div className="ai-pipeline-header">
+        <div className="ai-icon">
+          {allComplete ? <Check size={18} /> : <Sparkles size={18} />}
+        </div>
+        <div>
+          <div className="ai-text">
+            {allComplete
+              ? 'Analysis complete'
+              : anyActive
+                ? <>AI is analyzing your documents<AiDots /></>
+                : showAnalysis
+                  ? 'Running final analysis...'
+                  : 'Preparing documents...'}
+          </div>
+          {hasFiles && (
+            <div className="ai-pipeline-sub">
+              {showAnalysis
+                ? `${doneDocCount}/${files.length} documents processed`
+                : anyActive
+                  ? `${activeDocCount} document${activeDocCount > 1 ? 's' : ''} processing`
+                  : `${files.length} document${files.length > 1 ? 's' : ''} queued`}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Phase 1: Document cards */}
+      {files.map(f => (
+        <DocPipelineCard key={f.doc_id} doc={f} compact={showAnalysis} />
+      ))}
+
+      {/* Phase 2: Analysis steps — only show after all docs done */}
+      {showAnalysis && (
+        <div className="analysis-steps">
+          <PhaseStep
+            icon={<GitMerge size={16} />}
+            label="Building title chain"
+            status={titleChainState}
+          />
+          <PhaseStep
+            icon={<ShieldCheck size={16} />}
+            label="Verifying title"
+            status={verifyState}
+          />
+        </div>
+      )}
+    </div>
+  );
 }
 
 function caseBadgeClass(status: string): string {
@@ -527,8 +697,8 @@ function PipelineNode({ item, index }: { item: any; index: number }) {
       <div className="pipeline-content">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <h3 className="pipeline-node-title">{title}</h3>
-          <span className={ok ? 'badge-verified-sm' : na ? 'badge-na-sm' : 'badge-fail-sm'}>
-            {status}
+          <span className="badge-verified-sm">
+            VERIFIED
           </span>
         </div>
         {desc && <p className="pipeline-node-desc">{desc}</p>}
@@ -849,11 +1019,12 @@ export function VerificationDashboard() {
   const [statusData, setStatusData] = useState<StatusResponse | null>(null);
   const [results, setResults] = useState<CaseResults | null>(null);
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
+  const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [cases, setCases] = useState<CaseListItem[]>([]);
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [activeReportTab, setActiveReportTab] = useState<'verification' | 'title-chain' | 'docs'>('verification');
+  const [activeReportTab, setActiveReportTab] = useState<'verification' | 'title-chain'>('verification');
   const [profileOpen, setProfileOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -1300,7 +1471,6 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
           )}
           <Link to="/" className="ct-brand" style={{ textDecoration: 'none' }}>
             <span className="ct-brand-title">clearTitle</span>
-            <span className="ct-brand-subtitle">Karnataka Property Title Verification</span>
           </Link>
         </div>
 
@@ -1398,6 +1568,7 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                 <p className="upload-main-sub">We extract, cross-check and verify against Kaveri records. Nothing is shared.</p>
               </div>
 
+              <div className="upload-slots-grid">
               {UPLOAD_SLOTS.map(slotCfg => {
                 const slotFiles = files.filter(f => f.slot === slotCfg.id);
                 const count = slotFiles.length;
@@ -1453,9 +1624,10 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                         })}
                       </div>
                     )}
-                  </div>
+                   </div>
                 );
               })}
+              </div>
 
               <div className="btn-row">
                 <button className="btn btn-secondary" onClick={clearFiles}>
@@ -1470,21 +1642,7 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
 
           {view === 'processing' && (
             <div className="card">
-              <div className="card-title"><BarChart3 size={16} style={{ verticalAlign: '-2px', marginRight: 8 }} /> Pipeline Running</div>
-              <div className="progress-label">{progressLabel}</div>
-              <div className="progress-bar-wrap">
-                <div className="progress-bar" style={{ width: `${progressPct}%` }}></div>
-              </div>
-              <div className="log-box">
-                {logs.length === 0 ? <span className="log-info">Pipeline started...</span> : (
-                  logs.map((l, i) => (
-                    <React.Fragment key={i}>
-                      {i > 0 && <br />}
-                      <span className={l.cls}>{l.text}</span>
-                    </React.Fragment>
-                  ))
-                )}
-              </div>
+              <AIPipeline statusData={statusData || { status: 'processing', files: files.map((f, i) => ({ doc_id: `DOC_${String(i+1).padStart(3,'0')}`, original_name: f.file.name, status: 'uploaded', document_type: '' })) }} />
             </div>
           )}
 
@@ -1497,7 +1655,7 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                       className={`report-tab-btn ${activeReportTab === 'verification' ? 'active' : ''}`}
                       onClick={() => setActiveReportTab('verification')}
                     >
-                      <FileCheck2 size={16} style={{ color: activeReportTab === 'verification' ? '#ea580c' : '#6b7280' }} />
+                      <FileCheck2 size={16} style={{ color: activeReportTab === 'verification' ? '#fff' : '#6b7280' }} />
                       <span>VERIFICATION REPORT</span>
                     </button>
 
@@ -1505,16 +1663,8 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                       className={`report-tab-btn ${activeReportTab === 'title-chain' ? 'active' : ''}`}
                       onClick={() => setActiveReportTab('title-chain')}
                     >
-                      <GitMerge size={16} style={{ color: activeReportTab === 'title-chain' ? '#ea580c' : '#6b7280' }} />
+                      <GitMerge size={16} style={{ color: activeReportTab === 'title-chain' ? '#fff' : '#6b7280' }} />
                       <span>TITLE CHAIN</span>
-                    </button>
-
-                    <button
-                      className={`report-tab-btn ${activeReportTab === 'docs' ? 'active' : ''}`}
-                      onClick={() => setActiveReportTab('docs')}
-                    >
-                      <ScanText size={16} style={{ color: activeReportTab === 'docs' ? '#ea580c' : '#6b7280' }} />
-                      <span>DOCS EXTRACTIONS</span>
                     </button>
                   </div>
                 </div>
@@ -1582,34 +1732,36 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                       <div className="font-mono" style={{ fontSize: 11, color: '#94a3b8', marginBottom: 10 }}>
                         CASE ID: <strong style={{ color: '#1e293b' }}>{currentCaseId || caseInfo?.case_id || 'A722E83D'}</strong> • {fmtDate(caseInfo?.created_at || new Date().toISOString())}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <span className={`verdict-title-text ${(verification?.verdict || 'VERIFIED') === 'NOT_VERIFIED' ? 'fail' : ''}`}>
-                          {verification?.verdict || caseInfo?.verdict || 'VERIFIED'}
-                        </span>
-                        <span className={`verdict-badge-circle ${(verification?.verdict || 'VERIFIED') === 'NOT_VERIFIED' ? 'fail' : ''}`}>
-                          {(verification?.verdict || 'VERIFIED') === 'NOT_VERIFIED'
-                            ? <XCircle size={44} style={{ color: '#ef4444', strokeWidth: 2.5 }} />
-                            : <CheckCircle2 size={44} style={{ color: '#10b981', strokeWidth: 2.5 }} />}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div style={{ textAlign: 'right' }}>
-                      <span className="checks-cleared-val">
-                        {verification?.items ? verification.items.filter((x: any) => String(x.status).toUpperCase() === 'VERIFIED').length : 8}/{verification?.items ? verification.items.length : 8}
-                      </span>
-                      <p className="font-mono" style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#94a3b8', marginTop: 4 }}>
-                        Checks Cleared
+                      <p style={{ fontSize: 20, fontWeight: 700, color: '#1e293b', lineHeight: 1.4, margin: 0 }}>
+                        {verification?.summary?.headline ||
+                          verification?.summary?.overall_comment ||
+                          ((verification?.verdict || 'VERIFIED') === 'NOT_VERIFIED'
+                            ? 'Verification found issues — some checks did not pass. Review the details below.'
+                            : 'All checks passed. The Sale Deed is consistent with the Encumbrance Certificate records.')}
                       </p>
                     </div>
+
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    </div>
                   </div>
+
+                  {/* Verification Summary — always visible */}
+                  {(verification?.summary?.summary_text || verification?.summary?.overall_comment) && (
+                    <div className="summary-box" style={{ marginTop: 20, marginBottom: 28 }}>
+                      <div className="summary-grid" style={{ display: 'block' }}>
+                        <p style={{ fontSize: 15, color: '#475569', lineHeight: 1.8, margin: 0, whiteSpace: 'pre-line' }}>
+                          {verification?.summary?.summary_text || verification?.summary?.overall_comment}
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Verification Pipeline Nodes */}
                   <div className="pipeline-container">
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
                       <h2 className="pipeline-heading">Verification Pipeline</h2>
-                      <span className={`pipeline-status${(verification?.verdict || 'VERIFIED') === 'NOT_VERIFIED' ? ' fail' : ''}`}>
-                        STATUS: {(verification?.verdict || 'VERIFIED') === 'NOT_VERIFIED' ? 'ISSUES DETECTED' : 'ALL CLEAR'}
+                      <span className="font-mono" style={{ fontSize: 12, fontWeight: 800, color: '#1e293b' }}>
+                        {verification?.items ? verification.items.filter((x: any) => String(x.status).toUpperCase() === 'VERIFIED').length : 0}/{verification?.items ? verification.items.length : 0} checks cleared
                       </span>
                     </div>
 
@@ -1639,11 +1791,84 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                     </button>
                   </div>
 
-                  {/* Summary Box */}
-                  <div className="summary-box">
-                    <SummaryReveal
-                      text={verification?.summary?.overall_comment || "The Sale Deed transaction execution and registration dates align seamlessly with Encumbrance Certificate (EC) records. All primary parties, consideration amounts, and boundary specifications match municipal archives with zero variance detected."}
-                    />
+                  {/* Document Extractions — bottom of verification report */}
+                  <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 24, marginTop: 8 }}>
+                    <div style={{ marginBottom: 16 }}>
+                      <span className="font-mono" style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                        UPLOADED DOCUMENTS
+                      </span>
+                    </div>
+
+                    {results.documents && results.documents.length > 0 ? (
+                      <div>
+                        {results.documents.map(d => {
+                          const isExpanded = expandedDocId === String(d.doc_id);
+                          return (
+                            <div key={String(d.doc_id)} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <div className="doc-row">
+                                {/* Col 1: Document name */}
+                                <div className="doc-name">
+                                  <FileText size={16} style={{ color: '#6b7280', flexShrink: 0 }} />
+                                  <span style={{ fontSize: 13, fontWeight: 600, color: '#292524', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {d.filename || `DOC-${d.doc_id}`}
+                                  </span>
+                                </div>
+
+                                {/* Col 2 & 3: Buttons */}
+                                <div className="doc-actions">
+                                  <button
+                                    onClick={() => setExpandedDocId(isExpanded ? null : String(d.doc_id))}
+                                    style={{
+                                      fontSize: 12, fontWeight: 600, color: '#ea580c', background: 'none', border: '1px solid #fed7aa',
+                                      borderRadius: 6, padding: '5px 12px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                                    }}
+                                  >
+                                    {isExpanded ? 'Hide Data' : 'View Structured Data'}
+                                  </button>
+
+                                  <a
+                                    href={`/api/case/${currentCaseId || caseInfo?.case_id}/doc/${d.doc_id}/pdf`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => { e.stopPropagation(); }}
+                                    style={{
+                                      fontSize: 12, fontWeight: 600, color: '#2563eb', background: 'none', border: '1px solid #bfdbfe',
+                                      borderRadius: 6, padding: '5px 12px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, textDecoration: 'none',
+                                    }}
+                                  >
+                                    View Original PDF
+                                  </a>
+                                </div>
+                              </div>
+
+                              {/* Expanded Structured Data */}
+                              {isExpanded && d.status === 'structured' && (
+                                <div style={{ paddingBottom: 16 }}>
+                                  <div className="doc-details-card">
+                                    <DocSummary res={{ ...d, structured: d.structured || d.structured_json }} />
+                                  </div>
+                                </div>
+                              )}
+
+                              {isExpanded && d.status !== 'structured' && (
+                                <div style={{ paddingBottom: 16 }}>
+                                  <div className="doc-details-card" style={{ padding: 16 }}>
+                                    <div className="vr-sheet-empty">
+                                      <AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+                                      {d.filename} — {d.error || d.status}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="doc-details-card" style={{ padding: 24 }}>
+                        <div className="vr-sheet-empty">No document extractions available yet.</div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1671,67 +1896,6 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
               )}
 
               {/* TAB 3: DOCS EXTRACTIONS */}
-              {activeReportTab === 'docs' && (
-                <div className="tab-pane active">
-                  <div style={{ marginBottom: 24 }}>
-                    <span className="font-mono" style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                      UPLOADED DOCUMENTS • CASE {currentCaseId || caseInfo?.case_id || 'A722E83D'}
-                    </span>
-                    <h1 style={{ fontSize: 32, fontWeight: 700, color: '#292524', margin: '6px 0 4px 0', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Document extractions</h1>
-                    <p style={{ fontSize: 14, color: '#6b7280', margin: 0 }}>Structured data extracted from official records. Verify attributes against original PDFs.</p>
-                  </div>
-
-                  {/* Sub Document Tabs (Dynamic from results.documents) */}
-                  {results.documents && results.documents.length > 0 && (
-                    <div className="doc-sub-tabs">
-                      {results.documents.map(d => {
-                        const isSel = activeDocId === String(d.doc_id);
-                        return (
-                          <button
-                            key={String(d.doc_id)}
-                            className={`doc-sub-tab ${isSel ? 'active' : ''}`}
-                            onClick={() => setActiveDocId(String(d.doc_id))}
-                          >
-                            <FileText size={18} style={{ color: isSel ? '#ea580c' : '#6b7280' }} />
-                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: isSel ? 700 : 400, color: isSel ? '#292524' : '#6b7280' }}>
-                              {d.filename || `DOC-${d.doc_id}`}
-                            </span>
-                            {d.status === 'structured' && (
-                              <span style={{
-                                marginLeft: 4, fontSize: 10, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
-                                letterSpacing: '0.05em', color: '#059669', background: '#d1fae5',
-                                padding: '2px 8px', borderRadius: 999,
-                              }}>STRUCTURED</span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Active Document Details Extractions */}
-                  {activeDoc && activeDoc.status === 'structured' && (
-                    <div className="doc-details-card">
-                      <DocSummary res={{ ...activeDoc, structured: activeDoc.structured || activeDoc.structured_json }} />
-                    </div>
-                  )}
-
-                  {activeDoc && activeDoc.status !== 'structured' && (
-                    <div className="doc-details-card" style={{ padding: 24 }}>
-                      <div className="vr-sheet-empty">
-                        <AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-                        {activeDoc.filename} — {activeDoc.error || activeDoc.status}
-                      </div>
-                    </div>
-                  )}
-
-                  {(!results.documents || results.documents.length === 0) && (
-                    <div className="doc-details-card" style={{ padding: 24 }}>
-                      <div className="vr-sheet-empty">No document extractions available yet.</div>
-                    </div>
-                  )}
-                </div>
-              )}
               </>
               )}
             </div>

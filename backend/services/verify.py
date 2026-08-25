@@ -21,6 +21,8 @@ logger = get_logger(__name__)
 VERIFICATION_STATUSES = {"VERIFIED", "NOT_VERIFIED", "N/A"}
 
 VERIFY_RESPONSE_SCHEMA = {
+    "headline": "2-3 line plain-language conclusion about the verification result — the main finding the user should know",
+    "summary": "Detailed verification report paragraph explaining what was checked, what matched, what did not, any gaps in the title chain, and what the user should do next",
     "items": [
         {
             "field": "Property survey/CTS number",
@@ -84,19 +86,40 @@ def verify_case(case_id: str) -> dict:
         "Verify the Karnataka Sale Deed (SD) against the Encumbrance Certificate "
         "(EC) historical ledger for the same property. The SD is the source of "
         "truth for what was conveyed; the EC ledger must be consistent with it.\n\n"
-        "Compare each material field listed below. For each, produce one item:\n"
-        "- status VERIFIED: SD value and EC value agree (or EC confirms the SD transaction)\n"
-        "- status NOT_VERIFIED: they conflict, or the SD claims an encumbrance-free title "
-        "but the EC shows a conflicting transaction\n"
-        "- status N/A: the field is absent/blank in one or both documents\n\n"
+        "OUTPUT — You must return exactly these fields:\n\n"
+        "1. \"headline\": A 2-3 line plain-language conclusion the user can read "
+        "in 5 seconds. Write it like a newspaper headline or case-study finding. "
+        "State the single most important finding (e.g. 'The EC belongs to a "
+        "different property — none of the material fields could be verified' or "
+        "'All key fields match; however the EC shows 2 subsequent transactions "
+        "that need investigation'). Do NOT just say 'VERIFIED' or 'NOT VERIFIED' — "
+        "explain WHY in plain English.\n\n"
+        "2. \"summary\": A detailed verification report paragraph (5-10 sentences) "
+        "explaining: what was checked, what matched and what did not, any gaps in "
+        "the chain of title, whether subsequent encumbrances exist, and what the "
+        "user should do next. Write for a non-legal audience. If the EC does not "
+        "belong to the SD property, state that clearly and explain the mismatch.\n\n"
+        "3. \"items\": For each material field, produce one item with:\n"
+        "- field: the field name (e.g. 'Property survey/CTS number')\n"
+        "- sd_value: value extracted from the Sale Deed\n"
+        "- ec_value: value from the EC ledger (or 'Not found in EC')\n"
+        "- status: VERIFIED | NOT_VERIFIED | N/A\n"
+        "- notes: brief explanation of why this status\n\n"
+        "Compare these fields: property identifiers (CTS/survey/plot numbers, "
+        "locality), execution/registration date, parties (vendors/purchasers), "
+        "consideration amount. Also check whether the EC shows any later "
+        "encumbrance (mortgage, sale, agreement) on the property AFTER the SD "
+        "date.\n\n"
+        "RULES:\n"
+        "- If the EC property does not match the SD property at all, mark ALL "
+        "items as NOT_VERIFIED and explain in headline + summary.\n"
+        "- Do NOT guess or hallucinate values. Use 'Not found in EC' if a value "
+        "is absent.\n"
+        "- overall_comment: same as summary, kept for backwards compatibility.\n\n"
         "--- SALE DEED ---\n"
         f"{json.dumps(sd_data, ensure_ascii=False, default=str)}\n\n"
         "--- EC HISTORICAL LEDGER ---\n"
-        f"{json.dumps(ledger, ensure_ascii=False, default=str)}\n\n"
-        "Fields to compare: property identifiers (CTS/survey/plot numbers, locality), "
-        "execution/registration date, parties (vendors/purchasers), consideration amount. "
-        "Pay special attention to whether the EC shows any later encumbrance (mortgage, "
-        "sale, agreement) on the property AFTER the SD date."
+        f"{json.dumps(ledger, ensure_ascii=False, default=str)}"
     )
 
     try:
@@ -129,6 +152,8 @@ def verify_case(case_id: str) -> dict:
 
     summary = _summarize(items)
     summary["overall_comment"] = result.get("overall_comment")
+    summary["headline"] = result.get("headline")
+    summary["summary_text"] = result.get("summary")
     verdict = summary["verdict"]
 
     save_verification_results(

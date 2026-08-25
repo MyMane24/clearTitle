@@ -206,7 +206,9 @@ def get_case_status_payload(case_id: str) -> dict:
         files.append({
             "doc_id": d["doc_id"],
             "original_name": d["filename"],
-            "saved_path": file_paths.get("raw")
+            "saved_path": file_paths.get("raw"),
+            "status": d["status"],
+            "document_type": d.get("document_type") or "",
         })
 
         # results element (only if status is structured)
@@ -259,6 +261,17 @@ def get_case_status_payload(case_id: str) -> dict:
     else:
         progress = 0
 
+    # 3. Fetch title chain status
+    title_chain_status = "pending"
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT status FROM title_chains WHERE case_id = %s", (case_id,))
+        tc_row = cursor.fetchone()
+        if tc_row:
+            title_chain_status = tc_row[0]
+    except Exception:
+        pass
+
     return {
         "case_id": case_id,
         "status": case_status,
@@ -267,6 +280,7 @@ def get_case_status_payload(case_id: str) -> dict:
         "failed_docs": case_row["failed_docs"],
         "verification_status": case_row.get("verification_status"),
         "verdict": case_row.get("verdict"),
+        "title_chain_status": title_chain_status,
         "files": files,
         "results": results,
         "errors": errors,

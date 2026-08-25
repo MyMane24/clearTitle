@@ -1,4 +1,4 @@
-  .ctd-root * , .ctd-root *::before, .ctd-root *::after{ box-sizing: border-box; margin: 0; padding: 0; }
+﻿  .ctd-root * , .ctd-root *::before, .ctd-root *::after{ box-sizing: border-box; margin: 0; padding: 0; }
   .ctd-root{
     --navy:   #1c1917;
     --blue:   #ea580c;
@@ -285,6 +285,117 @@
   .ctd-root .log-box .log-info{ color: #fdba74; }
 
   /* â”€â”€ Results summary â”€â”€ */
+  
+  /* -- AI Pipeline -- */
+  @keyframes pulse-dot{ 0%,80%,100%{ opacity:.3; transform:scale(.8); } 40%{ opacity:1; transform:scale(1.1); } }
+  @keyframes shimmer{ 0%{ background-position:-200% 0; } 100%{ background-position:200% 0; } }
+
+  .ctd-root .ai-pipeline{ margin-top: 8px; max-width: 42rem; margin-left: auto; margin-right: auto; }
+
+  .ctd-root .ai-pipeline-header{
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 20px;
+  }
+  .ctd-root .ai-pipeline-header .ai-icon{
+    width: 36px; height: 36px; border-radius: 10px;
+    background: linear-gradient(135deg, #ea580c, #f97316);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 18px; flex-shrink: 0;
+  }
+  .ctd-root .ai-pipeline-header .ai-text{ font-size: 14px; font-weight: 600; color: #1c1917; }
+
+  .ctd-root .doc-pipeline-card{
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    transition: border-color .3s ease, box-shadow .3s ease;
+  }
+  .ctd-root .doc-pipeline-card.active{
+    border-color: #ea580c;
+    box-shadow: 0 0 0 3px rgba(234,88,12,.08);
+  }
+  .ctd-root .doc-pipeline-card.done{ border-color: #059669; }
+  .ctd-root .doc-pipeline-card.failed{ border-color: #dc2626; }
+
+  .ctd-root .doc-pipeline-top{
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .ctd-root .doc-pipeline-name{
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 600; color: #1c1917;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    max-width: 70%;
+  }
+  .ctd-root .doc-pipeline-status{ font-size: 12px; font-weight: 500; }
+  .ctd-root .doc-pipeline-status.waiting{ color: #9ca3af; }
+  .ctd-root .doc-pipeline-status.active{ color: #ea580c; }
+  .ctd-root .doc-pipeline-status.done{ color: #059669; }
+  .ctd-root .doc-pipeline-status.failed{ color: #dc2626; }
+
+  .ctd-root .doc-pipeline-bar-wrap{
+    background: #f5f5f4; border-radius: 999px; height: 6px; overflow: hidden;
+  }
+  .ctd-root .doc-pipeline-bar{
+    height: 100%; border-radius: 999px;
+    transition: width .5s ease;
+  }
+  .ctd-root .doc-pipeline-bar.active{
+    background: linear-gradient(90deg, #ea580c, #f97316, #fb923c);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s linear infinite;
+  }
+  .ctd-root .doc-pipeline-bar.done{ background: #059669; }
+  .ctd-root .doc-pipeline-bar.failed{ background: #dc2626; }
+
+  .ctd-root .ai-dots{ display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: middle; }
+  .ctd-root .ai-dots span{
+    width: 4px; height: 4px; border-radius: 50%; background: #ea580c;
+    animation: pulse-dot 1.2s ease-in-out infinite;
+  }
+  .ctd-root .ai-dots span:nth-child(2){ animation-delay: .2s; }
+  .ctd-root .ai-dots span:nth-child(3){ animation-delay: .4s; }
+
+
+  /* -- AI Pipeline v2 -- */
+  .ctd-root .ai-pipeline-sub{ font-size: 12px; color: #9ca3af; margin-top: 2px; }
+
+  .ctd-root .doc-pipeline-card.done{ padding: 10px 16px; }
+
+  .ctd-root .analysis-steps{ margin-top: 16px; }
+
+  .ctd-root .phase-step{
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 12px 14px; border-radius: 10px;
+    background: var(--white); border: 1px solid var(--border);
+    margin-bottom: 8px;
+    transition: all .3s ease;
+  }
+  .ctd-root .phase-step.active{
+    border-color: #ea580c;
+    box-shadow: 0 0 0 3px rgba(234,88,12,.06), 0 2px 8px rgba(234,88,12,.08);
+    background: #fffcf9;
+  }
+  .ctd-root .phase-step.done{ border-color: #bbf7d0; background: #f0fdf4; }
+
+  .ctd-root .phase-step-icon{
+    width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ctd-root .phase-step.pending .phase-step-icon{ background: #f5f5f4; }
+  .ctd-root .phase-step.active .phase-step-icon{ background: #fff7ed; }
+  .ctd-root .phase-step.done .phase-step-icon{ background: #d1fae5; }
+
+  .ctd-root .phase-dot-pending{
+    width: 8px; height: 8px; border-radius: 50%; background: #d1d5db; display: inline-block;
+  }
+
+  .ctd-root .phase-step-content{ flex: 1; min-width: 0; }
+  .ctd-root .phase-step-label{ font-size: 13px; font-weight: 600; color: #1c1917; }
+  .ctd-root .phase-step.done .phase-step-label{ color: #059669; }
+
   .ctd-root .metrics-row{ display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
   .ctd-root .metric-box{
     background: var(--lblue);
@@ -2082,7 +2193,7 @@
   font-family:'Plus Jakarta Sans',sans-serif; font-size:30px; font-weight:800;
   letter-spacing:-.02em; color:#1e1b19; margin:2px 0;
 }
-.ctd-root .chain-page-sub{ font-size:13px; color:#5a4138; max-width:520px; }
+.ctd-root .chain-page-sub{ font-size:13px; color:#5a4138; max-width:520px; white-space:nowrap; }
 .ctd-root .chain-page-head-right{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
 .ctd-root .chain-milestones{
   display:inline-flex; align-items:center; gap:8px;
@@ -2413,7 +2524,7 @@
 /* -- Guest report preview -- */
 /* ── Guest Preview Shell (gated) ── */
 .ctd-root .gp-shell{
-  max-width: 56rem;
+  max-width: 50rem;
   margin: 0 auto;
   width: 100%;
   background: #fff;
@@ -3834,7 +3945,7 @@
 /* ── Report Section Navigation ── */
 .ctd-root .report-nav-bar {
   background: transparent;
-  border-bottom: 1px solid #e7e5e4;
+  border-bottom: none;
   position: static;
   z-index: 0;
   box-shadow: none;
@@ -3849,40 +3960,41 @@
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 32px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 .ctd-root .report-tab-btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 14px 0;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  box-shadow: none;
-  color: #6b7280;
-  font-family: 'JetBrains Mono', monospace;
-  font-weight: 500;
-  font-size: 12px;
-  letter-spacing: 0.05em;
+  padding: 10px 22px;
+  background: #fff;
+  color: #57534e;
+  border: 1.5px solid #d6d3d1;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.02em;
   cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease;
+  transition: all 0.2s ease;
   text-decoration: none;
 }
 
 .ctd-root .report-tab-btn:hover {
-  color: #292524;
-  border-bottom-color: #d6d3d1;
+  color: #ea580c;
+  border-color: #ea580c;
+  box-shadow: 0 2px 6px rgba(234, 88, 12, 0.12);
 }
 
 .ctd-root .report-tab-btn.active {
-  color: #292524;
+  color: #fff;
   font-weight: 700;
-  border-bottom-color: #ea580c;
+  background: #ea580c;
+  border-color: #ea580c;
+  box-shadow: 0 2px 8px rgba(234, 88, 12, 0.25);
 }
 
 .ctd-root .tab-badge-complete {
@@ -3898,7 +4010,7 @@
 /* ── Main Tab Container Layout ── */
 .ctd-root .report-main-wrap {
   flex: 1;
-  max-width: 56rem;
+  max-width: 50rem;
   width: 100%;
   margin: 0 auto;
   padding: 8px 24px 32px 24px;
@@ -3907,12 +4019,11 @@
 
 /* ── Verdict Section & Banner ── */
 .ctd-root .verdict-banner {
-  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
-  padding-bottom: 24px;
+  padding-bottom: 0;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin-bottom: 32px;
+  margin-bottom: 8px;
 }
 
 .ctd-root .verdict-title-text {
@@ -4428,13 +4539,40 @@
   margin: 0;
 }
 
-/* ── Slot Windows Theme ── */
+/* ── Uploaded Documents Table ── */
+.ctd-root .doc-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.ctd-root .doc-name {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ctd-root .doc-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.ctd-root .upload-slots-grid {
+  display: flex;
+  gap: 16px;
+}
+
 .ctd-root .upload-slot {
   background: #FFFFFF;
   border: 1px solid #EFE6D9;
   border-radius: 16px;
   padding: 20px;
-  margin-top: 18px;
+  flex: 1;
+  min-width: 0;
 }
 
 .ctd-root .upload-slot.has-files {
@@ -4613,7 +4751,7 @@
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     background: transparent;
-    border-bottom: 1px solid #e7e5e4;
+    border-bottom: none;
     margin-bottom: 12px;
     padding: 0;
   }
@@ -4625,12 +4763,10 @@
   .ctd-root .report-nav-container {
     display: flex;
     flex-wrap: nowrap;
-    justify-content: flex-start;
-    gap: 20px;
-    padding: 0 4px;
-    width: max-content;
-    min-width: 100%;
-    box-sizing: border-box;
+    justify-content: center;
+    gap: 10px;
+    padding: 0 16px;
+    margin-top: 12px;
   }
 
   .ctd-root .report-tab-btn {
@@ -4638,34 +4774,32 @@
     flex-direction: row;
     align-items: center;
     gap: 6px;
-    padding: 10px 0;
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    border-radius: 0;
-    box-shadow: none;
-    color: #6b7280;
-    font-family: 'JetBrains Mono', monospace;
-    font-weight: 500;
-    font-size: 11px;
-    letter-spacing: 0.04em;
+    padding: 8px 16px;
+    background: #fff;
+    color: #57534e;
+    border: 1.5px solid #d6d3d1;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.02em;
     white-space: nowrap;
     flex-shrink: 0;
     cursor: pointer;
-    text-transform: uppercase;
+    transition: all 0.2s ease;
   }
 
   .ctd-root .report-tab-btn:hover {
-    color: #292524;
-    border-bottom-color: #d6d3d1;
+    color: #ea580c;
+    border-color: #ea580c;
   }
 
   .ctd-root .report-tab-btn.active {
-    color: #292524;
+    color: #fff;
     font-weight: 700;
-    border-bottom-color: #ea580c;
-    background: transparent;
-    box-shadow: none;
+    background: #ea580c;
+    border-color: #ea580c;
   }
 
   .ctd-root .report-tab-btn span {
@@ -4736,7 +4870,7 @@
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     background: transparent;
-    border-bottom: 1px solid #e7e5e4;
+    border-bottom: none;
     margin-bottom: 12px;
     padding: 0;
   }
@@ -4745,9 +4879,9 @@
   .ctd-root .verdict-banner {
     flex-direction: column;
     align-items: flex-start;
-    gap: 16px;
-    padding-bottom: 16px;
-    margin-bottom: 24px;
+    gap: 12px;
+    padding-bottom: 0;
+    margin-bottom: 8px;
   }
 
   .ctd-root .verdict-title-text {
@@ -4838,6 +4972,7 @@
 
   .ctd-root .chain-page-sub {
     font-size: 12px;
+    white-space: normal;
   }
 
   /* Docs Extractions Tab */
@@ -4865,6 +5000,29 @@
   .ctd-root .upload-card-full {
     padding: 18px 14px;
     border-radius: 14px;
+  }
+
+  .ctd-root .upload-slots-grid {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .ctd-root .doc-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .ctd-root .doc-actions {
+    width: 100%;
+  }
+
+  .ctd-root .doc-actions button,
+  .ctd-root .doc-actions a {
+    flex: 1;
+    text-align: center;
+    font-size: 11px !important;
+    padding: 6px 8px !important;
   }
 
   .ctd-root .upload-main-title {

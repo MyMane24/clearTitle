@@ -20,9 +20,6 @@ export const CtaFooter: React.FC<CtaFooterProps> = () => {
               <span className="text-4xl font-black tracking-tight block" style={{ background: 'linear-gradient(135deg, #ea580c 0%, #f59e0b 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                 clearTitle
               </span>
-              <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest block -mt-1">
-                Karnataka Property Title Verification
-              </span>
             </Link>
 
             <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-sm">

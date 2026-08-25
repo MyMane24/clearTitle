@@ -77,7 +77,6 @@ export function AuthScreen({ onAuthed }: Props) {
         <div className="auth-left-inner">
           <Link to="/" className="auth-brand" title="Back to home">
             <span className="auth-brand-title">clear<span className="auth-brand-title-grad">Title</span></span>
-            <span className="auth-brand-sub">Karnataka Property Title Verification</span>
           </Link>
 
           <div className="auth-hero">
