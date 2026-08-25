@@ -4,47 +4,47 @@ An end-to-end property title verification platform for **Karnataka property docu
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 
 ```mermaid
 flowchart TD
     subgraph Frontend["Frontend Layer (React SPA)"]
-        UI["🧑💻 clearTitle SPA\nReact 19 + Vite + TypeScript\nLanding page (/) + Dashboard (/#/app)"]
-        DASH["Verification Dashboard\nUpload · Processing · Results · Verify · History"]
+        UI["clearTitle SPA\nReact 19 + Vite + TypeScript\nLanding page (/) + Dashboard (/#/app)"]
+        DASH["Verification Dashboard\nUpload . Processing . Results . Verify . History"]
         AUTH["Auth Screen\nRegister / Login / Link guest case"]
-        HOME["Landing sections\nHero · Pipeline · Audit demo · FAQ"]
+        HOME["Landing sections\nHero . Pipeline . Audit demo . FAQ"]
     end
 
     subgraph API["API Gateway Layer (FastAPI)"]
-        R_AUTH["🔐 Auth Router\n/api/auth/register · /login · /me"]
-        R_CASES["📁 Cases Router\n/api/upload · /api/cases · /api/process\n/api/status · /api/retry · /api/clear\nreplace / skip / case upload / link"]
-        R_RESULTS["📊 Results Router\n/api/results/{id} · /api/results/{id}/analyze"]
+        R_AUTH["Auth Router\n/api/auth/register . /login . /me"]
+        R_CASES["Cases Router\n/api/upload . /api/cases . /api/process\n/api/status . /api/retry\nreplace / skip / case upload / link"]
+        R_RESULTS["Results Router\n/api/results/{id} . /api/results/{id}/analyze\nGET /api/case/{id}/doc/{id}/pdf"]
     end
 
     subgraph Orchestration["Async Task Queue"]
         CELERY["Celery Workers\nbackend/workers/* (stages, finalize, title_chain_tasks)"]
-        REDIS_BROKER[(Redis Broker / State Store)]
+        REDIS_BROKER["Redis Broker / State Store"]
     end
 
     subgraph Pipeline["Document Pipeline (per PDF, 6 stages)"]
-        PREPROC["① Preprocess\n(denoise & deskew)\nintegrations/ocr/preprocessor.py"]
-        OCR["② Sarvam OCR\n(Scanned PDF ➔ Raw Text)\nintegrations/ocr/sarvam_client.py"]
-        MERGE["③ Merge Chunks\nintegrations/ocr/ocr_merger.py"]
-        CLASSIFY["④ Classify\n(Keyword-based)\nservices/classifier.py"]
-        STRUCTURE["⑤ Structure\n(Gemini primary, Groq fallback)\nservices/extract.py + integrations/llm/*"]
-        PERSIST["⑥ Persist\n(save JSON + tokens/cost to MySQL)\nworkers/stages.py"]
+        PREPROC["1 Preprocess\n(denoise & deskew)"]
+        OCR["2 Sarvam OCR\n(PDF -> Raw Text)"]
+        MERGE["3 Merge Chunks"]
+        CLASSIFY["4 Classify\n(Keyword-based)"]
+        STRUCTURE["5 Structure\n(Gemini primary, Groq fallback)"]
+        PERSIST["6 Persist\n(save JSON + tokens/cost to MySQL)"]
     end
 
     subgraph Analysis["Case-Level Analysis (after finalize)"]
-        FINALIZE["Finalize\n(recompute status + queue analysis)\nworkers/finalize.py"]
+        FINALIZE["Finalize\n(recompute status + queue analysis)"]
         TITLE["Title Chain\nservices/title_chain.py"]
         VERIFY["Verification\nservices/verify.py"]
     end
 
     subgraph Storage["Storage Layer"]
-        MYSQL[("MySQL\nusers, cases, documents,\ntitle_chains, verification_results")]
-        REDIS[(Redis State Store)]
-        FS[("File System\nuploads/ & outputs/")]
+        MYSQL["MySQL\nusers, cases, documents,\ntitle_chains, verification_results"]
+        REDIS["Redis State Store"]
+        FS["File System\noutputs/"]
     end
 
     UI -->|"HTTP API Requests"| API
@@ -63,7 +63,7 @@ flowchart TD
 
 | Component | Technology | Description |
 |---|---|---|
-| **Frontend** | React 19, Vite 6, TypeScript, Tailwind CSS 4 | Landing page + admin dashboard with upload pipeline, results, title-chain timeline, verification table, and case history |
+| **Frontend** | React 19, Vite 6, TypeScript, Tailwind CSS 4 | Landing page + admin dashboard with AI pipeline view, results, title-chain timeline, verification table, and case history |
 | **API Layer** | FastAPI, Uvicorn | Async REST API with JWT auth for cases, documents, results, and analysis |
 | **Async Tasks** | Celery, Redis | Idempotent background stages — preprocess, OCR, merge, classify, structure, persist, finalize, title-chain, verify |
 | **OCR Service** | Sarvam AI Vision OCR | High-accuracy OCR for mixed English/Kannada text; chunks >10-page PDFs with overlap |
@@ -73,7 +73,7 @@ flowchart TD
 
 ---
 
-## 🧠 Verification Features
+## Verification Features
 
 - **Title Chain** — every EC ledger transaction is classified (`THE_SD`, `PREDECESSOR_TITLE`, `SUBSEQUENT_TRANSFER`, `DIVERGENT_BRANCH`, `ENCUMBRANCE`, `UNRELATED`), sorted chronologically, and merged into a timeline.
 - **Cross-Document Verification** — a field-by-field comparison (property identifiers, dates, parties, consideration) between the Sale Deed and the EC ledger, with a deterministic `VERIFIED` / `NOT_VERIFIED` / `N/A` verdict.
@@ -83,7 +83,7 @@ flowchart TD
 
 ---
 
-## 📄 Supported Document Types
+## Supported Document Types
 
 | Category | Types |
 |---|---|
@@ -93,19 +93,19 @@ flowchart TD
 | **Revenue & Clearances** | `MUTATION`, `CONVERSION_ORDER`, `POSSESSION_CERTIFICATE` |
 | **Legal & Others** | `RTC_PAHANI`, `LEGAL_HEIR_CERTIFICATE`, `COURT_ORDER` |
 
-> Classification is keyword-based (filename first, then OCR content, English + Kannada). A document that cannot be classified is marked `classification_failed` and the UI asks you to replace or skip it.
+Classification is keyword-based (filename first, then OCR content, English + Kannada). A document that cannot be classified is marked `classification_failed` and the UI asks you to replace or skip it.
 
 ---
 
-## 🚀 Quick Start (Docker — Recommended)
+## Quick Start (Docker)
 
 > **Only requirement:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed. No Python, MySQL, or Redis needed on your machine.
 
 ### 1. Clone and configure
 
 ```bash
-git clone <repo-url>
-cd cleartitle
+git clone https://github.com/MyMane24/clearTitle.git
+cd clearTitle
 cp .env.example .env
 ```
 
@@ -133,18 +133,17 @@ This starts 5 services automatically:
 | **Redis** | internal only | Celery broker + state store |
 | **Celery Worker** | internal only | Background task processing (`--concurrency=2`) |
 
-> On subsequent runs just use `docker compose up`. Rebuild with `docker compose up --build` after changing code — the React SPA is baked into the image.
+On subsequent runs just use `docker compose up`. Rebuild with `docker compose up --build` after changing code — the React SPA is baked into the image.
 
 ---
 
-## 🖥️ Frontend Development (Without Docker)
+## Frontend Development (Without Docker)
 
 The React app lives in `frontend/`. It has its own dev server (Express + Vite HMR) on port 3000:
 
 ```bash
 cd frontend
 npm install
-cp .env.example .env   # optional: AI_API_KEY for the /api/verify-property mock demo
 npm run dev            # http://localhost:3000
 ```
 
@@ -159,7 +158,7 @@ When deployed via Docker, the built SPA is served by FastAPI from `frontend/dist
 
 ---
 
-## 🗄️ Inspecting the Database
+## Inspecting the Database
 
 ### Option A — phpMyAdmin (browser, zero install)
 
@@ -169,13 +168,13 @@ Open **http://localhost:8080** — you'll see all tables (`users`, `cases`, `doc
 
 ```
 Host:     127.0.0.1
-Port:     3307          ← not 3306, to avoid conflict with any local MySQL
+Port:     3307
 User:     root
-Password: password       (or whatever MYSQL_ROOT_PASSWORD is in your .env)
+Password: password
 Database: property_ocr_v2
 ```
 
-### Option C — Terminal (no GUI needed)
+### Option C — Terminal
 
 ```bash
 docker compose exec mysql mysql -u root -ppassword property_ocr_v2
@@ -183,7 +182,7 @@ docker compose exec mysql mysql -u root -ppassword property_ocr_v2
 
 ---
 
-## 🔌 API Endpoints
+## API Endpoints
 
 ### Auth
 | Method | Endpoint | Description |
@@ -204,7 +203,6 @@ docker compose exec mysql mysql -u root -ppassword property_ocr_v2
 | `POST` | `/api/case/{case_id}/link` | Link a guest case to the logged-in account |
 | `POST` | `/api/case/{case_id}/doc/{doc_id}/replace` | Replace a document file |
 | `POST` | `/api/case/{case_id}/doc/{doc_id}/skip` | Mark a document as skipped |
-| `POST` | `/api/clear` | Wipe all cases |
 | `DELETE` | `/api/case/{case_id}` | Delete a single case (MySQL + files) |
 
 ### Results & Analysis
@@ -212,6 +210,7 @@ docker compose exec mysql mysql -u root -ppassword property_ocr_v2
 |---|---|---|
 | `GET` | `/api/results/{case_id}` | Full results payload: case info, documents + structured JSON, title chain, verification |
 | `POST` | `/api/results/{case_id}/analyze` | (Re)run the title-chain + verification pass for a completed case |
+| `GET` | `/api/case/{case_id}/doc/{doc_id}/pdf` | Serve original PDF (authenticated, opens in new tab) |
 
 ### Misc
 | Method | Endpoint | Description |
@@ -219,26 +218,26 @@ docker compose exec mysql mysql -u root -ppassword property_ocr_v2
 | `GET` | `/health` | Health check + API-key presence |
 | `GET` | `/` | React SPA (built) or `frontend/index.html` |
 
-> Most case endpoints accept an optional JWT. Guest (anonymous) cases work without auth, but case data can only be accessed by its owner once linked. Verification results are locked for guest previews in the UI until sign-in.
+Most case endpoints accept an optional JWT. Guest (anonymous) cases work without auth, but case data can only be accessed by its owner once linked.
 
 ---
 
-## 🧩 The Document Pipeline
+## The Document Pipeline
 
 Every uploaded PDF goes through **6 stages**, each its own idempotent Celery task, chained and joined by a **chord** that runs one chain per document in parallel:
 
 ```
-DOC_001 ──► preprocess ──► ocr ──► merge ──► classify ──► structure ──► persist ──┐
-DOC_002 ──► preprocess ──► ocr ──► merge ──► classify ──► structure ──► persist ──┼──► finalize ──► title chain ──► verify
-DOC_003 ──► preprocess ──► ocr ──► merge ──► classify ──► structure ──► persist ──┘
+DOC_001 --> preprocess --> ocr --> merge --> classify --> structure --> persist --+
+DOC_002 --> preprocess --> ocr --> merge --> classify --> structure --> persist --+--> finalize --> title chain --> verify
+DOC_003 --> preprocess --> ocr --> merge --> classify --> structure --> persist --+
 ```
 
 | # | Stage | Work |
 |---|---|---|
-| 1 | **Preprocess** | CLAHE contrast, denoise, deskew, sharpen via OpenCV → enhanced PDF (non-fatal: falls back to raw PDF) |
-| 2 | **OCR** | Sarvam OCR (Kannada+English); ≤10 pages → one job, >10 pages → overlapping 10-page chunks in parallel |
-| 3 | **Merge** | Deduplicate overlapping pages, re-join split tables, strip base64 blobs → `full_text` with page separators |
-| 4 | **Classify** | Keyword match (filename first, then content) → document type |
+| 1 | **Preprocess** | CLAHE contrast, denoise, deskew, sharpen via OpenCV (non-fatal: falls back to raw PDF) |
+| 2 | **OCR** | Sarvam OCR (Kannada+English); <=10 pages one job, >10 pages overlapping 10-page chunks in parallel |
+| 3 | **Merge** | Deduplicate overlapping pages, re-join split tables, strip base64 blobs |
+| 4 | **Classify** | Keyword match (filename first, then content) -> document type |
 | 5 | **Structure** | LLM fills the strict per-type JSON schema (Gemini primary, Groq fallback) |
 | 6 | **Persist** | Save JSON + tokens/cost/model to MySQL, write final file to `outputs/` |
 
@@ -248,25 +247,38 @@ DOC_003 ──► preprocess ──► ocr ──► merge ──► classify �
 |---|---|
 | **Finalize** | Recompute case status (`complete` / `partial` / `failed`), release the pipeline lock, and queue the analysis only when every document structured |
 | **Title chain** | One Gemini call — classify every EC ledger entry and merge it onto the SD's property schedule |
-| **Verification** | One Gemini call — field-by-field SD vs EC comparison → deterministic `VERIFIED` / `NOT_VERIFIED` / `N/A` verdict |
+| **Verification** | One Gemini call — field-by-field SD vs EC comparison -> deterministic `VERIFIED` / `NOT_VERIFIED` / `N/A` verdict |
 
-The dashboard keeps polling `/api/status/{case_id}` through the analysis phase and only shows the final report once `verification_status` is set — so you always see the title chain + verdict, never just the structured JSON.
+The dashboard polls `/api/status/{case_id}` through the analysis phase and only shows the final report once `verification_status` is set.
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```
-cleartitle/
+clearTitle/
 ├── backend/                        # FastAPI + Celery
 │   ├── main.py                     # FastAPI entrypoint (API + React SPA)
 │   ├── celery_app.py               # Celery config (acks_late, timeouts, retries)
 │   ├── config.py                   # ALL env vars in one place
 │   ├── logger.py                   # Logging utility
 │   │
-│   ├── routers/                    # HTTP layer (thin: validate → call service)
+│   ├── prompts/                    # Versioned LLM prompts (editable .txt files)
+│   │   ├── loader.py               #   load_prompt() + load_schema() helpers
+│   │   ├── verification.txt        #   SD vs EC cross-check prompt
+│   │   ├── verification_schema.json#   Expected output shape
+│   │   ├── title_chain.txt         #   Title tree construction prompt
+│   │   ├── title_chain_schema.json #   Expected output shape
+│   │   ├── analysis_system.txt     #   Gemini system instruction for analysis
+│   │   ├── extraction_contract.txt #   Shared extraction rules
+│   │   ├── gemini_system.txt       #   Gemini extraction system template
+│   │   ├── gemini_user.txt         #   Gemini extraction user template
+│   │   ├── groq_system.txt         #   Groq extraction system prompt
+│   │   └── groq_user.txt           #   Groq extraction user template
+│   │
+│   ├── routers/                    # HTTP layer (thin: validate -> call service)
 │   │   ├── auth.py                 #   /register, /login, /me
-│   │   ├── cases.py                #   upload, process, status, retry, replace, skip, delete, clear
+│   │   ├── cases.py                #   upload, process, status, retry, replace, skip, delete
 │   │   └── results.py              #   /results/{id}, /results/{id}/analyze
 │   │
 │   ├── services/                   # Business logic (no HTTP, no Celery)
@@ -276,20 +288,22 @@ cleartitle/
 │   │   ├── title_chain.py          #   build title tree from SD + EC ledger
 │   │   ├── verify.py               #   cross-document verification pass
 │   │   ├── results.py              #   assemble /api/results payload
-│   │   ├── extraction_prompts.py   #   Gemini prompt builders
+│   │   ├── extraction_prompts.py   #   prompt builders (loads from backend/prompts/)
 │   │   ├── auth.py                 #   JWT + bcrypt helpers
 │   │   └── schemas/                #   per-doc-type JSON extraction schemas
+│   │       ├── static.py           #     17 hand-written JSON schemas
+│   │       └── generic.py          #     fallback schema for unknown types
 │   │
 │   ├── workers/                    # Celery layer (thin task wrappers)
 │   │   ├── tasks.py                #   6 idempotent stage tasks
-│   │   ├── stages.py               #   the actual stage logic (preprocess→persist)
-│   │   ├── stage_adapter.py        #   task → stage.invoke adapter
+│   │   ├── stages.py               #   the actual stage logic (preprocess->persist)
+│   │   ├── stage_adapter.py        #   task -> stage.invoke adapter
 │   │   ├── idempotency.py          #   skip-already-done guard
 │   │   ├── finalize.py             #   chord callback: recompute status + queue analysis
 │   │   ├── title_chain_tasks.py    #   build_title_chain_task + verify_case_task
 │   │   └── context.py              #   StageContext (dependencies handed to stages)
 │   │
-│   ├── domain/state_machine.py     # Stage enum + status→stage mapping (pure logic)
+│   ├── domain/state_machine.py     # Stage enum + status->stage mapping (pure logic)
 │   │
 │   ├── integrations/               # Adapters to external/plumbing systems
 │   │   ├── llm/                    #   gemini_client, gemini_executor, groq_executor,
@@ -305,13 +319,15 @@ cleartitle/
 │   │                               #  verification, verification_results, user)
 │   │
 │   ├── shared/constants.py         # doc-type + status string constants
-│   └── tests/                      # pytest suite (e.g. title-chain enrichment)
+│   └── tests/                      # pytest suite
 │
 ├── frontend/                       # React SPA (Vite)
 │   ├── src/
 │   │   ├── components/             # Landing-page sections (Navbar, Hero, FAQ, ...)
 │   │   ├── dashboard/              # Verification dashboard (upload, report, history, auth)
-│   │   ├── api/backend.ts          # API client
+│   │   │   ├── VerificationDashboard.tsx  # Main dashboard with AI pipeline view
+│   │   │   └── dashboard.css       #  All dashboard styles + pipeline animations
+│   │   ├── api/backend.ts          # API client (JWT auth, typed responses)
 │   │   ├── data/                   # Landing content
 │   │   ├── App.tsx                 # Route: homepage / + dashboard /#/app
 │   │   ├── index.css               # Tailwind theme + brand fonts
@@ -320,30 +336,57 @@ cleartitle/
 │   ├── server.ts                   # Dev server (Express + Vite middleware)
 │   └── index.html
 │
-├── uploads/                        # Uploaded PDF storage (bind-mounted)
-├── outputs/                        # OCR + structured outputs (bind-mounted)
+├── outputs/                        # PDFs + structured outputs (bind-mounted, persists across restarts)
 ├── docs/                           # Architecture guide + pipeline issues analysis
-├── docker-compose.yml
-├── Dockerfile
-└── requirements.txt
+├── docker-compose.yml              # 5 services: api, worker, mysql, redis, phpmyadmin
+├── Dockerfile                      # Single-stage build (Python 3.11 + Node 20)
+├── requirements.txt                # Python dependencies
+└── .env                            # Environment variables (not committed)
 ```
-
-> `docs/ARCHITECTURE_OVERVIEW.md` is the source of truth for how the system works and how to build retry/fallback/error handling on top of it.
 
 ---
 
-## 🎨 UI Design System
+## LLM Prompts
+
+All LLM prompts are versioned text files in `backend/prompts/`. Edit the `.txt` files to change prompts — no Python changes needed.
+
+| File | Used by | Purpose |
+|---|---|---|
+| `verification.txt` | `services/verify.py` | SD vs EC field-by-field cross-check |
+| `title_chain.txt` | `services/title_chain.py` | Title tree construction from SD + EC ledger |
+| `analysis_system.txt` | `integrations/llm/analysis_executor.py` | Gemini system instruction for analysis tasks |
+| `extraction_contract.txt` | `services/extraction_prompts.py` | Shared extraction rules (OUTPUT_QUALITY_CONTRACT) |
+| `gemini_system.txt` | `services/extraction_prompts.py` | Gemini extraction system template |
+| `gemini_user.txt` | `services/extraction_prompts.py` | Gemini extraction user template |
+| `groq_system.txt` | `integrations/llm/groq_executor.py` | Groq extraction system prompt |
+| `groq_user.txt` | `integrations/llm/groq_executor.py` | Groq extraction user template |
+
+Load helpers: `from backend.prompts.loader import load_prompt, load_schema`
+
+---
+
+## API Costs
+
+| Provider | Model | Cost per case (3 docs) |
+|---|---|---|
+| **Sarvam AI** | OCR (Vision) | Free tier: 10,000 chars/call |
+| **Google** | Gemini 2.5 Flash | ~3-10 per case (varies with doc size and Kannada text) |
+| **Groq** | GPT-OSS 120B/20B | Free tier (fallback only) |
+
+---
+
+## UI Design System
 
 The frontend follows a warm, editorial design system shared by the landing page and dashboard:
 
-- **Palette** — Cream background (`#FFF8F2`), warm stone neutrals, and an orange brand scale (`#ea580c`, `#f97316`, amber `#fbbf24`). Semantic status colors (emerald / amber / rose) preserved for verification results.
-- **Typography** — Inter (body), Plus Jakarta Sans (display/headings), Instrument Serif (accent italics). Loaded once from Google Fonts in `frontend/index.html`.
+- **Palette** — Cream background (`#FFF8F2`), warm stone neutrals, and an orange brand scale (`#ea580c`, `#f97316`, amber `#fbbf24`). Semantic status colors (emerald / amber / rose) for verification results.
+- **Typography** — Inter (body), Plus Jakarta Sans (display/headings), Instrument Serif (accent italics).
 - **Icons** — lucide-react (no emoji).
-- **Dashboard** (`/#/app`) — Custom CSS (`dashboard.css`) with CSS-token theming: cards, badges, metric tiles, log viewers, title-chain timeline, verification tables, and guest-preview lock for anonymous users.
+- **Dashboard** (`/#/app`) — Custom CSS (`dashboard.css`) with CSS-token theming: cards, badges, metric tiles, AI pipeline view with pulsing animations, title-chain timeline, verification tables, and case history sidebar.
 
 ---
 
-## 🛠️ Manual Setup (Backend, Without Docker)
+## Manual Setup (Backend, Without Docker)
 
 <details>
 <summary>Click to expand — for local backend development without Docker</summary>
@@ -427,4 +470,4 @@ pytest backend/tests      # backend unit tests
 
 ---
 
-*Last updated: 10 August 2026*
+*Last updated: 25 August 2026*
