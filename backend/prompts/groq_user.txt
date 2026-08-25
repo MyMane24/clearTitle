@@ -1,0 +1,4 @@
+OCR TEXT FROM DOCUMENT:
+{ocr_text}
+
+Return ONLY the filled JSON. No explanation.

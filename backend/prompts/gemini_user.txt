@@ -1,0 +1,4 @@
+DOCUMENT: {doc_type} ({page_count} pages)
+
+OCR TEXT:
+{ocr_text}

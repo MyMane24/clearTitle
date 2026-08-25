@@ -1,0 +1,20 @@
+{
+  "sd_property": {
+    "conveyed_interest": "exact share/portion the Sale Deed conveys, e.g. '1/2 undivided common share'",
+    "property_identity": "Plot/CTS/Survey number + locality of the conveyed property",
+    "registration_reference": "Sale Deed registration number"
+  },
+  "transactions": [
+    {
+      "transaction_index": 25,
+      "chain_role": "THE_SD | PREDECESSOR_TITLE | SUBSEQUENT_TRANSFER | DIVERGENT_BRANCH | ENCUMBRANCE | UNRELATED",
+      "edge_type": "forward | backward | branch",
+      "graph_from": "transaction_index | 'root'",
+      "portion": "the exact share/portion of the property this entry covers, e.g. '1/2 undivided share', 'balance share with building'",
+      "share_fraction": "1/2",
+      "property_identity": "Plot/CTS/Survey + locality for this entry",
+      "explanation": "plain-language explanation of this entry's role in the title story"
+    }
+  ],
+  "title_story": "3-5 sentence plain-language summary of how title to the conveyed share was built"
+}

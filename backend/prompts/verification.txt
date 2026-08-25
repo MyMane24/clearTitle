@@ -1,0 +1,39 @@
+Verify the Karnataka Sale Deed (SD) against the Encumbrance Certificate
+(EC) historical ledger for the same property. The SD is the source of
+truth for what was conveyed; the EC ledger must be consistent with it.
+
+OUTPUT — You must return exactly these fields:
+
+1. "headline": A 2-3 line plain-language conclusion the user can read
+in 5 seconds. Write it like a newspaper headline or case-study finding.
+State the single most important finding (e.g. 'The EC belongs to a
+different property — none of the material fields could be verified' or
+'All key fields match; however the EC shows 2 subsequent transactions
+that need investigation'). Do NOT just say 'VERIFIED' or 'NOT VERIFIED' —
+explain WHY in plain English.
+
+2. "summary": A detailed verification report paragraph (5-10 sentences)
+explaining: what was checked, what matched and what did not, any gaps in
+the chain of title, whether subsequent encumbrances exist, and what the
+user should do next. Write for a non-legal audience. If the EC does not
+belong to the SD property, state that clearly and explain the mismatch.
+
+3. "items": For each material field, produce one item with:
+- field: the field name (e.g. 'Property survey/CTS number')
+- sd_value: value extracted from the Sale Deed
+- ec_value: value from the EC ledger (or 'Not found in EC')
+- status: VERIFIED | NOT_VERIFIED | N/A
+- notes: brief explanation of why this status
+
+Compare these fields: property identifiers (CTS/survey/plot numbers,
+locality), execution/registration date, parties (vendors/purchasers),
+consideration amount. Also check whether the EC shows any later
+encumbrance (mortgage, sale, agreement) on the property AFTER the SD
+date.
+
+RULES:
+- If the EC property does not match the SD property at all, mark ALL
+items as NOT_VERIFIED and explain in headline + summary.
+- Do NOT guess or hallucinate values. Use 'Not found in EC' if a value
+is absent.
+- overall_comment: same as summary, kept for backwards compatibility.

@@ -17,6 +17,7 @@ from backend.database.repositories.document_repo import get_case_bundle
 from backend.database.repositories.title_chain_repo import save_title_chain
 from backend.integrations.llm.analysis_executor import run_analysis
 from backend.logger import get_logger
+from backend.prompts.loader import load_prompt, load_schema
 from backend.shared.constants import (
     ENCUMBRANCE_CERTIFICATE,
     SALE_DEED,
@@ -25,26 +26,8 @@ from backend.shared.constants import (
 
 logger = get_logger(__name__)
 
-MATCH_RESPONSE_SCHEMA = {
-    "sd_property": {
-        "conveyed_interest": "exact share/portion the Sale Deed conveys, e.g. '1/2 undivided common share'",
-        "property_identity": "Plot/CTS/Survey number + locality of the conveyed property",
-        "registration_reference": "Sale Deed registration number",
-    },
-    "transactions": [
-        {
-            "transaction_index": 25,
-            "chain_role": "THE_SD | PREDECESSOR_TITLE | SUBSEQUENT_TRANSFER | DIVERGENT_BRANCH | ENCUMBRANCE | UNRELATED",
-            "edge_type": "forward | backward | branch",
-            "graph_from": "transaction_index | 'root'",
-            "portion": "the exact share/portion of the property this entry covers, e.g. '1/2 undivided share', 'balance share with building'",
-            "share_fraction": "1/2",
-            "property_identity": "Plot/CTS/Survey + locality for this entry",
-            "explanation": "plain-language explanation of this entry's role in the title story",
-        }
-    ],
-    "title_story": "3-5 sentence plain-language summary of how title to the conveyed share was built",
-}
+MATCH_RESPONSE_SCHEMA = load_schema("title_chain_schema")
+_TITLE_CHAIN_PROMPT_TEMPLATE = load_prompt("title_chain")
 
 NO_EC_TRANSACTIONS_MESSAGE = (
     "There are no transactions existing for this property in EC. "
@@ -274,71 +257,7 @@ def build_title_chain(case_id: str) -> dict:
     ]
 
     prompt = (
-        "You are building a TITLE TREE for a Karnataka property. The Sale Deed "
-        "(SD) conveys a specific share/portion of a property; the Encumbrance "
-        "Certificate (EC) historical ledger lists every registered document on "
-        "the property.\n\n"
-        "STEP 1 — UNDERSTAND THE SD's CONVEYED INTEREST.\n"
-        "Read the SD property schedule and parties carefully. Note EXACTLY what "
-        "right/share is being conveyed (e.g. '1/2 undivided common share', "
-        "'site No 6', 'eastern half', 'balance share with building') and record "
-        "it in sd_property.conveyed_interest.\n\n"
-        "STEP 2 — UNDERSTAND EACH EC ENTRY'S PROPERTY DESCRIPTION.\n"
-        "Each ledger entry's property_details.description says which portion of "
-        "which survey/plot it covers. Read it fully. Phrases such as 'Part 1/2 "
-        "undivided share' or 'out of R.S.No. 663/1 paiki' identify the exact "
-        "portion. Do NOT rely only on the plot number — two entries can share a "
-        "plot number but cover different survey numbers or different shares.\n\n"
-        "STEP 3 — CLASSIFY EVERY MATCHED ENTRY.\n"
-        "For each EC entry that relates to the SD property (match survey/CTS/"
-        "plot numbers and locality), return one object in transactions with:\n"
-        "- chain_role:\n"
-        "    THE_SD            = the entry IS the Sale Deed's own registration.\n"
-        "    PREDECESSOR_TITLE = a title transfer on the SAME portion as the SD, "
-        "executed BEFORE the SD (it built the vendor's title).\n"
-        "    SUBSEQUENT_TRANSFER = a title transfer on the SAME portion as the "
-        "SD, executed AFTER the SD (a red flag).\n"
-        "    DIVERGENT_BRANCH  = a transaction on the same property but on a "
-        "DIFFERENT share/portion than what the SD conveys (e.g. the other 1/2 "
-        "share sold to someone else). A vendor who owned the whole plot may sell "
-        "different portions to different buyers on different dates — that is NOT "
-        "a contradiction, it is a different branch of the property tree.\n"
-        "    ENCUMBRANCE       = a non-title document (mortgage, lease, "
-        "agreement-to-sell, cancellation).\n"
-        "    UNRELATED         = different survey/locality (same plot number "
-        "coincidentally).\n"
-        "- portion: the exact share/portion of the property this entry covers, "
-        "quoting the key words of its description (e.g. '1/2 undivided share').\n"
-        "- share_fraction: the fraction conveyed (e.g. '1/2'), or null.\n"
-        "- property_identity: consolidated Plot/CTS/Survey + locality.\n"
-        "- edge_type: forward if title moves to a NEW owner (sale, gift, "
-        "conveyance, partition); backward if the document CANCELLS or reverts "
-        "title (cancellation of agreement, reconveyance, revocation) — title "
-        "returns to the earlier owner; branch if it is an encumbrance "
-        "(mortgage/lease/agreement-to-sell) or a divergent portion on the "
-        "side of the main title line.\n"
-        "- graph_from: the transaction_index of the entry that title flows "
-        "into this one from. Use 'root' when this is the earliest/original "
-        "owner step of the title line. For branch entries, use the "
-        "transaction_index of the owner's title step this document burdens or "
-        "attaches to. Reason logically per case — the graph must tell the "
-        "true ownership story of THIS property.\n"
-        "- explanation: 1-2 plain sentences a layperson understands — who owned "
-        "what share, who it was sold to, and how it relates to the share the SD "
-        "conveys.\n\n"
-        "CRITICAL RULE — NO MATCHING PROPERTY:\n"
-        "If NO EC entries match the Sale Deed property (the survey/plot/CTS "
-        "numbers and locality are completely different between the SD and ALL "
-        "EC entries), return an EMPTY \"transactions\" array []. Do NOT force "
-        "a match. Set \"title_story\" to: \"No transactions registered related "
-        "to this property details in the Encumbrance Certificate. The EC may "
-        "belong to a different property.\"\n\n"
-        "EXCLUDE entries on other properties (different survey number and "
-        "locality) — the LLM must not return them. INCLUDE the SD's own entry "
-        "with chain_role THE_SD.\n\n"
-        "STEP 4 — TITLE STORY.\n"
-        "Write title_story: 3-5 plain sentences telling the full story of how "
-        "title to the SD's conveyed share was built and confirmed by the EC.\n\n"
+        _TITLE_CHAIN_PROMPT_TEMPLATE + "\n\n"
         "--- SALE DEED ---\n"
         f"{json.dumps(sd_data, ensure_ascii=False, default=str)}\n\n"
         "--- EC HISTORICAL LEDGER ---\n"

@@ -1,0 +1,71 @@
+You are building a TITLE TREE for a Karnataka property. The Sale Deed
+(SD) conveys a specific share/portion of a property; the Encumbrance
+Certificate (EC) historical ledger lists every registered document on
+the property.
+
+STEP 1 — UNDERSTAND THE SD's CONVEYED INTEREST.
+Read the SD property schedule and parties carefully. Note EXACTLY what
+right/share is being conveyed (e.g. '1/2 undivided common share',
+'site No 6', 'eastern half', 'balance share with building') and record
+it in sd_property.conveyed_interest.
+
+STEP 2 — UNDERSTAND EACH EC ENTRY'S PROPERTY DESCRIPTION.
+Each ledger entry's property_details.description says which portion of
+which survey/plot it covers. Read it fully. Phrases such as 'Part 1/2
+undivided share' or 'out of R.S.No. 663/1 paiki' identify the exact
+portion. Do NOT rely only on the plot number — two entries can share a
+plot number but cover different survey numbers or different shares.
+
+STEP 3 — CLASSIFY EVERY MATCHED ENTRY.
+For each EC entry that relates to the SD property (match survey/CTS/
+plot numbers and locality), return one object in transactions with:
+- chain_role:
+    THE_SD            = the entry IS the Sale Deed's own registration.
+    PREDECESSOR_TITLE = a title transfer on the SAME portion as the SD,
+    executed BEFORE the SD (it built the vendor's title).
+    SUBSEQUENT_TRANSFER = a title transfer on the SAME portion as the
+    SD, executed AFTER the SD (a red flag).
+    DIVERGENT_BRANCH  = a transaction on the same property but on a
+    DIFFERENT share/portion than what the SD conveys (e.g. the other 1/2
+    share sold to someone else). A vendor who owned the whole plot may sell
+    different portions to different buyers on different dates — that is NOT
+    a contradiction, it is a different branch of the property tree.
+    ENCUMBRANCE       = a non-title document (mortgage, lease,
+    agreement-to-sell, cancellation).
+    UNRELATED         = different survey/locality (same plot number
+    coincidentally).
+- portion: the exact share/portion of the property this entry covers,
+quoting the key words of its description (e.g. '1/2 undivided share').
+- share_fraction: the fraction conveyed (e.g. '1/2'), or null.
+- property_identity: consolidated Plot/CTS/Survey + locality.
+- edge_type: forward if title moves to a NEW owner (sale, gift,
+conveyance, partition); backward if the document CANCELLS or reverts
+title (cancellation of agreement, reconveyance, revocation) — title
+returns to the earlier owner; branch if it is an encumbrance
+(mortgage/lease/agreement-to-sell) or a divergent portion on the
+side of the main title line.
+- graph_from: the transaction_index of the entry that title flows
+into this one from. Use 'root' when this is the earliest/original
+owner step of the title line. For branch entries, use the
+transaction_index of the owner's title step this document burdens or
+attaches to. Reason logically per case — the graph must tell the
+true ownership story of THIS property.
+- explanation: 1-2 plain sentences a layperson understands — who owned
+what share, who it was sold to, and how it relates to the share the SD
+conveys.
+
+CRITICAL RULE — NO MATCHING PROPERTY:
+If NO EC entries match the Sale Deed property (the survey/plot/CTS
+numbers and locality are completely different between the SD and ALL
+EC entries), return an EMPTY "transactions" array []. Do NOT force
+a match. Set "title_story" to: "No transactions registered related
+to this property details in the Encumbrance Certificate. The EC may
+belong to a different property."
+
+EXCLUDE entries on other properties (different survey number and
+locality) — the LLM must not return them. INCLUDE the SD's own entry
+with chain_role THE_SD.
+
+STEP 4 — TITLE STORY.
+Write title_story: 3-5 plain sentences telling the full story of how
+title to the SD's conveyed share was built and confirmed by the EC.

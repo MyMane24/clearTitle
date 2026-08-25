@@ -14,26 +14,15 @@ from backend.database.repositories.document_repo import get_case_bundle
 from backend.database.repositories.verification_results_repo import save_verification_results
 from backend.integrations.llm.analysis_executor import run_analysis
 from backend.logger import get_logger
+from backend.prompts.loader import load_prompt, load_schema
 from backend.shared.constants import ENCUMBRANCE_CERTIFICATE, SALE_DEED
 
 logger = get_logger(__name__)
 
 VERIFICATION_STATUSES = {"VERIFIED", "NOT_VERIFIED", "N/A"}
 
-VERIFY_RESPONSE_SCHEMA = {
-    "headline": "2-3 line plain-language conclusion about the verification result — the main finding the user should know",
-    "summary": "Detailed verification report paragraph explaining what was checked, what matched, what did not, any gaps in the title chain, and what the user should do next",
-    "items": [
-        {
-            "field": "Property survey/CTS number",
-            "sd_value": "value from Sale Deed",
-            "ec_value": "value from EC ledger",
-            "status": "VERIFIED | NOT_VERIFIED | N/A",
-            "notes": "explanation",
-        }
-    ],
-    "overall_comment": "free text summary of title exposure",
-}
+VERIFY_RESPONSE_SCHEMA = load_schema("verification_schema")
+_VERIFY_PROMPT_TEMPLATE = load_prompt("verification")
 
 
 def _is_ec(doc: dict) -> bool:
@@ -83,39 +72,7 @@ def verify_case(case_id: str) -> dict:
     ledger = ec_data.get("historical_ledger") or []
 
     prompt = (
-        "Verify the Karnataka Sale Deed (SD) against the Encumbrance Certificate "
-        "(EC) historical ledger for the same property. The SD is the source of "
-        "truth for what was conveyed; the EC ledger must be consistent with it.\n\n"
-        "OUTPUT — You must return exactly these fields:\n\n"
-        "1. \"headline\": A 2-3 line plain-language conclusion the user can read "
-        "in 5 seconds. Write it like a newspaper headline or case-study finding. "
-        "State the single most important finding (e.g. 'The EC belongs to a "
-        "different property — none of the material fields could be verified' or "
-        "'All key fields match; however the EC shows 2 subsequent transactions "
-        "that need investigation'). Do NOT just say 'VERIFIED' or 'NOT VERIFIED' — "
-        "explain WHY in plain English.\n\n"
-        "2. \"summary\": A detailed verification report paragraph (5-10 sentences) "
-        "explaining: what was checked, what matched and what did not, any gaps in "
-        "the chain of title, whether subsequent encumbrances exist, and what the "
-        "user should do next. Write for a non-legal audience. If the EC does not "
-        "belong to the SD property, state that clearly and explain the mismatch.\n\n"
-        "3. \"items\": For each material field, produce one item with:\n"
-        "- field: the field name (e.g. 'Property survey/CTS number')\n"
-        "- sd_value: value extracted from the Sale Deed\n"
-        "- ec_value: value from the EC ledger (or 'Not found in EC')\n"
-        "- status: VERIFIED | NOT_VERIFIED | N/A\n"
-        "- notes: brief explanation of why this status\n\n"
-        "Compare these fields: property identifiers (CTS/survey/plot numbers, "
-        "locality), execution/registration date, parties (vendors/purchasers), "
-        "consideration amount. Also check whether the EC shows any later "
-        "encumbrance (mortgage, sale, agreement) on the property AFTER the SD "
-        "date.\n\n"
-        "RULES:\n"
-        "- If the EC property does not match the SD property at all, mark ALL "
-        "items as NOT_VERIFIED and explain in headline + summary.\n"
-        "- Do NOT guess or hallucinate values. Use 'Not found in EC' if a value "
-        "is absent.\n"
-        "- overall_comment: same as summary, kept for backwards compatibility.\n\n"
+        _VERIFY_PROMPT_TEMPLATE + "\n\n"
         "--- SALE DEED ---\n"
         f"{json.dumps(sd_data, ensure_ascii=False, default=str)}\n\n"
         "--- EC HISTORICAL LEDGER ---\n"

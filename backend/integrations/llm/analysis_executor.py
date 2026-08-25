@@ -12,8 +12,11 @@ from backend.config import GEMINI_API_KEY
 from backend.integrations.llm.model_router import resolve_analysis_task
 from backend.integrations.llm.rate_limiter import LLMCallTracker, gemini_limiter
 from backend.logger import get_logger
+from backend.prompts.loader import load_prompt
 
 logger = get_logger(__name__)
+
+_ANALYSIS_SYSTEM_TEMPLATE = load_prompt("analysis_system")
 
 
 def run_analysis(prompt: str, *, task: str, response_schema: dict) -> dict:
@@ -42,9 +45,7 @@ def run_analysis(prompt: str, *, task: str, response_schema: dict) -> dict:
                 "temperature": 0.0,
                 "max_output_tokens": 32768,
                 "system_instruction": (
-                    "You are a meticulous Karnataka property-title analyst.\n"
-                    "Return ONLY valid JSON matching the requested output shape. "
-                    "Use exact enum values where specified. Do not fabricate facts.\n\n"
+                    f"{_ANALYSIS_SYSTEM_TEMPLATE}\n\n"
                     f"EXPECTED OUTPUT SHAPE:\n{json.dumps(response_schema, indent=2)}"
                 ),
             },

@@ -1826,18 +1826,28 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                                     {isExpanded ? 'Hide Data' : 'View Structured Data'}
                                   </button>
 
-                                  <a
-                                    href={`/api/case/${currentCaseId || caseInfo?.case_id}/doc/${d.doc_id}/pdf`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    onClick={(e) => { e.stopPropagation(); }}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const url = `/api/case/${currentCaseId || caseInfo?.case_id}/doc/${d.doc_id}/pdf`;
+                                      const token = getToken();
+                                      const headers: Record<string, string> = {};
+                                      if (token) headers['Authorization'] = `Bearer ${token}`;
+                                      fetch(url, { headers })
+                                        .then(r => { if (!r.ok) throw new Error('Failed'); return r.blob(); })
+                                        .then(blob => {
+                                          const blobUrl = URL.createObjectURL(blob);
+                                          window.open(blobUrl, '_blank');
+                                        })
+                                        .catch(() => alert('Could not load PDF. Please try again.'));
+                                    }}
                                     style={{
                                       fontSize: 12, fontWeight: 600, color: '#2563eb', background: 'none', border: '1px solid #bfdbfe',
                                       borderRadius: 6, padding: '5px 12px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, textDecoration: 'none',
                                     }}
                                   >
                                     View Original PDF
-                                  </a>
+                                  </button>
                                 </div>
                               </div>
 

@@ -1,0 +1,14 @@
+{
+  "headline": "2-3 line plain-language conclusion about the verification result — the main finding the user should know",
+  "summary": "Detailed verification report paragraph explaining what was checked, what matched, what did not, any gaps in the title chain, and what the user should do next",
+  "items": [
+    {
+      "field": "Property survey/CTS number",
+      "sd_value": "value from Sale Deed",
+      "ec_value": "value from EC ledger",
+      "status": "VERIFIED | NOT_VERIFIED | N/A",
+      "notes": "explanation"
+    }
+  ],
+  "overall_comment": "free text summary of title exposure"
+}

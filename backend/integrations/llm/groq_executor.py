@@ -17,6 +17,7 @@ from groq import Groq
 from backend.config import GROQ_API_KEY
 from backend.integrations.llm.rate_limiter import LLMCallTracker, groq_limiter
 from backend.logger import get_logger
+from backend.prompts.loader import load_prompt
 
 logger = get_logger(__name__)
 
@@ -29,19 +30,8 @@ GROQ_MODELS = [
 from backend.services.schemas import SCHEMA_MAP, _generic_schema
 from backend.shared.helpers import merge_dict_list
 
-SYSTEM_PROMPT_BASE = """You are an expert Karnataka property document analyst.
-
-TASK — EXTRACT: Fill the JSON schema from the OCR text below.
-
-Rules:
-1. Return ONLY valid JSON matching the provided schema exactly.
-2. Use null for fields not found in the document.
-3. Dates must be YYYY-MM-DD format. If only month/year known, use YYYY-MM-01.
-4. Numbers must be numeric types (not strings).
-5. For Karnataka documents: CTS = City Survey number, RS = Rural Survey number.
-6. Extract ALL transactions from EC historical ledger, not just the first one.
-7. If Kannada text is present alongside English, use the English equivalent value.
-8. Do not hallucinate values — only extract what is explicitly present in the text."""
+SYSTEM_PROMPT_BASE = load_prompt("groq_system").strip()
+_GROQ_USER_TEMPLATE = load_prompt("groq_user").strip()
 
 
 def _build_system_message(doc_type: str) -> str:
@@ -71,10 +61,7 @@ def structure_document(merged_ocr: dict, doc_type: str,
 
     system_msg = _build_system_message(doc_type)
 
-    user_prompt = (
-        f"OCR TEXT FROM DOCUMENT:\n{ocr_text}\n\n"
-        f"Return ONLY the filled JSON. No explanation."
-    )
+    user_prompt = _GROQ_USER_TEMPLATE.format(ocr_text=ocr_text)
 
     _http_client = httpx.Client(timeout=httpx.Timeout(120.0, connect=30.0))
     client = Groq(api_key=GROQ_API_KEY, http_client=_http_client)
