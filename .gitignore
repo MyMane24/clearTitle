@@ -15,7 +15,7 @@ Thumbs.db
 dump.rdb
 
 # Database & runtime stores
-data/
+/data/
 
 # Scratch directory
 scratch/
