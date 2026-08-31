@@ -1,4 +1,4 @@
-﻿  .ctd-root * , .ctd-root *::before, .ctd-root *::after{ box-sizing: border-box; margin: 0; padding: 0; }
+  .ctd-root * , .ctd-root *::before, .ctd-root *::after{ box-sizing: border-box; margin: 0; padding: 0; }
   .ctd-root{
     --navy:   #1c1917;
     --blue:   #ea580c;
@@ -16,7 +16,7 @@
   }
   .ctd-root{
     font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
-    background: #FFF8F2;
+    background: #ffffff;
     color: #292524;
     height: 100vh;
     display: flex;
@@ -41,7 +41,7 @@
 
  /* ── Header ── */
   .ctd-root .header{
-    background: #FFF8F2;
+    background: #ffffff;
     color: #292524;
     padding: 12px 24px;
     display: flex;
@@ -532,7 +532,7 @@
   .ctd-root .sidebar{
     width: 280px;
     min-width: 280px;
-    background: var(--white);
+    background: #ffffff;
     border-right: 1px solid var(--border);
     height: 100%;
     overflow-y: auto;
@@ -552,7 +552,7 @@
     flex: 1;
     overflow-y: auto;
     height: 100%;
-    background: #faf8f5;
+    background: #ffffff;
     padding: 24px 32px;
     box-sizing: border-box;
     display: flex;
@@ -2160,6 +2160,7 @@
   .ctd-root.auth-screen {
     flex-direction: column;
     overflow-y: auto;
+    background: #ffffff;
   }
   .ctd-root .auth-left {
     display: none;
@@ -2167,7 +2168,16 @@
   .ctd-root .auth-right {
     width: 100%;
     min-width: 0;
-    padding: 48px 24px 72px;
+    min-height: 100vh;
+    background: #ffffff;
+    padding: 32px 20px 40px;
+  }
+  .ctd-root .auth-right-orb,
+  .ctd-root .auth-right-grid {
+    display: none;
+  }
+  .ctd-root .auth-card-modern {
+    max-width: 400px;
   }
 }
 
@@ -2182,7 +2192,7 @@
 /* -- Title chain page head -- */
 .ctd-root .chain-page-head{
   display:flex; align-items:flex-end; justify-content:space-between;
-  gap:20px; flex-wrap:wrap; margin-bottom:24px;
+  gap:20px; flex-wrap:wrap; margin:24px 0;
 }
 .ctd-root .chain-page-head-left{ display:flex; flex-direction:column; gap:4px; }
 .ctd-root .chain-kicker{
@@ -2209,6 +2219,14 @@
   padding:9px 16px; cursor:pointer; transition:border-color .2s, color .2s;
 }
 .ctd-root .chain-export:hover{ border-color:#ea580c; color:#ea580c; }
+
+.ctd-root .chain-back-btn{
+  display:inline-flex; align-items:center; gap:8px;
+  font-family:'Plus Jakarta Sans',sans-serif; font-size:12px; font-weight:600;
+  color:#1e1b19; background:transparent; border:1px solid #e9e1dd; border-radius:10px;
+  padding:9px 16px; cursor:pointer; transition:border-color .2s, color .2s, background .2s;
+}
+.ctd-root .chain-back-btn:hover{ border-color:#ea580c; color:#ea580c; background:#fff; }
 
 /* -- Title chain vertical nodes (gemini-code-1786707819942) -- */
 .ctd-root .chain-nodes{
@@ -3695,7 +3713,7 @@
 
 /* ── Modern Template Theme & Background ── */
 .ctd-root {
-  background-color: #FAF9F6 !important;
+  background-color: #ffffff !important;
   color: #0f172a;
 }
 
@@ -3724,10 +3742,31 @@
   flex-shrink: 0;
 }
 
+/* Guest-mode top bar: match homepage navbar (centered max-w-7xl positions) */
+.ctd-root .header.header-guest {
+  max-width: 1280px;
+  margin: 0 auto;
+  left: 0;
+  right: 0;
+  border-bottom: 1px solid #e9e1dd;
+  border-left: none;
+  border-right: none;
+}
+.ctd-root .header.header-guest .ct-btn-login {
+  border-radius: 999px;
+  padding: 9px 24px;
+}
+
 .ctd-root .ct-brand {
   display: flex;
   flex-direction: column;
   text-decoration: none;
+}
+
+.ctd-root .ct-brand-logo {
+  height: 48px;
+  width: auto;
+  object-fit: contain;
 }
 
 .ctd-root .ct-brand-title {
@@ -4020,10 +4059,63 @@
 /* ── Verdict Section & Banner ── */
 .ctd-root .verdict-banner {
   padding-bottom: 0;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
   margin-bottom: 8px;
+}
+
+.ctd-root .vr-banner-meta {
+  width: 100%;
+  min-width: 0;
+}
+
+.ctd-root .vr-banner-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ctd-root .vr-banner-meta-lines {
+  min-width: 0;
+}
+
+.ctd-root .vr-banner-action {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.ctd-root .vr-chain-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: #c2410c;
+  border: none;
+  padding: 0;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.2s ease;
+}
+.ctd-root .vr-chain-link .vr-chain-label {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ctd-root .vr-chain-link .vr-chain-arrow {
+  font-weight: 700;
+  transition: transform 0.2s ease;
+}
+.ctd-root .vr-chain-link:hover {
+  color: #ea580c;
+}
+.ctd-root .vr-chain-link:hover .vr-chain-arrow {
+  transform: translateX(3px);
+}
+.ctd-root .vr-chain-link:hover .vr-chain-label {
+  text-decoration-color: #ea580c;
 }
 
 .ctd-root .verdict-title-text {
@@ -4474,44 +4566,44 @@
 
 /* ── Page Theme & Background ── */
 .ctd-root {
-  background-color: #FAF6F0 !important;
+  background-color: #ffffff !important;
   color: #1C1917;
 }
 
 .ctd-root .header {
-  background: rgba(255, 255, 255, 0.88);
+  background: #ffffff;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid #e9e1dd;
 }
 
 .ctd-root .sidebar {
-  background: #FAF6F0;
+  background: #ffffff;
   border-right: 1px solid #EFE6D9;
 }
 
 .ctd-root .main-content {
-  background: #FAF6F0;
+  background: #ffffff;
   padding: 24px;
   width: 100%;
   max-width: 100%;
 }
 
-/* ── Full Width Upload Card Container ── */
+/* ── Upload — borderless centered column ── */
 .ctd-root .upload-card-full {
-  background: #FAF5ED;
-  border: 1px solid #EFE6D9;
-  border-radius: 20px;
-  padding: 28px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
   width: 100%;
-  max-width: 100%;
-  margin: 0 0 24px 0;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.02);
+  max-width: 920px;
+  margin: 0 auto;
+  box-shadow: none;
   box-sizing: border-box;
 }
 
 .ctd-root .upload-header-meta {
-  margin-bottom: 24px;
+  margin-bottom: 36px;
 }
 
 .ctd-root .upload-kicker {
@@ -4519,24 +4611,26 @@
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.1em;
-  color: #D95F2B;
-  margin-bottom: 6px;
+  color: #ea580c;
+  margin-bottom: 8px;
   text-transform: uppercase;
 }
 
 .ctd-root .upload-main-title {
   font-family: 'Plus Jakarta Sans', sans-serif;
-  font-size: 32px;
+  font-size: 38px;
   font-weight: 800;
-  color: #161616;
-  line-height: 1.15;
-  margin: 0 0 8px 0;
+  color: #1c1917;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin: 0 0 10px 0;
 }
 
 .ctd-root .upload-main-sub {
-  font-size: 14px;
-  color: #78716C;
+  font-size: 15px;
+  color: #6b7280;
   margin: 0;
+  max-width: 560px;
 }
 
 /* ── Uploaded Documents Table ── */
@@ -4563,27 +4657,31 @@
 }
 .ctd-root .upload-slots-grid {
   display: flex;
-  gap: 16px;
+  gap: 18px;
+  align-items: stretch;
 }
 
 .ctd-root .upload-slot {
-  background: #FFFFFF;
-  border: 1px solid #EFE6D9;
-  border-radius: 16px;
+  background: #ffffff;
+  border: 1px solid #e7e5e4;
+  border-radius: 14px;
   padding: 20px;
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 .ctd-root .upload-slot.has-files {
-  border-color: #E26618;
+  border-color: #ea580c;
 }
 
 .ctd-root .upload-slot-label {
   font-family: 'Plus Jakarta Sans', sans-serif;
   font-size: 16px;
   font-weight: 700;
-  color: #161616;
+  color: #1c1917;
 }
 
 .ctd-root .upload-slot-required {
@@ -4591,9 +4689,9 @@
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.05em;
-  color: #DC2626;
-  background: #FEE2E2;
-  border: 1px solid #FECACA;
+  color: #dc2626;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
   padding: 2px 7px;
   border-radius: 4px;
   text-transform: uppercase;
@@ -4603,8 +4701,8 @@
   font-family: monospace, sans-serif;
   font-size: 12px;
   font-weight: 700;
-  color: #78716C;
-  background: #EFE8DE;
+  color: #6b7280;
+  background: #f5f5f4;
   padding: 2px 10px;
   border-radius: 12px;
 }
@@ -4621,34 +4719,61 @@
 }
 
 .ctd-root .upload-slot-zone {
-  border: 2px dashed #E0602B;
+  border: 2px dashed #d6d3d1;
   border-radius: 12px;
-  padding: 20px;
+  padding: 22px;
   display: flex;
+  flex: 1;
   align-items: center;
   justify-content: center;
   gap: 10px;
   font-size: 14px;
-  color: #D95F2B;
+  color: #57534e;
   font-weight: 600;
-  background: #FFFBF7;
+  background: #fafaf9;
   cursor: pointer;
   transition: all 0.2s ease;
+  min-height: 96px;
 }
 
 .ctd-root .upload-slot-zone:hover,
 .ctd-root .upload-slot-zone.drag-over {
-  border-color: #D65A10;
-  background: #FFF5EC;
+  border-color: #ea580c;
+  background: #fff7ed;
+  color: #ea580c;
 }
 
 /* ── File Items ── */
 .ctd-root .file-item {
-  background: #FFFFFF;
-  border: 1px solid #EFE6D9;
+  background: #fafaf9;
+  border: 1px solid #e7e5e4;
   border-radius: 10px;
-  padding: 10px 14px;
+  padding: 9px 12px;
   margin-top: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ctd-root .file-list {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ctd-root .file-item .file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ctd-root .file-item .file-icon {
+  flex-shrink: 0;
+  color: #ea580c;
+}
+
+.ctd-root .file-item .file-size,
+.ctd-root .file-item .file-remove {
+  flex-shrink: 0;
 }
 
 /* ── Action Buttons Row (Clear Files Left, Verify Title Right) ── */
@@ -4656,14 +4781,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 24px;
-  padding-top: 20px;
-  border-top: 1px solid #EBE2D5;
+  margin-top: 28px;
+  padding-top: 0;
+  border-top: none;
   width: 100%;
 }
 
 .ctd-root .btn-primary {
-  background: #E26618;
+  background: #ea580c;
   color: #FFFFFF;
   border: none;
   border-radius: 24px;
@@ -4671,24 +4796,24 @@
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(226, 102, 24, 0.25);
+  box-shadow: 0 2px 8px rgba(234, 88, 12, 0.25);
   transition: background 0.15s ease;
 }
 
 .ctd-root .btn-primary:hover:not(:disabled) {
-  background: #D65A10;
+  background: #d65a10;
 }
 
 .ctd-root .btn-primary:disabled {
-  background: #D6D3D1;
+  background: #d6d3d1;
   box-shadow: none;
   cursor: not-allowed;
 }
 
 .ctd-root .btn-secondary {
   background: #FFFFFF;
-  color: #161616;
-  border: 1.5px solid #2B2623;
+  color: #1c1917;
+  border: 1.5px solid #292524;
   border-radius: 24px;
   padding: 10px 22px;
   font-size: 14px;
@@ -4698,7 +4823,7 @@
 }
 
 .ctd-root .btn-secondary:hover {
-  background: #161616;
+  background: #1c1917;
   color: #FFFFFF;
 }
 
@@ -4716,6 +4841,9 @@
 /* ── Mobile & Responsive Overrides (Screen Width <= 768px and <= 480px) ── */
 @media (max-width: 768px) {
   /* 1. Dashboard Top Navigation Bar */
+  .ctd-root .header.header-guest .ct-brand-logo {
+    height: 36px;
+  }
   .ctd-root .header {
     padding: 10px 14px;
     gap: 10px;
@@ -4889,11 +5017,17 @@
     word-break: break-word;
   }
 
-  .ctd-root .verdict-banner > div:last-child {
-    text-align: left !important;
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
+  .ctd-root .vr-banner-meta-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 12px;
+    margin-top: 24px;
+  }
+
+  .ctd-root .vr-banner-action {
+    justify-content: flex-start;
   }
 
   .ctd-root .checks-cleared-val {
@@ -4998,8 +5132,13 @@
 
   /* Upload View Card */
   .ctd-root .upload-card-full {
-    padding: 18px 14px;
-    border-radius: 14px;
+    padding: 0;
+    border-radius: 0;
+    margin-top: 24px;
+  }
+
+  .ctd-root .upload-header-meta {
+    margin-bottom: 18px;
   }
 
   .ctd-root .upload-slots-grid {
@@ -5034,8 +5173,10 @@
   }
 
   .ctd-root .upload-slot-zone {
-    padding: 14px 10px;
+    padding: 10px 10px;
     font-size: 13px;
+    min-height: 56px;
+    flex: 0 0 auto;
   }
 
   .ctd-root .btn-row {

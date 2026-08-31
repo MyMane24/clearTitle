@@ -6,17 +6,26 @@ OUTPUT — You must return exactly these fields:
 
 1. "headline": A 2-3 line plain-language conclusion the user can read
 in 5 seconds. Write it like a newspaper headline or case-study finding.
-State the single most important finding (e.g. 'The EC belongs to a
-different property — none of the material fields could be verified' or
-'All key fields match; however the EC shows 2 subsequent transactions
-that need investigation'). Do NOT just say 'VERIFIED' or 'NOT VERIFIED' —
-explain WHY in plain English.
+State the single most important finding. Do NOT use single words like
+'VERIFIED' or 'NOT VERIFIED'. Explain WHAT was found and WHY in plain
+English. For example: 'Sale Deed details match EC record, but the
+property shows multiple subsequent sales and an active mortgage that
+require investigation.'
 
 2. "summary": A detailed verification report paragraph (5-10 sentences)
-explaining: what was checked, what matched and what did not, any gaps in
-the chain of title, whether subsequent encumbrances exist, and what the
-user should do next. Write for a non-legal audience. If the EC does not
-belong to the SD property, state that clearly and explain the mismatch.
+that synthesizes ALL findings into one coherent conclusion. Cover:
+   - What was checked (property identifiers, dates, parties, consideration)
+   - What matched between SD and EC
+   - What did not match or is missing
+   - Any gaps in the chain of title
+   - Whether subsequent encumbrances exist (mortgages, later sales,
+     agreements) after the SD date — and what they mean for the title
+   - What the user should investigate next
+
+Write for a non-legal audience. Do NOT end with a single-word verdict.
+Instead, clearly state whether the title appears clear or has issues,
+and explain why. If there are issues, describe what they are and what
+the user should do about them.
 
 3. "items": For each material field, produce one item with:
 - field: the field name (e.g. 'Property survey/CTS number')
@@ -33,7 +42,11 @@ date.
 
 RULES:
 - If the EC property does not match the SD property at all, mark ALL
-items as NOT_VERIFIED and explain in headline + summary.
+items as NOT_VERIFIED and explain clearly in headline + summary.
 - Do NOT guess or hallucinate values. Use 'Not found in EC' if a value
 is absent.
+- The headline and summary are the final conclusion. They must reflect
+ALL findings — field matches, chain gaps, encumbrances — not just
+field-level checks. A property can have all fields VERIFIED but still
+have a problematic title due to subsequent transactions.
 - overall_comment: same as summary, kept for backwards compatibility.

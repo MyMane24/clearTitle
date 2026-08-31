@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 
 from backend.database.repositories.case_repo import get_case_owner
 from backend.logger import get_logger
@@ -27,6 +28,25 @@ async def get_results(case_id: str, user: dict | None = Depends(get_optional_use
         return build_case_results(case_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Case not found")
+
+
+@router.get("/results/{case_id}/report/pdf")
+async def get_report_pdf(case_id: str, user: dict | None = Depends(get_optional_user)):
+    """Download a PDF Title Verification Report for a case."""
+    _enforce_access(case_id, user)
+    try:
+        from backend.services.report import render_report_pdf
+        pdf = render_report_pdf(case_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Case not found")
+    except Exception as e:  # pragma: no cover - report rendering must not 500 raw
+        logger.error("Report generation failed for %s: %s", case_id, e)
+        raise HTTPException(status_code=500, detail="Could not generate report")
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="title-report-{case_id}.pdf"'},
+    )
 
 
 @router.post("/results/{case_id}/analyze")

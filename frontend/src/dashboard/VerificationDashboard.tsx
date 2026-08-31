@@ -1,16 +1,17 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import './dashboard.css';
+import clearTitleLogo from '../assets/clearTitle.png';
 import {
   API, AuthResponse, AuthUser, CaseListItem, CaseResults, HealthStatus,
   StatusResponse, TitleChainEntry, VerificationItem, getToken, setToken,
 } from '../api/backend';
 import { DocSummary } from './utils';
 import {
-  AlertTriangle, BarChart3, Bell, Check, CheckCircle2,
-  ChevronDown, ChevronUp, FileCheck2, FileText, FileUp,
+  AlertTriangle, ArrowLeft, BarChart3, Check, CheckCircle2,
+  ChevronDown, ChevronUp, FileText, FileUp,
   GitMerge, Lock, LogIn, LogOut, MapPin, Menu, MinusCircle,
-  Play, Plus, RefreshCw, ShieldCheck, Sparkles,
+  Play, Plus, RefreshCw, ShieldCheck, Sparkles, Download,
   Trash2, Upload, Users, X, XCircle,
 } from 'lucide-react';
 
@@ -1456,7 +1457,7 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
   return (
     <div className="ctd-root">
       {/* Main Top Bar */}
-      <header className="header">
+      <header className={`header ${auth ? '' : 'header-guest'}`}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           {auth && (
             <button
@@ -1470,18 +1471,17 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
             </button>
           )}
           <Link to="/" className="ct-brand" style={{ textDecoration: 'none' }}>
-            <span className="ct-brand-title">clearTitle</span>
+            <img src={clearTitleLogo} alt="clearTitle" className="ct-brand-logo" />
           </Link>
         </div>
 
         <div className="ct-actions">
-          <button className="ct-btn-new-case" onClick={backToUpload} title="Start a new case">
-            <Plus size={16} />
-            <span>New Case</span>
-          </button>
-          <button className="ct-icon-btn" aria-label="Notifications" title="Notifications">
-            <Bell size={20} />
-          </button>
+          {auth && (
+            <button className="ct-btn-new-case" onClick={backToUpload} title="Start a new case">
+              <Plus size={16} />
+              <span>New Case</span>
+            </button>
+          )}
           {auth ? (
             <div className="ct-profile-wrap" ref={profileMenuRef}>
               <button
@@ -1563,7 +1563,6 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
           {view === 'upload' && (
             <div className="card upload-card-full">
               <div className="upload-header-meta">
-                <div className="upload-kicker">NEW CASE - STEP 1</div>
                 <h1 className="upload-main-title">Upload documents</h1>
                 <p className="upload-main-sub">We extract, cross-check and verify against Kaveri records. Nothing is shared.</p>
               </div>
@@ -1648,27 +1647,6 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
 
           {view === 'results' && results && (
             <div className="report-main-wrap">
-              {auth && (
-                <div className="report-nav-bar">
-                  <div className="report-nav-container">
-                    <button
-                      className={`report-tab-btn ${activeReportTab === 'verification' ? 'active' : ''}`}
-                      onClick={() => setActiveReportTab('verification')}
-                    >
-                      <FileCheck2 size={16} style={{ color: activeReportTab === 'verification' ? '#fff' : '#6b7280' }} />
-                      <span>VERIFICATION REPORT</span>
-                    </button>
-
-                    <button
-                      className={`report-tab-btn ${activeReportTab === 'title-chain' ? 'active' : ''}`}
-                      onClick={() => setActiveReportTab('title-chain')}
-                    >
-                      <GitMerge size={16} style={{ color: activeReportTab === 'title-chain' ? '#fff' : '#6b7280' }} />
-                      <span>TITLE CHAIN</span>
-                    </button>
-                  </div>
-                </div>
-              )}
               {!auth ? (
                 <GuestReportPreview
                   results={results}
@@ -1728,20 +1706,36 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                 <div className="tab-pane active">
                   {/* Verdict Section */}
                   <div className="verdict-banner">
-                    <div>
-                      <div className="font-mono" style={{ fontSize: 11, color: '#94a3b8', marginBottom: 10 }}>
-                        CASE ID: <strong style={{ color: '#1e293b' }}>{currentCaseId || caseInfo?.case_id || 'A722E83D'}</strong> • {fmtDate(caseInfo?.created_at || new Date().toISOString())}
+                    <div className="vr-banner-meta">
+                      <div className="vr-banner-meta-row">
+                        <div className="vr-banner-meta-lines">
+                          <div className="font-mono" style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>
+                            CASE ID: <strong style={{ color: '#1e293b' }}>{currentCaseId || caseInfo?.case_id || 'A722E83D'}</strong>
+                          </div>
+                          <div className="font-mono" style={{ fontSize: 11, color: '#94a3b8' }}>
+                            {fmtDate(caseInfo?.created_at || new Date().toISOString())}
+                          </div>
+                        </div>
+                        <div className="vr-banner-action">
+                          <button
+                            className="vr-chain-link"
+                            onClick={() => setActiveReportTab('title-chain')}
+                            title="View the full chronological title chain for this case"
+                            aria-label="Open Title Chain"
+                          >
+                            <GitMerge size={14} />
+                            <span className="vr-chain-label">View Title Chain</span>
+                            <span className="vr-chain-arrow">&gt;</span>
+                          </button>
+                        </div>
                       </div>
-                      <p style={{ fontSize: 20, fontWeight: 700, color: '#1e293b', lineHeight: 1.4, margin: 0 }}>
+                      <p style={{ fontSize: 20, fontWeight: 700, color: '#1e293b', lineHeight: 1.4, margin: '8px 0 0' }}>
                         {verification?.summary?.headline ||
                           verification?.summary?.overall_comment ||
                           ((verification?.verdict || 'VERIFIED') === 'NOT_VERIFIED'
                             ? 'Verification found issues — some checks did not pass. Review the details below.'
                             : 'All checks passed. The Sale Deed is consistent with the Encumbrance Certificate records.')}
                       </p>
-                    </div>
-
-                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
                     </div>
                   </div>
 
@@ -1779,15 +1773,44 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                     ))}
                   </div>
 
-                  {/* Re-run Verification Control */}
-                  <div style={{ marginTop: 24, marginBottom: 24, textAlign: 'right' }}>
+                  {/* Re-run Verification + Download Report Controls */}
+                  <div style={{ marginTop: 24, marginBottom: 24, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
+                    <button
+                      className="btn btn-secondary"
+                      disabled={!allComplete}
+                      onClick={async () => {
+                        const cid = currentCaseId || caseInfo?.case_id;
+                        if (!cid) return;
+                        try {
+                          const headers: Record<string, string> = {};
+                          const token = getToken();
+                          if (token) headers['Authorization'] = `Bearer ${token}`;
+                          const r = await fetch(`/api/results/${cid}/report/pdf`, { headers });
+                          if (!r.ok) throw new Error('Failed to generate report');
+                          const blob = await r.blob();
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `title-report-${cid}.pdf`;
+                          document.body.appendChild(a);
+                          a.click();
+                          a.remove();
+                          URL.revokeObjectURL(url);
+                        } catch (e: any) {
+                          alert('Could not generate report. ' + (e.message || ''));
+                        }
+                      }}
+                    >
+                      <Download size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+                      Download PDF Report
+                    </button>
                     <button
                       className="btn btn-primary"
                       disabled={!allComplete || analyzing}
                       onClick={runAnalysis}
                     >
                       <RefreshCw size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-                      {analyzing ? 'Analyzing…' : 'Run / Re-run Verification'}
+                      {analyzing ? 'Analyzing…' : 'Re-run Verification'}
                     </button>
                   </div>
 
@@ -1893,6 +1916,9 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                       <p className="chain-page-sub">Chronological property devolution, ownership transitions, and adverse encumbrance tracking.</p>
                     </div>
                     <div className="chain-page-head-right">
+                      <button className="chain-back-btn" onClick={() => setActiveReportTab('verification')}>
+                        <ArrowLeft size={14} /> Back to Report
+                      </button>
                       <span className="chain-milestones">
                         <span className="chain-milestones-dot" />
                         {sortedChain.length} TRANSACTIONS LINKED
