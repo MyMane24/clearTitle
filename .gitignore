@@ -27,3 +27,8 @@ docs/
 
 # Docker — do NOT ignore .env.example (it is safe to commit)
 docker-compose.override.yml
+
+# OpenCode AI agent skills & config (not part of the application)
+.agents/
+skills-lock.json
+opencode.json
