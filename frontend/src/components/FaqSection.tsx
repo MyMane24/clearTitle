@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { FAQ_ITEMS } from '../data/landingData';
 import { ChevronDown } from 'lucide-react';
 
@@ -12,12 +13,9 @@ export const FaqSection: React.FC = () => {
   return (
     <section className="py-20 lg:py-28 bg-[#faf8f5] border-b border-stone-200">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        
+
         {/* Header */}
-        <div className="text-center mb-16">
-          <span className="text-xs font-medium uppercase tracking-widest text-[#ea580c] bg-orange-100 border border-orange-200 px-3.5 py-1 rounded-full inline-block mb-3">
-            FREQUENTLY ASKED QUESTIONS
-          </span>
+        <div className="text-center mb-14">
           <h2 className="text-3xl sm:text-5xl font-bold text-stone-900 tracking-tight">
             Everything you need to know
           </h2>
@@ -26,32 +24,57 @@ export const FaqSection: React.FC = () => {
           </p>
         </div>
 
-        {/* Accordion List */}
-        <div className="space-y-4">
+        {/* Open Q&A list — hairline separated, no cards */}
+        <div className="divide-y divide-stone-200/60">
           {FAQ_ITEMS.map((item, idx) => {
             const isOpen = openIdx === idx;
+            const num = String(idx + 1).padStart(2, '0');
+
             return (
-              <div 
-                key={idx} 
-                className="bg-white rounded-2xl border border-stone-200 overflow-hidden shadow-xs hover:border-orange-300 transition-colors"
-              >
+              <div key={idx}>
                 <button
                   onClick={() => toggle(idx)}
-                  className="w-full text-left p-5 sm:p-6 flex items-center justify-between gap-4 cursor-pointer focus:outline-none"
+                  aria-expanded={isOpen}
+                  className="w-full py-7 flex items-center gap-4 sm:gap-6 text-left cursor-pointer group"
                 >
-                  <span className="text-base sm:text-lg font-medium text-stone-900">
+                  <span className="w-8 shrink-0 font-mono text-xs font-bold text-[#ea580c]/70">
+                    {num}
+                  </span>
+                  <span
+                    className={`flex-1 text-lg sm:text-xl font-medium transition-colors ${
+                      isOpen ? 'text-[#ea580c]' : 'text-stone-900 group-hover:text-[#ea580c]'
+                    }`}
+                  >
                     {item.question}
                   </span>
-                  <div className={`w-8 h-8 rounded-full bg-stone-100 flex items-center justify-center flex-shrink-0 transition-transform ${isOpen ? 'rotate-180 bg-orange-100 text-[#ea580c]' : 'text-stone-500'}`}>
+                  <span
+                    className={`w-6 h-6 shrink-0 flex items-center justify-center text-stone-400 transition-transform duration-300 ${
+                      isOpen ? 'rotate-180 text-[#ea580c]' : 'group-hover:text-stone-600'
+                    }`}
+                  >
                     <ChevronDown className="w-5 h-5" />
-                  </div>
+                  </span>
                 </button>
 
-                {isOpen && (
-                  <div className="px-5 sm:px-6 pb-6 pt-0 text-stone-600 text-xs sm:text-sm leading-relaxed border-t border-stone-100 mt-1">
-                    {item.answer}
+                <div
+                  className={`grid transition-all duration-300 ${
+                    isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+                  }`}
+                >
+                  <div className="overflow-hidden">
+                    <div className="pl-12 sm:pl-14 pb-8">
+                      <p className="text-stone-600 text-base leading-relaxed">{item.answer}</p>
+                      {item.link && (
+                        <Link
+                          to={item.link.to}
+                          className="inline-flex items-center gap-1.5 mt-3 text-[#ea580c] font-semibold hover:underline"
+                        >
+                          {item.link.label} <span aria-hidden>→</span>
+                        </Link>
+                      )}
+                    </div>
                   </div>
-                )}
+                </div>
               </div>
             );
           })}

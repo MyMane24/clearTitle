@@ -24,7 +24,6 @@ export function PricingPage() {
       description: 'Instant AI document analysis & red flag summary for retail home buyers.',
       features: [
         'Instant AI document OCR & extraction',
-        'Kaveri & NGDRS record cross-check',
         'Survey number & area match check',
         'PDF Summary download',
         'Standard email support',
@@ -44,7 +43,6 @@ export function PricingPage() {
         'Vernacular language AI parsing (Kannada/Hindi)',
         'Red Flag risk alert matrix',
         'Priority verification desk review',
-        'Blockchain Trust Hash Certificate',
       ],
       cta: 'Start Standard Check',
       icon: <Shield className="w-5 h-5" />,
@@ -78,10 +76,6 @@ export function PricingPage() {
 
           {/* Header */}
           <div className="text-center max-w-3xl mx-auto space-y-4">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-orange-50 border border-orange-200/90 text-[#ea580c] font-mono text-[11px] font-bold tracking-widest uppercase shadow-xs">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#ea580c] animate-pulse" />
-              SIMPLE, HONEST PRICING
-            </div>
             <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-950 leading-tight">
               Transparent Pricing per Property Basis
             </h2>
@@ -166,7 +160,6 @@ export function PricingPage() {
                   <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> Custom ERP & LOS integration</li>
                   <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> White-label client verification portal</li>
                   <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> Dedicated account manager & SLA</li>
-                  <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500" /> Direct Kaveri & NGDRS API plug-ins</li>
                 </ul>
               </div>
               <div className="lg:text-right">

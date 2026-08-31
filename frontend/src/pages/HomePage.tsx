@@ -5,7 +5,6 @@ import { HeroSection } from '../components/HeroSection';
 import { LiveVerificationSection } from '../components/LiveVerificationSection';
 import { ProblemSolutionSection } from '../components/ProblemSolutionSection';
 import { FourStepPipeline } from '../components/FourStepPipeline';
-import { InteractiveAuditDemo } from '../components/InteractiveAuditDemo';
 import { SavingsCalculator } from '../components/SavingsCalculator';
 import { WhoWeEmpower } from '../components/WhoWeEmpower';
 import { FaqSection } from '../components/FaqSection';
@@ -53,9 +52,6 @@ export function HomePage() {
       <FourStepPipeline
         onStartAudit={goToApp}
       />
-
-      {/* Interactive AI Audit Playground & Scanner */}
-      <InteractiveAuditDemo />
 
       {/* Savings Calculator */}
       <SavingsCalculator />

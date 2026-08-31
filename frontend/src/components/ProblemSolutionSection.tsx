@@ -11,9 +11,6 @@ export const ProblemSolutionSection: React.FC<ProblemSolutionProps> = ({ onStart
       <div className="absolute inset-0 bg-gradient-to-b from-stone-900 via-stone-900 to-[#ea580c]/20 opacity-80 pointer-events-none" />
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center">
-        <span className="text-xs font-medium uppercase tracking-widest text-[#f97316] bg-orange-950/60 border border-orange-800/60 px-3 py-1 rounded-full inline-block mb-3">
-          THE PROPERTY DUE DILIGENCE GAP
-        </span>
         <h2 className="text-3xl sm:text-5xl font-bold text-white tracking-tight mb-4">
           Property due diligence in India is slow, manual, fragmented.
         </h2>

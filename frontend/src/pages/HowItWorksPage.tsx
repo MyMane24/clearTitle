@@ -27,10 +27,6 @@ export function HowItWorksPage() {
 
           {/* Header */}
           <div className="text-center max-w-3xl mx-auto space-y-4">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-orange-50 border border-orange-200/90 text-[#ea580c] font-mono text-[11px] font-bold tracking-widest uppercase shadow-xs">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#ea580c] animate-pulse" />
-              THE PROPERTY DUE DILIGENCE GAP
-            </div>
             <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-950 leading-tight">
               Property due diligence in India is slow, manual, fragmented.
             </h2>

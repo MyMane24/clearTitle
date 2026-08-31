@@ -4,10 +4,11 @@ export const PROBLEM_METRICS = [
     label: 'Title disputes in Indian courts',
     description: 'Nearly half of all civil litigation in India stems from unclear or disputed property titles.',
   },
-  {
-    value: '6+',
-    label: 'Portals checked per verification',
-    description: 'Buyers and lawyers manually cross-check Kaveri, NCAL, sub-registrar, and municipal portals.',
+{
+    value: '20+ years',
+    label: 'Ownership history traced per property',
+    description:
+      'Every ownership transfer and encumbrance entry is traced back across decades of records, not just the last sale deed.',
   },
   {
     value: '14 days',
@@ -74,41 +75,42 @@ export const FAQ_ITEMS = [
   {
     question: 'What is clearTitle?',
     answer:
-      'clearTitle is an AI-powered property title verification platform built for Karnataka. Upload your property documents (Sale Deed, Encumbrance Certificate, etc.) and our AI extracts structured data, builds a title chain, and cross-verifies every field — delivering a clear verdict in minutes, not weeks.',
+      'clearTitle is an AI-powered property title verification platform built for Karnataka. Upload your property documents — Sale Deed, Encumbrance Certificate, and more — and get a clear verdict on whether the title is clean, in minutes instead of weeks.',
   },
   {
     question: 'Which documents can I upload?',
     answer:
-      'We support Sale Deeds, Gift Deeds, Partition Deeds, Encumbrance Certificates, Property Register Cards, Khata certificates, Property Tax receipts, Mutation records, RTC/Pahani extracts, and more. The platform recognizes 15+ Karnataka-specific document types automatically.',
+      'Sale Deeds, Gift Deeds, Partition Deeds, Encumbrance Certificates, RTC/Pahani extracts, Khata certificates, Property Tax receipts, Mutation records and more — read automatically in Kannada and English.',
   },
   {
     question: 'How accurate is the AI verification?',
     answer:
-      'Our AI uses Sarvam Vision OCR for high-accuracy Kannada + English text extraction, followed by Gemini 2.5 Flash for structured field extraction and cross-document verification. Every field comparison is explainable — you see exactly what matched, what didn\'t, and why.',
+      'Every document is read and cross-checked against your others, with the reasoning behind every verdict shown in plain language. clearTitle accelerates the process and flags issues far faster than manual review — but a final manual check is still needed before you act on the outcome.',
   },
   {
     question: 'Is my data safe?',
     answer:
-      'Your documents are processed securely and stored encrypted. We do not share your data with third parties. Guest cases are anonymous until you sign in and link them to your account. All API keys and credentials are stored in encrypted environment variables.',
+      'Yes. Your documents are encrypted in transit and at rest, and never shared with third parties. Guest audits stay anonymous until you sign in.',
   },
   {
     question: 'Can I re-run verification after uploading more documents?',
     answer:
-      'Yes. You can add more documents to an existing case, replace failed documents, or re-trigger the verification pass at any time. The title chain and cross-document verification will re-run with the updated document set.',
+      'Yes. Add documents, replace one, or re-run the verification any time — the entire audit re-checks against the updated set.',
   },
   {
     question: 'What does the verification report show?',
     answer:
-      'The report includes a title chain timeline (showing every ownership transfer from the EC ledger), a field-by-field cross-check between your Sale Deed and EC, red flags with severity levels, and a final VERIFIED / NOT_VERIFIED verdict with a plain-language summary.',
+      'A full title chain showing every ownership transfer, a document-by-document cross-check, red flags ranked by severity, and a final verdict in plain language.',
   },
   {
     question: 'How much does it cost?',
     answer:
-      'Each verification run costs approximately ₹3–10 in AI processing fees (varies by document size and Kannada text volume). This covers OCR, field extraction, title chain construction, and cross-document verification.',
+      'Simple pay-per-audit pricing — no subscription, no surprise fees. You only pay when you run a verification.',
+    link: { label: 'See pricing plans', to: '/pricing' },
   },
   {
     question: 'Do I need to be a lawyer to use clearTitle?',
     answer:
-      'Not at all. clearTitle is designed for property buyers, lawyers, banks, and anyone involved in property due diligence. The results are presented in plain English with clear explanations — no legal jargon.',
+      'Not at all. It\'s built for property buyers, lawyers, banks and anyone doing property due diligence. Results are delivered in plain English.',
   },
 ];

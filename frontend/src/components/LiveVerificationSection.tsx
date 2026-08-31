@@ -14,17 +14,12 @@ export const LiveVerificationSection: React.FC<LiveVerificationSectionProps> = (
 
       <div className="max-w-5xl mx-auto relative z-10 space-y-12">
         <div className="text-center max-w-3xl mx-auto space-y-3">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-orange-50 border border-orange-200/90 text-[#ea580c] font-mono text-[11px] font-bold tracking-widest uppercase shadow-xs">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#ea580c] animate-pulse" />
-            LIVE TITLE VERIFICATION
-          </div>
-
           <h2 className="text-2xl sm:text-3xl md:text-5xl font-extrabold tracking-tight text-slate-950 leading-tight">
             See the verification engine in action.
           </h2>
 
           <p className="text-slate-600 text-sm sm:text-base leading-relaxed max-w-2xl mx-auto">
-            A real audit of a Belagavi property — every deed, EC, and e-Khata cross-checked against government registries in seconds, with blockchain proof anchored on Polygon.
+            A real audit of a Belagavi property — every deed, EC, and e-Khata cross-checked against government registries in seconds.
           </p>
         </div>
 

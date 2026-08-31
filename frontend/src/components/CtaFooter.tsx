@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Mail, Phone, MapPin, ArrowRight } from 'lucide-react';
+import clearTitleLogo from '../assets/clearTitle.png';
 
 interface CtaFooterProps {
   onStartAudit?: () => void;
@@ -17,9 +18,7 @@ export const CtaFooter: React.FC<CtaFooterProps> = () => {
           {/* Brand & Direct Contacts (5 Cols) */}
           <div className="md:col-span-5 space-y-5">
             <Link to="/" className="inline-block">
-              <span className="text-4xl font-black tracking-tight block" style={{ background: 'linear-gradient(135deg, #ea580c 0%, #f59e0b 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                clearTitle
-              </span>
+              <img src={clearTitleLogo} alt="clearTitle" className="h-14 object-contain" />
             </Link>
 
             <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-sm">

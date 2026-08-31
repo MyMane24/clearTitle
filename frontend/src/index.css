@@ -99,4 +99,60 @@
   animation: shieldGlow 2.5s infinite ease-in-out;
 }
 
+/* Savings calculator slider */
+input[type="range"].slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 10px;
+  border-radius: 9999px;
+  cursor: pointer;
+  outline: none;
+}
+
+input[type="range"].slider-thumb::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 3px solid #ea580c;
+  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.35);
+  cursor: grab;
+  transition: transform 0.15s ease;
+}
+
+input[type="range"].slider-thumb::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.1);
+}
+
+input[type="range"].slider-thumb::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 3px solid #ea580c;
+  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.35);
+  cursor: grab;
+  transition: transform 0.15s ease;
+}
+
+input[type="range"].slider-thumb:focus-visible {
+  outline: 3px solid rgba(234, 88, 12, 0.35);
+  outline-offset: 4px;
+  border-radius: 9999px;
+}
+
+input[type="number"].num-input-hide-spin::-webkit-outer-spin-button,
+input[type="number"].num-input-hide-spin::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"].num-input-hide-spin {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 

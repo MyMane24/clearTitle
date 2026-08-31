@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, ExternalLink, AlertTriangle, FileWarning, CheckCircle, HelpCircle } from 'lucide-react';
+import { Shield, AlertTriangle, FileWarning, CheckCircle, HelpCircle } from 'lucide-react';
 
 interface AuditReportCardProps {
   onStartAudit: () => void;
@@ -60,22 +60,11 @@ export const AuditReportCard: React.FC<AuditReportCardProps> = ({ onStartAudit }
 
               <div className="soft-inner-card p-4 rounded-2xl border border-[#e9e1dd] space-y-1.5 hover:border-orange-300 transition-colors">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">SURVEY &amp; ULPIN</span>
-                  <span className="text-emerald-700 bg-emerald-50 text-[10px] font-bold px-2 py-0.5 rounded border border-emerald-200">79PYQ GYZXX</span>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">TITLE CHAIN AUDIT</span>
+                  <span className="text-emerald-700 bg-emerald-50 text-[10px] font-bold px-2 py-0.5 rounded border border-emerald-200">3 LINKS</span>
                 </div>
-                <p className="font-bold text-slate-900 text-sm">14-Digit Bhu-Aadhar Tagged</p>
-                <p className="text-[11px] text-slate-500 leading-relaxed">Boundary matches sanctioned layout</p>
-              </div>
-
-              <div className="sm:col-span-2 soft-inner-card p-4 rounded-2xl border border-[#e9e1dd] flex flex-wrap items-center justify-between gap-3 hover:border-orange-300 transition-colors">
-                <div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">BLOCKCHAIN PROOF (POLYGON #492019XX)</span>
-                  <p className="font-bold text-slate-800 text-xs mt-0.5 font-mono">0x8f9c2a3e...18fa30XX</p>
-                </div>
-                <div className="flex items-center gap-1 text-orange-600 hover:text-orange-700 font-bold text-xs cursor-pointer">
-                  <span>Tamper-Proof Ledger</span>
-                  <ExternalLink className="w-4 h-4" />
-                </div>
+                <p className="font-bold text-slate-900 text-sm">Chain Traced &amp; Verified</p>
+                <p className="text-[11px] text-slate-500 leading-relaxed">Ownership linked back to the sanctioned layout</p>
               </div>
             </div>
           </div>
@@ -115,9 +104,6 @@ export const AuditReportCard: React.FC<AuditReportCardProps> = ({ onStartAudit }
               </button>
             </div>
 
-            <div className="flex items-center justify-end text-[11px] font-mono text-slate-400 pt-2 border-t border-[#e9e1dd]">
-              <span>256-Bit Encrypted Audit</span>
-            </div>
           </div>
 
         </div>
