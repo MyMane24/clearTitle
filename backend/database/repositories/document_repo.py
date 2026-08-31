@@ -241,21 +241,10 @@ def set_document_stage(case_id: str, doc_id: str, stage) -> None:
     with _get_conn() as conn:
         cursor = conn.cursor()
 
-        start_stages = {"preprocessing", "ocr_in_progress", "merging", "classifying", "structuring", "persisting"}
-        complete_stages = {"preprocessed", "ocr_done", "merged", "classified", "structuring_done", "structured", "skipped"}
-
-        sql = "UPDATE documents SET status = %s"
-        params = [status_str]
-
-        if status_str in start_stages:
-            sql += ", stage_started_at = CURRENT_TIMESTAMP"
-        elif status_str in complete_stages:
-            sql += ", stage_completed_at = CURRENT_TIMESTAMP"
-
-        sql += " WHERE case_id = %s AND doc_id = %s"
-        params.extend([case_id, doc_id])
-
-        cursor.execute(sql, tuple(params))
+        cursor.execute(
+            "UPDATE documents SET status = %s WHERE case_id = %s AND doc_id = %s",
+            (status_str, case_id, doc_id),
+        )
         conn.commit()
 
 
@@ -270,18 +259,3 @@ def load_document_paths(case_id: str, doc_id: str) -> dict:
             except Exception:
                 pass
         return {}
-
-
-def set_trace_id(case_id: str, doc_id: str, trace_id: str) -> None:
-    """Persist the OpenTelemetry trace_id for a document (Phase 3, fixes P8).
-
-    Moved out of the observability layer so `observability/*` never touches the
-    database; called explicitly from the worker adapter via `StageContext.state`.
-    """
-    with _get_conn() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE documents SET trace_id = %s WHERE case_id = %s AND doc_id = %s",
-            (trace_id, case_id, doc_id)
-        )
-        conn.commit()

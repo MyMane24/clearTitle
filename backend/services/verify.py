@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 
-from backend.config import GEMINI_MODEL
 from backend.database.repositories.case_repo import set_case_verification_status
 from backend.database.repositories.document_repo import get_case_bundle
 from backend.database.repositories.verification_results_repo import save_verification_results
@@ -63,7 +62,7 @@ def verify_case(case_id: str) -> dict:
         logger.warning("Verification for case %s: %s", case_id, msg)
         save_verification_results(
             case_id=case_id, status="skipped", verdict="N/A",
-            summary={"note": msg}, items=[], model_used="deterministic",
+            summary={"note": msg}, items=[],
         )
         return {"case_id": case_id, "status": "skipped", "verdict": "N/A"}
 
@@ -85,12 +84,11 @@ def verify_case(case_id: str) -> dict:
         logger.error("Verification LLM call failed for case %s: %s", case_id, e)
         save_verification_results(
             case_id=case_id, status="error", verdict="N/A",
-            summary={"error": str(e)}, items=[], model_used=GEMINI_MODEL,
+            summary={"error": str(e)}, items=[],
         )
         return {"case_id": case_id, "status": "error", "verdict": "N/A", "error": str(e)}
 
     result = response.get("result", {})
-    analytics = response.get("analytics", {})
 
     items = []
     for raw in result.get("items") or []:
@@ -116,11 +114,6 @@ def verify_case(case_id: str) -> dict:
     save_verification_results(
         case_id=case_id, status="complete", verdict=verdict,
         summary=summary, items=items,
-        input_tokens=analytics.get("input_tokens", 0),
-        output_tokens=analytics.get("output_tokens", 0),
-        latency_ms=analytics.get("latency_ms", 0),
-        cost_usd=analytics.get("cost_usd", 0),
-        model_used=analytics.get("model", GEMINI_MODEL),
     )
 
     set_case_verification_status(case_id=case_id, verification_status="complete", verdict=verdict)

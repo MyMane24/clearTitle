@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-from backend.config import GEMINI_MODEL
 from backend.database.repositories.document_repo import get_case_bundle
 from backend.database.repositories.title_chain_repo import save_title_chain
 from backend.integrations.llm.analysis_executor import run_analysis
@@ -219,8 +218,6 @@ def build_title_chain(case_id: str) -> dict:
                 "sale_deed_doc_id": sale_deed["doc_id"], "ec_doc_id": None,
                 "message": NO_EC_TRANSACTIONS_MESSAGE,
             },
-            sale_deed_doc_id=sale_deed["doc_id"], ec_doc_id=None,
-            model_used="deterministic",
         )
         return {
             "case_id": case_id,
@@ -241,8 +238,6 @@ def build_title_chain(case_id: str) -> dict:
                 "sale_deed_doc_id": sale_deed["doc_id"], "ec_doc_id": ec["doc_id"],
                 "message": NO_EC_TRANSACTIONS_MESSAGE,
             },
-            sale_deed_doc_id=sale_deed["doc_id"], ec_doc_id=ec["doc_id"],
-            model_used="deterministic",
         )
         return {
             "case_id": case_id,
@@ -271,13 +266,10 @@ def build_title_chain(case_id: str) -> dict:
         save_title_chain(
             case_id=case_id, status="error",
             source={"sale_deed_doc_id": sale_deed["doc_id"], "ec_doc_id": ec["doc_id"]},
-            sale_deed_doc_id=sale_deed["doc_id"], ec_doc_id=ec["doc_id"],
-            model_used=GEMINI_MODEL,
         )
         return {"case_id": case_id, "status": "error", "chain": [], "error": str(e)}
 
     result = response.get("result", {})
-    analytics = response.get("analytics", {})
     sd_identity = _sd_identity(sd_data)
 
     raw_entries = result.get("transactions") or []
@@ -326,12 +318,6 @@ def build_title_chain(case_id: str) -> dict:
                 "title_story": title_story,
                 "message": NO_MATCHING_PROPERTY_MESSAGE,
             },
-            sale_deed_doc_id=sale_deed["doc_id"], ec_doc_id=ec["doc_id"],
-            input_tokens=analytics.get("input_tokens", 0),
-            output_tokens=analytics.get("output_tokens", 0),
-            latency_ms=analytics.get("latency_ms", 0),
-            cost_usd=analytics.get("cost_usd", 0),
-            model_used=analytics.get("model", GEMINI_MODEL),
         )
         return {
             "case_id": case_id,
@@ -379,12 +365,6 @@ def build_title_chain(case_id: str) -> dict:
             "sd_property": result.get("sd_property") or sd_identity,
             "title_story": result.get("title_story"),
         },
-        sale_deed_doc_id=sale_deed["doc_id"], ec_doc_id=ec["doc_id"],
-        input_tokens=analytics.get("input_tokens", 0),
-        output_tokens=analytics.get("output_tokens", 0),
-        latency_ms=analytics.get("latency_ms", 0),
-        cost_usd=analytics.get("cost_usd", 0),
-        model_used=analytics.get("model", GEMINI_MODEL),
     )
 
     logger.info("Title chain built for case %s: %d entries", case_id, len(chain))

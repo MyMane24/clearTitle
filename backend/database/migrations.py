@@ -9,8 +9,11 @@ Tables:
   verification_results  — LLM field-verification results for a case
 
 Obsolete tables (cross_doc_verifications, human_feedback, llm_calls and the
-daily_cost_summary view) and the documents.verification_notes column are dropped
-best-effort so an existing DB upgrades cleanly.
+daily_cost_summary view) are dropped best-effort so an existing DB upgrades
+cleanly, as are abandoned columns: documents.verification_notes,
+documents.stage_started_at, documents.stage_completed_at, documents.trace_id,
+and the unused token/cost/metadata columns on title_chains and
+verification_results that are no longer surfaced to any consumer.
 """
 
 from __future__ import annotations
@@ -69,9 +72,6 @@ CREATE TABLE IF NOT EXISTS documents (
     raw_ocr_path VARCHAR(512) DEFAULT NULL,
     error TEXT NULL,
     retry_count INT NOT NULL DEFAULT 0,
-    stage_started_at TIMESTAMP NULL DEFAULT NULL,
-    stage_completed_at TIMESTAMP NULL DEFAULT NULL,
-    trace_id VARCHAR(64) NULL DEFAULT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ON UPDATE CURRENT_TIMESTAMP,
@@ -86,15 +86,8 @@ CREATE TABLE IF NOT EXISTS title_chains (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     case_id VARCHAR(32) NOT NULL,
     status VARCHAR(32) NOT NULL DEFAULT 'pending',
-    sale_deed_doc_id VARCHAR(32) DEFAULT NULL,
-    ec_doc_id VARCHAR(32) DEFAULT NULL,
     chain JSON NULL,
     source JSON NULL,
-    input_tokens INT NOT NULL DEFAULT 0,
-    output_tokens INT NOT NULL DEFAULT 0,
-    latency_ms INT NOT NULL DEFAULT 0,
-    cost_usd DECIMAL(10,6) NOT NULL DEFAULT 0,
-    model_used VARCHAR(64) DEFAULT '',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ON UPDATE CURRENT_TIMESTAMP,
@@ -109,11 +102,6 @@ CREATE TABLE IF NOT EXISTS verification_results (
     verdict VARCHAR(32) DEFAULT NULL,
     summary JSON NULL,
     items JSON NULL,
-    input_tokens INT NOT NULL DEFAULT 0,
-    output_tokens INT NOT NULL DEFAULT 0,
-    latency_ms INT NOT NULL DEFAULT 0,
-    cost_usd DECIMAL(10,6) NOT NULL DEFAULT 0,
-    model_used VARCHAR(64) DEFAULT '',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ON UPDATE CURRENT_TIMESTAMP,
@@ -157,9 +145,6 @@ def ensure_tables():
         # Best-effort column migrations for pre-existing DBs
         for col_def in [
             ("cases", "user_id", "ALTER TABLE cases ADD COLUMN user_id VARCHAR(32) NULL DEFAULT NULL AFTER id"),
-            ("documents", "stage_started_at", "ALTER TABLE documents ADD COLUMN stage_started_at TIMESTAMP NULL DEFAULT NULL"),
-            ("documents", "stage_completed_at", "ALTER TABLE documents ADD COLUMN stage_completed_at TIMESTAMP NULL DEFAULT NULL"),
-            ("documents", "trace_id", "ALTER TABLE documents ADD COLUMN trace_id VARCHAR(64) NULL DEFAULT NULL"),
             ("documents", "expected_type", "ALTER TABLE documents ADD COLUMN expected_type VARCHAR(32) NULL DEFAULT NULL"),
         ]:
             _, _, sql = col_def
@@ -169,17 +154,30 @@ def ensure_tables():
             except Exception:
                 conn.rollback()
 
-        try:
-            cursor.execute("ALTER TABLE documents DROP COLUMN verification_notes")
-            conn.commit()
-        except Exception:
-            conn.rollback()
-
-        try:
-            cursor.execute("UPDATE documents SET stage_completed_at = updated_at WHERE status IN ('structured', 'skipped') AND stage_completed_at IS NULL")
-            conn.commit()
-        except Exception:
-            conn.rollback()
+        # Best-effort removal of abandoned columns from older schemas
+        for sql in [
+            "ALTER TABLE documents DROP COLUMN verification_notes",
+            "ALTER TABLE documents DROP COLUMN stage_started_at",
+            "ALTER TABLE documents DROP COLUMN stage_completed_at",
+            "ALTER TABLE documents DROP COLUMN trace_id",
+            "ALTER TABLE title_chains DROP COLUMN sale_deed_doc_id",
+            "ALTER TABLE title_chains DROP COLUMN ec_doc_id",
+            "ALTER TABLE title_chains DROP COLUMN input_tokens",
+            "ALTER TABLE title_chains DROP COLUMN output_tokens",
+            "ALTER TABLE title_chains DROP COLUMN latency_ms",
+            "ALTER TABLE title_chains DROP COLUMN cost_usd",
+            "ALTER TABLE title_chains DROP COLUMN model_used",
+            "ALTER TABLE verification_results DROP COLUMN input_tokens",
+            "ALTER TABLE verification_results DROP COLUMN output_tokens",
+            "ALTER TABLE verification_results DROP COLUMN latency_ms",
+            "ALTER TABLE verification_results DROP COLUMN cost_usd",
+            "ALTER TABLE verification_results DROP COLUMN model_used",
+        ]:
+            try:
+                cursor.execute(sql)
+                conn.commit()
+            except Exception:
+                conn.rollback()
     _tables_initialized = True
 
 
