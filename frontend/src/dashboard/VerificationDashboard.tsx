@@ -843,7 +843,11 @@ function VerifyResults({ verification, locked, onUnlock }: {
           {onUnlock && <button className="btn btn-primary" onClick={onUnlock}>Sign in to unlock</button>}
         </div>
       ) : orderedItems.length === 0 ? (
-        <div className="vr-sheet-empty">Verification has not run yet.</div>
+        <div className="vr-sheet-empty">
+          {verification?.status === "error"
+            ? "Verification did not complete due to a temporary issue. Please retry."
+            : "Verification has not run yet."}
+        </div>
       ) : (
         <div className="vrf-fields">
           {orderedItems.map((it, i) => <FieldRow key={i} it={it} index={i} />)}
@@ -1730,11 +1734,15 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                         </div>
                       </div>
                       <p style={{ fontSize: 20, fontWeight: 700, color: '#1e293b', lineHeight: 1.4, margin: '8px 0 0' }}>
-                        {verification?.summary?.headline ||
+                        {verification?.status === "error"
+                          ? "Verification could not be completed due to a temporary issue. Please retry."
+                          : (verification?.summary?.headline ||
                           verification?.summary?.overall_comment ||
-                          ((verification?.verdict || 'VERIFIED') === 'NOT_VERIFIED'
-                            ? 'Verification found issues — some checks did not pass. Review the details below.'
-                            : 'All checks passed. The Sale Deed is consistent with the Encumbrance Certificate records.')}
+                          (verification?.items?.length
+                            ? ((verification?.verdict || 'VERIFIED') === 'NOT_VERIFIED'
+                              ? 'Verification found issues — some checks did not pass. Review the details below.'
+                              : 'All checks passed. The Sale Deed is consistent with the Encumbrance Certificate records.')
+                            : 'Verification has not run yet.'))}
                       </p>
                     </div>
                   </div>
@@ -1762,19 +1770,22 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                     <div className="pipeline-line"></div>
 
                     {/* Dynamic Pipeline Items */}
-                    {(verification?.items && verification.items.length > 0 ? verification.items : [
-                      { title: "Vendors Title Check", description: "All vendor signatures and title deeds match historical ledger records.", pass: true },
-                      { title: "Purchasers Identity Trace", description: "Purchaser identity verified across documents.", pass: true },
-                      { title: "Property Survey / CTS Number", description: "Survey numbers match municipal records.", pass: true },
-                      { title: "Execution / Registration Date", description: "Execution dates align with EC entry timestamps.", pass: true },
-                      { title: "Consideration Amount", description: "Financial consideration verified across deeds.", pass: true }
-                    ]).map((item: any, idx: number) => (
-                      <PipelineNode key={idx} item={item} index={idx} />
-                    ))}
+                    {verification?.items && verification.items.length > 0 ? (
+                      verification.items.map((item: any, idx: number) => (
+                        <PipelineNode key={idx} item={item} index={idx} />
+                      ))
+                    ) : (
+                      <div className="vr-sheet-empty">
+                        {verification?.status === "error"
+                          ? "Verification did not complete due to a temporary issue. Please retry — no checks were evaluated."
+                          : "Verification has not run yet. No checks have been evaluated."}
+                      </div>
+                    )}
                   </div>
 
                   {/* Re-run Verification + Download Report Controls */}
                   <div style={{ marginTop: 24, marginBottom: 24, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
+                    {verification?.status !== "error" && verification?.items?.length ? (
                     <button
                       className="btn btn-secondary"
                       disabled={!allComplete}
@@ -1804,6 +1815,7 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                       <Download size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
                       Download PDF Report
                     </button>
+                    ) : null}
                     <button
                       className="btn btn-primary"
                       disabled={!allComplete || analyzing}

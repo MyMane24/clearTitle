@@ -293,6 +293,13 @@ def render_report_pdf(case_id: str) -> bytes:
     title_chain = data.get("title_chain")
     verification = data.get("verification")
 
+    ver_items = verification.get("items") or []
+    ver_status = verification.get("status")
+    if ver_status == "error" or not ver_items:
+        raise ValueError(
+            f"Verification not complete for case {case_id}; cannot generate report"
+        )
+
     sd = _extract_sd(documents)
     owner_blocks = _owner_blocks(sd)
     sched_lines, boundaries, usage = _schedule_lines(sd)

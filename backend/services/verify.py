@@ -86,6 +86,7 @@ def verify_case(case_id: str) -> dict:
             case_id=case_id, status="error", verdict="N/A",
             summary={"error": str(e)}, items=[],
         )
+        set_case_verification_status(case_id=case_id, verification_status="error", verdict="N/A")
         return {"case_id": case_id, "status": "error", "verdict": "N/A", "error": str(e)}
 
     result = response.get("result", {})
