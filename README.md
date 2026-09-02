@@ -18,7 +18,7 @@ flowchart TD
     subgraph API["API Gateway Layer (FastAPI)"]
         R_AUTH["Auth Router\n/api/auth/register . /login . /me"]
         R_CASES["Cases Router\n/api/upload . /api/cases . /api/process\n/api/status . /api/retry\nreplace / skip / case upload / link"]
-        R_RESULTS["Results Router\n/api/results/{id} . /api/results/{id}/analyze\nGET /api/case/{id}/doc/{id}/pdf"]
+        R_RESULTS["Results Router\n/api/results/{id} . /api/results/{id}/analyze\n/api/results/{id}/report/pdf\nGET /api/case/{id}/doc/{id}/pdf"]
     end
 
     subgraph Orchestration["Async Task Queue"]
@@ -78,6 +78,8 @@ flowchart TD
 - **Title Chain** — every EC ledger transaction is classified (`THE_SD`, `PREDECESSOR_TITLE`, `SUBSEQUENT_TRANSFER`, `DIVERGENT_BRANCH`, `ENCUMBRANCE`, `UNRELATED`), sorted chronologically, and merged into a timeline.
 - **Cross-Document Verification** — a field-by-field comparison (property identifiers, dates, parties, consideration) between the Sale Deed and the EC ledger, with a deterministic `VERIFIED` / `NOT_VERIFIED` / `N/A` verdict.
 - **Self-Service Re-run** — every completed case can re-run the title-chain + verification pass (`POST /api/results/{case_id}/analyze`).
+- **PDF Title Verification Report** — generates a professional legal-style PDF report per case (`GET /api/results/{case_id}/report/pdf`).
+- **No misleading success on failure** — if verification can't complete (e.g. a temporary LLM outage), the case is marked `error`, the dashboard shows a clear "please retry" state with no fabricated green checks, and the PDF report is only downloadable once verification has actually produced results.
 - **Idempotent Stages** — Celery `acks_late` + per-stage idempotency guards make re-runs and retries safe.
 - **Human-in-the-Loop** — failed or unclassified documents can be replaced or skipped; retries resume the pipeline for just those documents.
 
@@ -210,6 +212,7 @@ docker compose exec mysql mysql -u root -ppassword property_ocr_v2
 |---|---|---|
 | `GET` | `/api/results/{case_id}` | Full results payload: case info, documents + structured JSON, title chain, verification |
 | `POST` | `/api/results/{case_id}/analyze` | (Re)run the title-chain + verification pass for a completed case |
+| `GET` | `/api/results/{case_id}/report/pdf` | Download a PDF Title Verification Report (only available once verification completes) |
 | `GET` | `/api/case/{case_id}/doc/{doc_id}/pdf` | Serve original PDF (authenticated, opens in new tab) |
 
 ### Misc
@@ -287,6 +290,7 @@ clearTitle/
 │   │   ├── extract.py              #   OCR retry + LLM fallback-chain driver
 │   │   ├── title_chain.py          #   build title tree from SD + EC ledger
 │   │   ├── verify.py               #   cross-document verification pass
+│   │   ├── report.py               #   PDF title verification report renderer
 │   │   ├── results.py              #   assemble /api/results payload
 │   │   ├── extraction_prompts.py   #   prompt builders (loads from backend/prompts/)
 │   │   ├── auth.py                 #   JWT + bcrypt helpers
@@ -470,4 +474,4 @@ pytest backend/tests      # backend unit tests
 
 ---
 
-*Last updated: 25 August 2026*
+*Last updated: 2 September 2026*
