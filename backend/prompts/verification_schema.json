@@ -1,6 +1,6 @@
 {
   "headline": "2-3 line plain-language conclusion about the verification result — the main finding the user should know",
-  "summary": "Detailed verification report paragraph explaining what was checked, what matched, what did not, any gaps in the title chain, and what the user should do next",
+  "summary": "Detailed verification report narrative synthesizing field matches, title chain acquisition analysis (including potential legal heir inheritance hypotheses), current ownership status, active encumbrances, EC recency, and actionable next steps",
   "items": [
     {
       "field": "Property survey/CTS number",
@@ -10,5 +10,6 @@
       "notes": "explanation"
     }
   ],
-  "overall_comment": "free text summary of title exposure"
+  "overall_comment": "Concise 1-paragraph (4-5 lines) final conclusion certificate summarizing title clear/risk verdict, key title exposures, and main recommended action for Section 5 of the PDF report"
 }
+

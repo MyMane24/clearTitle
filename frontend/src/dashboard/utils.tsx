@@ -370,10 +370,33 @@ function LedgerSection({ ledger }: { ledger: any[] }) {
 
   return (
     <div className="ds-section">
-      <div className="ds-section-title">
-        <span className="ds-sec-ico"><FileText size={15} /></span>
-        <span>Historical Ledger {total > 1 ? `(${idx + 1} of ${total})` : ''}</span>
+      <div className="ds-section-title ds-section-title-wrap">
+        <div className="ds-section-title-left">
+          <span className="ds-sec-ico"><FileText size={15} /></span>
+          <span>Historical Ledger {total > 1 ? `(${idx + 1} of ${total})` : ''}</span>
+        </div>
+        {total > 1 && (
+          <div className="ds-car-pager-top">
+            <button className="ds-car-nav" onClick={prev} disabled={total <= 1} aria-label="Previous transaction">
+              <ChevronLeft size={16} />
+            </button>
+            <div className="ds-car-dots">
+              {visibleIndices.map((slideIdx) => (
+                <button
+                  key={slideIdx}
+                  className={`ds-car-dot ${slideIdx === idx ? 'active' : ''}`}
+                  onClick={() => setIdx(slideIdx)}
+                  aria-label={`Go to transaction ${slideIdx + 1}`}
+                />
+              ))}
+            </div>
+            <button className="ds-car-nav" onClick={next} disabled={total <= 1} aria-label="Next transaction">
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        )}
       </div>
+
       <div className="ds-car-viewport">
         <div className="ds-car-track" style={{ transform: `translateX(-${idx * 100}%)` }}>
           {ledger.map((tx, i) => (
@@ -381,26 +404,6 @@ function LedgerSection({ ledger }: { ledger: any[] }) {
           ))}
         </div>
       </div>
-      {total > 1 && (
-        <div className="ds-car-pager">
-          <button className="ds-car-nav" onClick={prev} disabled={total <= 1} aria-label="Previous transaction">
-            <ChevronLeft size={18} />
-          </button>
-          <div className="ds-car-dots">
-            {visibleIndices.map((slideIdx) => (
-              <button
-                key={slideIdx}
-                className={`ds-car-dot ${slideIdx === idx ? 'active' : ''}`}
-                onClick={() => setIdx(slideIdx)}
-                aria-label={`Go to transaction ${slideIdx + 1}`}
-              />
-            ))}
-          </div>
-          <button className="ds-car-nav" onClick={next} disabled={total <= 1} aria-label="Next transaction">
-            <ChevronRight size={18} />
-          </button>
-        </div>
-      )}
     </div>
   );
 }

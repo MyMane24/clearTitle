@@ -157,7 +157,7 @@ def _doc_rows(documents: list) -> list:
     return rows
 
 
-def _title_chain_text(title_chain: dict) -> str:
+def _title_chain_text(title_chain: dict | None) -> str:
     story = None
     if title_chain:
         source = title_chain.get("source") if isinstance(title_chain.get("source"), dict) else {}
@@ -177,9 +177,10 @@ def _title_chain_text(title_chain: dict) -> str:
     return "Title chain records are not yet available for this case."
 
 
-def _issues_list(verification: dict, documents: list) -> list:
+def _issues_list(verification: dict | None, documents: list) -> list:
     issues = []
-    items = verification.get("items") or []
+    ver = verification or {}
+    items = ver.get("items") or []
     if isinstance(items, list):
         for it in items:
             if isinstance(it, dict) and str(it.get("status", "")).upper() == "NOT_VERIFIED":
@@ -189,14 +190,14 @@ def _issues_list(verification: dict, documents: list) -> list:
         if d.get("status") in ("failed", "classification_failed"):
             issues.append(f"{d.get('filename')} could not be read/classified: {d.get('error') or 'unknown error'}.")
     if not issues:
-        summary = (verification or {}).get("summary") or {}
+        summary = ver.get("summary") or {}
         overall = summary.get("overall_comment") or summary.get("headline") or ""
         if overall and "no discrepancies" not in str(overall).lower():
             issues.append(str(overall).strip())
     return issues or ["No discrepancies were identified requiring further action."]
 
 
-def _conclusion(verification: dict) -> str:
+def _conclusion(verification: dict | None) -> str:
     summary = (verification or {}).get("summary") or {}
     overall = summary.get("overall_comment") or summary.get("headline") or ""
     if overall:
@@ -226,9 +227,11 @@ def _logo_path() -> Path | None:
     return None
 
 
-def _logo_flowable(w_mm: float) -> Image:
+def _logo_flowable(w_mm: float) -> Image | None:
     """Logo tight-cropped to its artwork, so the subtitle sits flush under it."""
     path = _logo_path()
+    if not path:
+        return None
     try:
         from PIL import Image as PILImage
         im = PILImage.open(path)
@@ -242,6 +245,7 @@ def _logo_flowable(w_mm: float) -> Image:
     except Exception as e:  # pragma: no cover - image issues are non-fatal
         logger.warning("Could not embed logo: %s", e)
         return None
+
 
 
 def _styles():
@@ -291,10 +295,11 @@ def render_report_pdf(case_id: str) -> bytes:
     data = build_case_results(case_id)
     documents = data.get("documents", [])
     title_chain = data.get("title_chain")
-    verification = data.get("verification")
+    verification = data.get("verification") or {}
 
     ver_items = verification.get("items") or []
     ver_status = verification.get("status")
+
     if ver_status == "error" or not ver_items:
         raise ValueError(
             f"Verification not complete for case {case_id}; cannot generate report"
@@ -400,11 +405,20 @@ def render_report_pdf(case_id: str) -> bytes:
 
     # 4. Title Chain Audit
     story.append(Paragraph("4. TITLE CHAIN AUDIT", st["section"]))
-    story.append(Paragraph(_title_chain_text(title_chain), st["body"]))
+    tc_text = _title_chain_text(title_chain)
+    for p in tc_text.split("\n\n"):
+        p_clean = p.strip()
+        if p_clean:
+            story.append(Paragraph(p_clean, st["body"]))
 
     # 5. Conclusion
     story.append(Paragraph("5. FINAL CONCLUSION / CERTIFICATE", st["section"]))
-    story.append(Paragraph(_conclusion(verification), st["body"]))
+    conc_text = _conclusion(verification)
+    for p in conc_text.split("\n\n"):
+        p_clean = p.strip()
+        if p_clean:
+            story.append(Paragraph(p_clean, st["body"]))
+
 
     doc.build(story, onFirstPage=_page_footer, onLaterPages=_page_footer)
     return buf.getvalue()

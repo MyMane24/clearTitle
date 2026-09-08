@@ -12,15 +12,13 @@ English. For example: 'Sale Deed details match EC record, but the
 property shows multiple subsequent sales and an active mortgage that
 require investigation.'
 
-2. "summary": A detailed verification report paragraph (5-10 sentences)
-that synthesizes ALL findings into one coherent conclusion. Cover:
+2. "summary": A detailed verification report (2-3 paragraphs) that synthesizes ALL findings into one coherent conclusion. Cover:
    - What was checked (property identifiers, dates, parties, consideration)
    - What matched between SD and EC
    - What did not match or is missing
-   - Any gaps in the chain of title
-   - Whether subsequent encumbrances exist (mortgages, later sales,
-     agreements) after the SD date — and what they mean for the title
-   - What the user should investigate next
+   - Title chain acquisition analysis: Cross-reference Vendor names in subsequent sales against prior Purchasers. If Vendors share family initials/names with a prior purchaser (e.g. 'G.' matching 'Gundappa') but no registered Partition Deed/Will is in the EC, explicitly state that the vendors appear to be legal heirs (wife/children), note the missing EC evidence, and advise inspecting physical Legal Heir Certificates, Death Certificates, and Khata mutation records.
+   - Current Ownership & Encumbrances: State explicitly whether the purchaser named in the provided Sale Deed currently holds clear title or if title moved to subsequent buyers, and detail any active bank mortgages (Deposit of Title Deeds).
+   - EC Recency & Next Steps: Check if the EC search end date is up to date; if old, recommend obtaining a fresh Encumbrance Certificate up to the current date. List exact offline/online documents the user should investigate.
 
 Write for a non-legal audience. Do NOT end with a single-word verdict.
 Instead, clearly state whether the title appears clear or has issues,
@@ -40,13 +38,15 @@ consideration amount. Also check whether the EC shows any later
 encumbrance (mortgage, sale, agreement) on the property AFTER the SD
 date.
 
+4. "overall_comment": A concise 1-paragraph (4-5 plain-language lines) final conclusion certificate for the PDF report. State clearly whether the title is clear/marketable or has critical title risks (such as subsequent transfers away from the SD purchaser, unverified legal heir transfers, or active bank mortgages), and summarize the single most important action the user must take.
+
 RULES:
 - If the EC property does not match the SD property at all, mark ALL
 items as NOT_VERIFIED and explain clearly in headline + summary.
 - Do NOT guess or hallucinate values. Use 'Not found in EC' if a value
 is absent.
 - The headline and summary are the final conclusion. They must reflect
-ALL findings — field matches, chain gaps, encumbrances — not just
-field-level checks. A property can have all fields VERIFIED but still
-have a problematic title due to subsequent transactions.
-- overall_comment: same as summary, kept for backwards compatibility.
+ALL findings — field matches, chain gaps, legal heir ambiguities, subsequent sales, active encumbrances — not just field-level checks. A property can have all fields VERIFIED but still have a problematic title due to subsequent transactions or unverified family transfers.
+- overall_comment MUST be a single concise paragraph of 4-5 lines specifically designed for Section 5 (Final Conclusion / Certificate) of the PDF report.
+
+

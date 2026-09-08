@@ -58,16 +58,17 @@ def run_analysis(prompt: str, *, task: str, response_schema: dict) -> dict:
     raw_response = response.text or ""
 
     try:
-        result = json.loads(raw_response)
+        result = json.loads(raw_response, strict=False)
     except json.JSONDecodeError:
         m = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', raw_response)
         if m:
-            result = json.loads(m.group(1))
+            result = json.loads(m.group(1), strict=False)
         else:
             raise RuntimeError(f"Analysis task {task} returned unparseable JSON")
 
     if not isinstance(result, dict):
         raise RuntimeError(f"Analysis task {task} returned non-object JSON")
+
 
     usage = getattr(response, "usage_metadata", None)
     input_tokens = usage.prompt_token_count if usage and hasattr(usage, "prompt_token_count") else len(prompt) // 4

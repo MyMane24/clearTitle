@@ -50,9 +50,17 @@ owner step of the title line. For branch entries, use the
 transaction_index of the owner's title step this document burdens or
 attaches to. Reason logically per case — the graph must tell the
 true ownership story of THIS property.
-- explanation: 1-2 plain sentences a layperson understands — who owned
-what share, who it was sold to, and how it relates to the share the SD
-conveys.
+- explanation: 2-3 plain sentences explaining who owned what share, who it was sold to, how the seller acquired title (or missing link), and how it relates to the share the SD conveys.
+
+CRITICAL RULE — PARTY IDENTITY CROSS-REFERENCING & HIDDEN LINK DETECTION:
+In Karnataka property ledgers, intermediate title transfers often occur after an owner passes away without an explicit registered Partition Deed or Will in the EC ledger.
+You MUST perform party cross-referencing between consecutive transactions:
+1. Compare Vendor names/initials/residence in Transaction N with Purchaser names/initials/residence in Transaction N-1.
+2. Example: If Purchaser in 2010 is 'Shri. I.A. Gundappa' and Vendors in 2019 are 'Shri. Puneet G. Kousik', 'Smt. Bharati G.R', and 'Smt. Ramalakshmi I.C' residing in the same locality, observe that 'G.' / 'G.R' / 'I.C' represent family initials / children / wife of 'I.A. Gundappa'.
+3. State this hypothesis explicitly: "The vendors appear to be the legal heirs (wife and children) of the previous purchaser (Shri. I.A. Gundappa)."
+4. Highlight missing EC evidence: Point out that no registered Legal Heir Certificate, Partition Deed, or Will is recorded in the EC ledger for this transfer.
+5. Provide actionable guidance: Advise the user to inspect physical Legal Heir Certificates, the Death Certificate of the deceased owner, and Revenue Mutation (Khata) records to confirm lawful devolution of title before the sale.
+6. If Vendors have NO name/initial/residence connection to the prior purchaser, explicitly flag it as an unexplained acquisition gap or competing title chain.
 
 CRITICAL RULE — NO MATCHING PROPERTY:
 If NO EC entries match the Sale Deed property (the survey/plot/CTS
@@ -66,6 +74,13 @@ EXCLUDE entries on other properties (different survey number and
 locality) — the LLM must not return them. INCLUDE the SD's own entry
 with chain_role THE_SD.
 
-STEP 4 — TITLE STORY.
-Write title_story: 3-5 plain sentences telling the full story of how
-title to the SD's conveyed share was built and confirmed by the EC.
+STEP 4 — TITLE STORY (COMPREHENSIVE MULTI-PARAGRAPH AUDIT).
+Do NOT summarize in 3-5 lines. Write a detailed, multi-paragraph plain-language narrative story for "title_story" covering:
+
+Paragraph 1 — CHRONOLOGICAL TITLE FLOW: Trace every transaction in sequence from the root/earliest entry to the latest entry. For each step, state the date, registration reference, parties (Vendor -> Purchaser), property portion, and nature of conveyance.
+
+Paragraph 2 — ACQUISITION LINKS & GAPS (INTELLECTUAL AUDIT): Detail how each vendor acquired title. Explicitly explain any missing predecessor deeds, unexplained acquisition gaps, or implied legal heir transfers (mentioning party names, matching initials/family relationships, and missing registered inheritance documents). State what offline documents (Legal Heir Certificate, Death Certificate, Mutation entries) the user must inspect.
+
+Paragraph 3 — OWNERSHIP VERDICT & ACTIVE ENCUMBRANCES: Explicitly clarify whether the purchaser named in the uploaded Sale Deed currently retains ownership of record, or if ownership has moved to subsequent buyers. Detail all active encumbrances (e.g. active bank mortgages / Deposit of Title Deeds) against the current owners.
+
+Paragraph 4 — EC RECENCY & SEARCH RANGE RECOMMENDATION: Check the latest transaction date / search end date in the EC. If the EC search range ends prior to the present date, warn the user and recommend fetching an updated Encumbrance Certificate (up to the current date) to ensure no recent unrecorded transactions or mortgages exist.

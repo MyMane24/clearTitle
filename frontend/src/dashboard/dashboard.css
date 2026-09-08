@@ -3328,8 +3328,8 @@
 }
 .ctd-root .ds-car-nav{
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   border: 1px solid #e7e5e4;
   background: #ffffff;
@@ -3342,19 +3342,26 @@
   transition: all .15s;
 }
 .ctd-root .ds-car-nav:hover:not(:disabled){
-  background: #f1f5f9;
+  background: #fff7ed;
   color: #ea580c;
+  border-color: #fdba74;
 }
 .ctd-root .ds-car-nav:disabled{
   opacity: .4;
   cursor: default;
 }
-.ctd-root .ds-car-pager{
+.ctd-root .ds-section-title-wrap{
+  justify-content: space-between;
+}
+.ctd-root .ds-section-title-left{
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 16px;
-  margin-top: 12px;
+  gap: 8px;
+}
+.ctd-root .ds-car-pager-top{
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .ctd-root .ds-car-dots{
   display: flex;

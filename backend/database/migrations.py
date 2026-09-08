@@ -40,7 +40,6 @@ CREATE TABLE IF NOT EXISTS cases (
     total_docs INT NOT NULL DEFAULT 0,
     completed_docs INT NOT NULL DEFAULT 0,
     failed_docs INT NOT NULL DEFAULT 0,
-    pipeline_status VARCHAR(32) DEFAULT NULL,
     verification_status VARCHAR(32) DEFAULT NULL,
     verdict VARCHAR(32) DEFAULT NULL,
     pipeline_logs JSON NULL,
@@ -156,6 +155,7 @@ def ensure_tables():
 
         # Best-effort removal of abandoned columns from older schemas
         for sql in [
+            "ALTER TABLE cases DROP COLUMN pipeline_status",
             "ALTER TABLE documents DROP COLUMN verification_notes",
             "ALTER TABLE documents DROP COLUMN stage_started_at",
             "ALTER TABLE documents DROP COLUMN stage_completed_at",

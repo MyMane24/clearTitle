@@ -320,46 +320,7 @@ def append_log(case_id: str, msg: str) -> None:
         print(f"Failed to append log to Redis cache: {e}")
 
 
-def add_result(case_id: str, result: dict) -> None:
-    try:
-        r = _get_client()
-        r.rpush(_results_key(case_id), json.dumps(result, ensure_ascii=False))
-    except Exception as e:
-        print(f"Failed to add result to Redis cache: {e}")
 
-
-def add_error(case_id: str, error: dict) -> None:
-    try:
-        r = _get_client()
-        r.rpush(_errors_key(case_id), json.dumps(error, ensure_ascii=False))
-    except Exception as e:
-        print(f"Failed to add error to Redis cache: {e}")
-
-
-def remove_error_for_doc(case_id: str, doc_id: str) -> None:
-    try:
-        r = _get_client()
-        errors = get_case_errors(case_id)
-        filtered = [e for e in errors if e.get("doc_id") != doc_id]
-        # Use MULTI/EXEC (transaction=True) so the delete and re-push are atomic.
-        # Without this, a concurrent reader sees an empty errors list in the
-        # brief window between the DELETE and the RPUSH.
-        pipe = r.pipeline(transaction=True)
-        pipe.delete(_errors_key(case_id))
-        if filtered:
-            pipe.rpush(_errors_key(case_id), *[json.dumps(e, ensure_ascii=False) for e in filtered])
-        pipe.execute()
-    except Exception as e:
-        print(f"Failed to remove error from Redis cache: {e}")
-
-
-def increment_done_count(case_id: str) -> int:
-    try:
-        r = _get_client()
-        return r.incr(_done_count_key(case_id))
-    except Exception as e:
-        print(f"Redis cache unavailable for increment_done_count: {e}")
-        return 0
 
 
 def get_done_count(case_id: str) -> int:
@@ -382,36 +343,7 @@ def get_done_count(case_id: str) -> int:
         return 0
 
 
-# Lua script for atomic read-merge-write on the per-doc status JSON blob.
-# Eliminates the TOCTOU race where two concurrent workers both read the same
-# stale value, merge different fields, and one silently overwrites the other.
-#
-# KEYS[1] = docs hash key  (case:{id}:docs)
-# KEYS[2] = doc_id field   (the hash field to update)
-# ARGV[1] = JSON string of the fields to merge in
-_SET_DOC_STATUS_LUA = """\
-local raw = redis.call('HGET', KEYS[1], KEYS[2])
-local existing = {}
-if raw then
-    local ok, val = pcall(cjson.decode, raw)
-    if ok and type(val) == 'table' then existing = val end
-end
-local ok2, updates = pcall(cjson.decode, ARGV[1])
-if not ok2 then return redis.error_reply('set_doc_status: bad JSON in updates') end
-for k, v in pairs(updates) do existing[k] = v end
-redis.call('HSET', KEYS[1], KEYS[2], cjson.encode(existing))
-return 1
-"""
 
-
-def set_doc_status(case_id: str, doc_id: str, **fields) -> None:
-    try:
-        r = _get_client()
-        key = _docs_status_key(case_id)
-        updates_json = json.dumps(fields, ensure_ascii=False)
-        r.eval(_SET_DOC_STATUS_LUA, 2, key, doc_id, updates_json)
-    except Exception as e:
-        print(f"Failed to update doc status in Redis cache: {e}")
 
 
 # ── Single-case delete ────────────────────────────────────────────────────────────
