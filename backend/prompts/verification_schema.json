@@ -1,4 +1,5 @@
 {
+  "verdict": "CLEAR_TITLE | ATTENTION_REQUIRED",
   "headline": "2-3 line plain-language conclusion about the verification result — the main finding the user should know",
   "summary": "Detailed verification report narrative synthesizing field matches, title chain acquisition analysis (including potential legal heir inheritance hypotheses), current ownership status, active encumbrances, EC recency, and actionable next steps",
   "items": [

@@ -227,8 +227,24 @@ function caseBadgeClass(status: string): string {
 function verdictBadge(verdict?: string | null): React.ReactNode {
   if (!verdict) return null;
   const v = verdict.toUpperCase();
-  const cls = v === "VERIFIED" ? "badge-green" : v === "NOT_VERIFIED" ? "badge-red" : "badge-amber";
-  return <span className={`badge ${cls}`}>{verdict}</span>;
+  const isClear = v === "VERIFIED" || v === "CLEAR_TITLE" || v.includes("CLEAR");
+  const isAttention = v === "NOT_VERIFIED" || v === "REQUIRED_ATTENTION" || v === "ATTENTION_REQUIRED" || v.includes("ATTENTION") || v.includes("DISCREPANC") || v.includes("NOT_");
+
+  if (isClear) {
+    return (
+      <span className="verdict-text verdict-clear">
+        <ShieldCheck size={12} /> ClearTitle
+      </span>
+    );
+  }
+  if (isAttention) {
+    return (
+      <span className="verdict-text verdict-attention">
+        <AlertTriangle size={12} /> Attention Required
+      </span>
+    );
+  }
+  return <span className="verdict-text">{verdict}</span>;
 }
 
 function fmtDate(value?: string | null): string {
@@ -591,8 +607,11 @@ function TypewriterBullets({ sentences, speed = 14 }: { sentences: string[]; spe
 function FieldRow({ it, index }: { it: VerificationItem; index: number }) {
   const [open, setOpen] = useState(false);
   const s = (it.status || "N/A").toUpperCase();
+  const isClear = s === "VERIFIED" || s === "CLEAR_TITLE" || s.includes("CLEAR");
+  const isAttention = s === "NOT_VERIFIED" || s === "REQUIRED_ATTENTION" || s.includes("ATTENTION") || s.includes("DISCREPANC") || s.includes("NOT_");
+  const displayStatus = isClear ? "Verified" : isAttention ? "Attention Required" : "N/A";
   const cls = vrfStatusClass(s);
-  const Icon = s === "VERIFIED" ? CheckCircle2 : s === "NOT_VERIFIED" ? XCircle : MinusCircle;
+  const Icon = isClear ? CheckCircle2 : isAttention ? XCircle : MinusCircle;
 
   return (
     <div
@@ -612,7 +631,7 @@ function FieldRow({ it, index }: { it: VerificationItem; index: number }) {
     >
       <span className="vrf-field-icon"><Icon size={16} /></span>
       <span className="vrf-field-name">{it.field || "—"}</span>
-      <span className={`vrf-badge ${cls}`}>{s}</span>
+      <span className={`vrf-badge ${cls}`}>{displayStatus}</span>
 
       <div className="vrf-evidence">
         <div className="vrf-evidence-row">
@@ -640,7 +659,7 @@ function PipelineTrace({ item }: { item: any }) {
   const hasNote = item.notes;
   if (!hasSd && !hasEc && !hasNote) return null;
   const status = String(item.status || (item.pass ? 'VERIFIED' : 'NOT_VERIFIED')).toUpperCase();
-  const isFail = status === 'NOT_VERIFIED';
+  const isFail = status === 'NOT_VERIFIED' || status.includes('DISCREPANC') || status.includes('ATTENTION');
   return (
     <div className="trace-comparison-box pipeline-trace-enter">
       {hasSd && (
@@ -671,7 +690,7 @@ function PipelineTrace({ item }: { item: any }) {
 function PipelineNode({ item, index }: { item: any; index: number }) {
   const [open, setOpen] = useState(false);
   const status = String(item.status || (item.pass ? 'VERIFIED' : 'NOT_VERIFIED')).toUpperCase();
-  const ok = status === 'VERIFIED';
+  const ok = status === 'VERIFIED' || status === 'CLEAR_TITLE' || status.includes('CLEAR');
   const na = status === 'N/A';
   const title = item.title || item.check_name || item.field || 'Verification Check';
   const desc = item.description || item.comment || item.details;
@@ -698,8 +717,8 @@ function PipelineNode({ item, index }: { item: any; index: number }) {
       <div className="pipeline-content">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <h3 className="pipeline-node-title">{title}</h3>
-          <span className="badge-verified-sm">
-            VERIFIED
+          <span className={`badge-verified-sm ${ok ? 'ok' : na ? 'na' : 'fail'}`}>
+            {ok ? 'Verified' : na ? 'N/A' : 'Attention Required'}
           </span>
         </div>
         {desc && <p className="pipeline-node-desc">{desc}</p>}
@@ -820,9 +839,12 @@ function VerifyResults({ verification, locked, onUnlock }: {
   const orderedItems = [...items].sort((a, b) => fieldRank(a.field || "") - fieldRank(b.field || ""));
   const summary = verification.summary || {};
   const [summaryOpen, setSummaryOpen] = useState(false);
-  const verdict = String(verification.verdict || summary.verdict || "N/A").toUpperCase();
-  const heroCls = vrfStatusClass(verdict);
-  const HeroIcon = verdict === "VERIFIED" ? ShieldCheck : verdict === "NOT_VERIFIED" ? XCircle : MinusCircle;
+  const verdictStr = String(verification.verdict || summary.verdict || "N/A").toUpperCase();
+  const isClear = verdictStr === "VERIFIED" || verdictStr === "CLEAR_TITLE" || verdictStr.includes("CLEAR");
+  const isAttention = verdictStr === "NOT_VERIFIED" || verdictStr === "REQUIRED_ATTENTION" || verdictStr.includes("ATTENTION") || verdictStr.includes("DISCREPANC") || verdictStr.includes("NOT_");
+  const displayVerdict = isClear ? "ClearTitle" : isAttention ? "Attention Required" : verdictStr;
+  const heroCls = isClear ? "ok" : isAttention ? "fail" : "na";
+  const HeroIcon = isClear ? ShieldCheck : isAttention ? AlertTriangle : MinusCircle;
   const summarySentences = summary.overall_comment ? splitSummary(String(summary.overall_comment)) : [];
 
   return (
@@ -831,7 +853,7 @@ function VerifyResults({ verification, locked, onUnlock }: {
         <div className="vrf-hero-icon"><HeroIcon size={34} /></div>
         <div className="vrf-hero-text">
           <span className="vrf-hero-label">Case Verdict</span>
-          <span className="vrf-hero-verdict">{verdict}</span>
+          <span className="vrf-hero-verdict">{displayVerdict}</span>
         </div>
       </div>
 
@@ -1542,16 +1564,22 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                 >
                   <div className="sidebar-item-header">
                     <span className="case-id">{c.id}</span>
-                    <button
-                      className="sidebar-delete-btn"
-                      title="Delete case"
-                      onClick={e => { e.stopPropagation(); deleteCase(c.id); }}
-                    ><Trash2 size={14} /></button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {verdictBadge(c.verdict)}
+                      <button
+                        className="sidebar-delete-btn"
+                        title="Delete case"
+                        onClick={e => { e.stopPropagation(); deleteCase(c.id); }}
+                      ><Trash2 size={14} /></button>
+                    </div>
                   </div>
                   <div className="case-meta">
                     <span>{c.completed_docs}/{c.total_docs}</span>
-                    <span className={`badge ${caseBadgeClass(c.status)}`}>{c.status}</span>
-                    {verdictBadge(c.verdict)}
+                    {(c.status === 'complete' || c.status === 'completed') ? (
+                      <span className="case-status-done"><CheckCircle2 size={11} style={{ verticalAlign: '-1px' }} /> Title Verification Done</span>
+                    ) : (
+                      <span className={`badge ${caseBadgeClass(c.status)}`}>{c.status}</span>
+                    )}
                   </div>
                   <div className="case-date">{fmtDate(c.created_at)}</div>
                 </div>
@@ -1712,8 +1740,8 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                   <div className="verdict-banner">
                     <div className="vr-banner-meta">
                       <div className="vr-banner-meta-row">
-                        <div className="vr-banner-meta-lines">
-                          <div className="font-mono" style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>
+                        <div className="vr-banner-meta-lines" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                          <div className="font-mono" style={{ fontSize: 11, color: '#94a3b8' }}>
                             CASE ID: <strong style={{ color: '#1e293b' }}>{currentCaseId || caseInfo?.case_id || 'A722E83D'}</strong>
                           </div>
                           <div className="font-mono" style={{ fontSize: 11, color: '#94a3b8' }}>
@@ -1739,7 +1767,7 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                           : (verification?.summary?.headline ||
                           verification?.summary?.overall_comment ||
                           (verification?.items?.length
-                            ? ((verification?.verdict || 'VERIFIED') === 'NOT_VERIFIED'
+                            ? (String(verification?.verdict || 'CLEAR_TITLE').toUpperCase().includes('ATTENTION') || String(verification?.verdict || '').toUpperCase().includes('NOT_')
                               ? 'Verification found issues — some checks did not pass. Review the details below.'
                               : 'All checks passed. The Sale Deed is consistent with the Encumbrance Certificate records.')
                             : 'Verification has not run yet.'))}

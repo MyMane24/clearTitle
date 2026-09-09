@@ -1,7 +1,7 @@
 """Cross-document verification (SD source of truth vs EC ledger).
 
-One LLM field-verification pass returns VERIFIED / NOT_VERIFIED / N/A items.
-Code validates the enums, summarizes, and persists.
+One LLM verification pass returns field checks plus a case-level verdict.
+Code validates the enums and persists the same verdict to both case tables.
 """
 
 from __future__ import annotations
@@ -19,9 +19,15 @@ from backend.shared.constants import ENCUMBRANCE_CERTIFICATE, SALE_DEED
 logger = get_logger(__name__)
 
 VERIFICATION_STATUSES = {"VERIFIED", "NOT_VERIFIED", "N/A"}
+VERDICTS = {"CLEAR_TITLE", "ATTENTION_REQUIRED"}
 
 VERIFY_RESPONSE_SCHEMA = load_schema("verification_schema")
 _VERIFY_PROMPT_TEMPLATE = load_prompt("verification")
+
+
+def _normalize_llm_verdict(value) -> str | None:
+    normalized = str(value or "").strip().upper().replace(" ", "_").replace("-", "_")
+    return normalized if normalized in VERDICTS else None
 
 
 def _is_ec(doc: dict) -> bool:
@@ -40,14 +46,10 @@ def _summarize(items: list[dict]) -> dict:
             counts[status] += 1
     total = sum(counts.values())
     verified_share = counts["VERIFIED"] / total if total else 0.0
-    verdict = "VERIFIED" if counts["NOT_VERIFIED"] == 0 and counts["VERIFIED"] > 0 else "NOT_VERIFIED"
-    if counts["VERIFIED"] == 0:
-        verdict = "NOT_VERIFIED" if counts["NOT_VERIFIED"] > 0 else "N/A"
     return {
         "counts": counts,
         "total": total,
         "verified_share": round(verified_share, 2),
-        "verdict": verdict,
     }
 
 
@@ -106,12 +108,18 @@ def verify_case(case_id: str) -> dict:
             "notes": raw.get("notes"),
         })
 
+    verdict = _normalize_llm_verdict(result.get("verdict"))
+    if verdict is None:
+        msg = "Verification response did not contain a valid case-level verdict"
+        logger.error("Verification for case %s: %s", case_id, msg)
+        save_verification_results(case_id=case_id, status="error", verdict="N/A", summary={"error": msg}, items=items)
+        set_case_verification_status(case_id=case_id, verification_status="error", verdict="N/A")
+        return {"case_id": case_id, "status": "error", "verdict": "N/A", "error": msg}
     summary = _summarize(items)
+    summary["verdict"] = verdict
     summary["overall_comment"] = result.get("overall_comment")
     summary["headline"] = result.get("headline")
     summary["summary_text"] = result.get("summary")
-    verdict = summary["verdict"]
-
     save_verification_results(
         case_id=case_id, status="complete", verdict=verdict,
         summary=summary, items=items,

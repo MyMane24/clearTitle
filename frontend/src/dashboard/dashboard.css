@@ -627,6 +627,28 @@
     color: var(--red);
     background: var(--lred);
   }
+  .ctd-root .case-status-done{
+    font-size: 10px;
+    font-weight: 600;
+    color: #059669;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .ctd-root .verdict-text{
+    font-size: 11px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: #64748b;
+  }
+  .ctd-root .verdict-text.verdict-clear{
+    color: #059669;
+  }
+  .ctd-root .verdict-text.verdict-attention{
+    color: #d97706;
+  }
   .ctd-root .sidebar-item .case-meta{
     font-size: 11px;
     color: var(--gray);
@@ -637,7 +659,7 @@
   }
   .ctd-root .sidebar-item .case-date{
     font-size: 10px;
-    color: var(--gray);
+    color: #94a3b8;
     margin-top: 2px;
   }
   .ctd-root .sidebar-empty{
