@@ -95,6 +95,17 @@
   50% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); transform: scale(1.03); }
 }
 
+/* Footer image reveal effect: sticky only on screens wide enough that
+   the footer stays shorter than the viewport. On mobile the footer stacks
+   taller than the viewport, so sticky would clip it — image is hidden. */
+.ct-footer { position: sticky; bottom: 0; z-index: 2; }
+.ct-footer-img { display: block; position: sticky; bottom: 0; z-index: 1; }
+
+@media (max-width: 639px) {
+  .ct-footer { position: static; }
+  .ct-footer-img { display: none; }
+}
+
 .shield-pulse {
   animation: shieldGlow 2.5s infinite ease-in-out;
 }

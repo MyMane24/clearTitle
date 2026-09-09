@@ -1762,7 +1762,7 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                             ? <AlertTriangle size={28} style={{ color: '#dc2626', strokeWidth: 2.25 }} />
                             : <ShieldCheck size={28} style={{ color: '#047857', strokeWidth: 2.25 }} />}
                         </span>
-                        <p style={{ fontSize: 26, fontWeight: 800, letterSpacing: '.01em', lineHeight: 1.3, margin: 0, textTransform: 'uppercase',
+                        <p className="vr-status-line" style={{ fontWeight: 800, letterSpacing: '.01em', lineHeight: 1.3, margin: 0, textTransform: 'uppercase',
                           color: '#1c1917' }}>
                           {verification?.status === "error"
                             ? "VERIFICATION COULD NOT BE COMPLETED, PLEASE RETRY"
@@ -1837,7 +1837,7 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                   )}
 
                   {/* Re-run Verification + Download Report Controls */}
-                  <div className="pl-actions-row" style={{ marginTop: 24, marginBottom: 24, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
+                  <div className="pl-actions-row" style={{ marginTop: 24, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
                     {verification?.status !== "error" && verification?.items?.length ? (
                     <button
                       className="btn btn-secondary"

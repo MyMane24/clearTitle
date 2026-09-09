@@ -11,7 +11,7 @@ interface CtaFooterProps {
 export const CtaFooter: React.FC<CtaFooterProps> = () => {
   return (
     <div>
-      <footer className="bg-[#FAF9F6] text-slate-800 pt-12 pb-12 px-6 sm:px-12 border-t border-[#e9e1dd] selection:bg-orange-100 selection:text-orange-950" style={{ position: 'sticky', bottom: 0, zIndex: 2 }}>
+      <footer className="ct-footer bg-[#FAF9F6] text-slate-800 pt-12 pb-12 px-6 sm:px-12 border-t border-[#e9e1dd] selection:bg-orange-100 selection:text-orange-950">
       <div className="max-w-7xl mx-auto space-y-16">
 
         {/* All Columns Top-Aligned in a Single Row */}
@@ -110,10 +110,10 @@ export const CtaFooter: React.FC<CtaFooterProps> = () => {
       alt="clearTitle"
       aria-hidden="true"
       tabIndex={-1}
+      className="ct-footer-img"
       style={{
-        display: 'block', width: '100%', height: '75vh',
+        width: '100%', height: '75vh',
         objectFit: 'cover', objectPosition: 'bottom',
-        position: 'sticky', bottom: 0, zIndex: 1,
         pointerEvents: 'none', userSelect: 'none',
       }}
     />

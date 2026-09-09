@@ -4856,6 +4856,15 @@
 }
 
 /* ── Mobile & Responsive Overrides (Screen Width <= 768px and <= 480px) ── */
+/* ── Report actions + status headline (desktop defaults) ── */
+.ctd-root .pl-actions-row {
+  justify-content: flex-end;
+}
+
+.ctd-root .vr-status-line {
+  font-size: 26px;
+}
+
 @media (max-width: 768px) {
   /* 1. Dashboard Top Navigation Bar */
   .ctd-root .header.header-guest .ct-brand-logo {
@@ -5029,22 +5038,38 @@
     margin-bottom: 8px;
   }
 
-  /* Pipeline controls row — left align on mobile */
+  /* Pipeline controls row — counter left, Title Chain right on mobile */
   .ctd-root .pl-controls-row {
     flex-wrap: wrap;
-    justify-content: flex-start !important;
+    justify-content: space-between !important;
     gap: 6px;
   }
 
-  /* Report action buttons — keep one row, shorter labels */
+  /* Report action buttons — keep one row, fill the screen edge to edge */
   .ctd-root .pl-actions-row {
     flex-wrap: nowrap;
     gap: 8px;
-    justify-content: flex-end;
+    justify-content: space-between;
   }
 
   .ctd-root .pl-actions-row .btn {
+    flex: 1 1 0;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding-left: 10px;
+    padding-right: 10px;
     white-space: nowrap;
+  }
+
+  .ctd-root .vr-status-line {
+    font-size: 16px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
   }
 
   .ctd-root .verdict-title-text {
