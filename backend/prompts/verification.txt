@@ -7,7 +7,15 @@ OUTPUT — You must return exactly these fields:
 1. "verdict": Return exactly one of: CLEAR_TITLE or ATTENTION_REQUIRED.
 Choose CLEAR_TITLE only when the complete report finds no unresolved discrepancy, subsequent transfer, active mortgage/encumbrance, title-chain gap, or other issue requiring investigation. If the headline or summary says the user must investigate, verify, obtain documents, or resolve a liability, return ATTENTION_REQUIRED.
 
-2. "headline": A 2-3 line plain-language conclusion the user can read
+2. "status_line": UPPERCASE, exact casing/commas as shown, NO other punctuation, NO extra words. Return EXACTLY ONE of these four lines — pick the one that best matches the case:
+   - For CLEAR_TITLE: "VERIFICATION COMPLETED, TITLE IS CLEAR"
+   - For ATTENTION_REQUIRED, choose the single most accurate:
+     "VERIFICATION COMPLETED, TITLE ISSUES FOUND"
+     "VERIFICATION COMPLETED, FURTHER INVESTIGATION REQUIRED"
+     "VERIFICATION COMPLETED, DOCUMENTATION GAPS REQUIRE ATTENTION"
+   It must agree with the verdict. This line is displayed as the headline status.
+
+3. "headline": A 2-3 line plain-language conclusion the user can read
 in 5 seconds. Write it like a newspaper headline or case-study finding.
 State the single most important finding. Do NOT use single words like
 'VERIFIED' or 'NOT VERIFIED'. Explain WHAT was found and WHY in plain
@@ -15,7 +23,7 @@ English. For example: 'Sale Deed details match EC record, but the
 property shows multiple subsequent sales and an active mortgage that
 require investigation.'
 
-3. "summary": A detailed verification report (2-3 paragraphs) that synthesizes ALL findings into one coherent conclusion. Cover:
+4. "summary": A detailed verification report (2-3 paragraphs) that synthesizes ALL findings into one coherent conclusion. Cover:
    - What was checked (property identifiers, dates, parties, consideration)
    - What matched between SD and EC
    - What did not match or is missing
@@ -28,7 +36,7 @@ Instead, clearly state whether the title appears clear or has issues,
 and explain why. If there are issues, describe what they are and what
 the user should do about them.
 
-4. "items": For each material field, produce one item with:
+5. "items": For each material field, produce one item with:
 - field: the field name (e.g. 'Property survey/CTS number')
 - sd_value: value extracted from the Sale Deed
 - ec_value: value from the EC ledger (or 'Not found in EC')
@@ -46,7 +54,7 @@ consideration amount. Also check whether the EC shows any later
 encumbrance (mortgage, sale, agreement) on the property AFTER the SD
 date.
 
-5. "overall_comment": A concise 1-paragraph (4-5 plain-language lines) final conclusion certificate for the PDF report. State clearly whether the title is clear/marketable or has critical title risks (such as subsequent transfers away from the SD purchaser, unverified legal heir transfers, or active bank mortgages), and summarize the single most important action the user must take.
+6. "overall_comment": A concise 1-paragraph (4-5 plain-language lines) final conclusion certificate for the PDF report. State clearly whether the title is clear/marketable or has critical title risks (such as subsequent transfers away from the SD purchaser, unverified legal heir transfers, or active bank mortgages), and summarize the single most important action the user must take.
 
 RULES:
 - If the EC property does not match the SD property at all, mark ALL

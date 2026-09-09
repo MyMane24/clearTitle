@@ -4383,11 +4383,6 @@
 }
 
 /* ── Summary Paragraphs ── */
-.ctd-root .summary-box {
-  padding-top: 24px;
-  border-top: 1px solid #e2e8f0;
-}
-
 .ctd-root .summary-grid {
   display: block;
   width: 100%;
@@ -5034,6 +5029,24 @@
     margin-bottom: 8px;
   }
 
+  /* Pipeline controls row — left align on mobile */
+  .ctd-root .pl-controls-row {
+    flex-wrap: wrap;
+    justify-content: flex-start !important;
+    gap: 6px;
+  }
+
+  /* Report action buttons — keep one row, shorter labels */
+  .ctd-root .pl-actions-row {
+    flex-wrap: nowrap;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+
+  .ctd-root .pl-actions-row .btn {
+    white-space: nowrap;
+  }
+
   .ctd-root .verdict-title-text {
     font-size: clamp(28px, 8vw, 42px);
     word-break: break-word;
@@ -5105,11 +5118,7 @@
     font-size: 11px;
   }
 
-  /* Summary Box */
-  .ctd-root .summary-box {
-    padding-top: 16px;
-  }
-
+  /* Summary Grid */
   .ctd-root .summary-grid {
     font-size: 13px;
     line-height: 1.6;

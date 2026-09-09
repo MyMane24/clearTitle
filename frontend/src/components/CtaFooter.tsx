@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Mail, Phone, MapPin, ArrowRight } from 'lucide-react';
 import clearTitleLogo from '../assets/clearTitle.png';
+import clearTitleFooter from '../assets/clearTItleFooter.png';
 
 interface CtaFooterProps {
   onStartAudit?: () => void;
@@ -9,7 +10,8 @@ interface CtaFooterProps {
 
 export const CtaFooter: React.FC<CtaFooterProps> = () => {
   return (
-    <footer className="bg-[#FAF9F6] text-slate-800 pt-12 pb-12 px-6 sm:px-12 border-t border-[#e9e1dd] selection:bg-orange-100 selection:text-orange-950">
+    <div>
+      <footer className="bg-[#FAF9F6] text-slate-800 pt-12 pb-12 px-6 sm:px-12 border-t border-[#e9e1dd] selection:bg-orange-100 selection:text-orange-950" style={{ position: 'sticky', bottom: 0, zIndex: 2 }}>
       <div className="max-w-7xl mx-auto space-y-16">
 
         {/* All Columns Top-Aligned in a Single Row */}
@@ -101,7 +103,20 @@ export const CtaFooter: React.FC<CtaFooterProps> = () => {
           </div>
         </div>
 
-      </div>
+</div>
     </footer>
+    <img
+      src={clearTitleFooter}
+      alt="clearTitle"
+      aria-hidden="true"
+      tabIndex={-1}
+      style={{
+        display: 'block', width: '100%', height: '75vh',
+        objectFit: 'cover', objectPosition: 'bottom',
+        position: 'sticky', bottom: 0, zIndex: 1,
+        pointerEvents: 'none', userSelect: 'none',
+      }}
+    />
+    </div>
   );
 };

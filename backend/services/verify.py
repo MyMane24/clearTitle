@@ -117,6 +117,7 @@ def verify_case(case_id: str) -> dict:
         return {"case_id": case_id, "status": "error", "verdict": "N/A", "error": msg}
     summary = _summarize(items)
     summary["verdict"] = verdict
+    summary["status_line"] = result.get("status_line")
     summary["overall_comment"] = result.get("overall_comment")
     summary["headline"] = result.get("headline")
     summary["summary_text"] = result.get("summary")

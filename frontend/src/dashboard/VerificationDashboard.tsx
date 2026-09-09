@@ -1049,6 +1049,7 @@ export function VerificationDashboard() {
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeReportTab, setActiveReportTab] = useState<'verification' | 'title-chain'>('verification');
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -1745,51 +1746,49 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                             {fmtDate(caseInfo?.created_at || new Date().toISOString())}
                           </div>
                         </div>
-                        <div className="vr-banner-action">
-                          <button
-                            className="vr-chain-link"
-                            onClick={() => setActiveReportTab('title-chain')}
-                            title="View the full chronological title chain for this case"
-                            aria-label="Open Title Chain"
-                          >
-                            <GitMerge size={14} />
-                            <span className="vr-chain-label">View Title Chain</span>
-                            <span className="vr-chain-arrow">&gt;</span>
-                          </button>
-                        </div>
                       </div>
-                      <p style={{ fontSize: 20, fontWeight: 700, color: '#1e293b', lineHeight: 1.4, margin: '8px 0 0' }}>
-                        {verification?.status === "error"
-                          ? "Verification could not be completed due to a temporary issue. Please retry."
-                          : (verification?.summary?.headline ||
-                          verification?.summary?.overall_comment ||
-                          (verification?.items?.length
-                            ? (String(verification?.verdict || 'CLEAR_TITLE').toUpperCase().includes('ATTENTION') || String(verification?.verdict || '').toUpperCase().includes('NOT_')
-                              ? 'Verification found issues — some checks did not pass. Review the details below.'
-                              : 'All checks passed. The Sale Deed is consistent with the Encumbrance Certificate records.')
-                            : 'Verification has not run yet.'))}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Verification Summary — always visible */}
-                  {(verification?.summary?.summary_text || verification?.summary?.overall_comment) && (
-                    <div className="summary-box" style={{ marginTop: 20, marginBottom: 28 }}>
-                      <div className="summary-grid" style={{ display: 'block' }}>
-                        <p style={{ fontSize: 15, color: '#475569', lineHeight: 1.8, margin: 0, whiteSpace: 'pre-line' }}>
-                          {verification?.summary?.summary_text || verification?.summary?.overall_comment}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '14px 0 0' }}>
+                        <span className="shimmer-effect" style={{
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          width: 48, height: 48, borderRadius: '50%', flexShrink: 0,
+                          background: String(verification?.verdict || 'CLEAR_TITLE').toUpperCase().includes('ATTENTION')
+                            ? 'radial-gradient(circle at 30% 25%, #fee2e2, #fecaca 60%, #f87171)'
+                            : 'radial-gradient(circle at 30% 25%, #d1fae5, #a7f3d0 60%, #34d399)',
+                          boxShadow: String(verification?.verdict || 'CLEAR_TITLE').toUpperCase().includes('ATTENTION')
+                            ? '0 0 18px rgba(239,68,68,.55), inset 0 0 8px rgba(255,255,255,.5)'
+                            : '0 0 18px rgba(16,185,129,.55), inset 0 0 8px rgba(255,255,255,.5)',
+                        }}>
+                          {String(verification?.verdict || 'CLEAR_TITLE').toUpperCase().includes('ATTENTION')
+                            ? <AlertTriangle size={28} style={{ color: '#dc2626', strokeWidth: 2.25 }} />
+                            : <ShieldCheck size={28} style={{ color: '#047857', strokeWidth: 2.25 }} />}
+                        </span>
+                        <p style={{ fontSize: 26, fontWeight: 800, letterSpacing: '.01em', lineHeight: 1.3, margin: 0, textTransform: 'uppercase',
+                          color: '#1c1917' }}>
+                          {verification?.status === "error"
+                            ? "VERIFICATION COULD NOT BE COMPLETED, PLEASE RETRY"
+                            : (verification?.summary?.status_line ||
+                              "VERIFICATION NOT COMPLETED YET")}
                         </p>
                       </div>
                     </div>
-                  )}
+                  </div>
 
                   {/* Verification Pipeline Nodes */}
                   <div className="pipeline-container">
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-                      <h2 className="pipeline-heading">Verification Pipeline</h2>
+                    <div className="pl-controls-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, marginBottom: 24 }}>
                       <span className="font-mono" style={{ fontSize: 12, fontWeight: 800, color: '#1e293b' }}>
                         {verification?.items ? verification.items.filter((x: any) => String(x.status).toUpperCase() === 'VERIFIED').length : 0}/{verification?.items ? verification.items.length : 0} checks cleared
                       </span>
+                      <button
+                        className="vr-chain-link"
+                        onClick={() => setActiveReportTab('title-chain')}
+                        title="View the full chronological title chain for this case"
+                        aria-label="Open Title Chain"
+                      >
+                        <GitMerge size={14} />
+                        <span className="vr-chain-label">View Title Chain</span>
+                        <span className="vr-chain-arrow">&gt;</span>
+                      </button>
                     </div>
 
                     <div className="pipeline-line"></div>
@@ -1808,8 +1807,37 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                     )}
                   </div>
 
+                  {/* Detailed Report — headline + summary preview with expand */}
+                  {(verification?.summary?.summary_text || verification?.summary?.overall_comment || verification?.summary?.headline) && (
+                    <div style={{ marginTop: 24, marginBottom: 28 }}>
+                      {verification?.summary?.headline && (
+                        <p style={{ fontSize: 16, fontWeight: 700, color: '#1e293b', margin: '0 0 8px', lineHeight: 1.55 }}>
+                          {verification.summary.headline}
+                        </p>
+                      )}
+                      <p style={{
+                        fontSize: 14, color: '#475569', lineHeight: 1.8, margin: 0, whiteSpace: 'pre-line',
+                        overflow: 'hidden', display: '-webkit-box', WebkitBoxOrient: 'vertical',
+                        WebkitLineClamp: summaryOpen ? undefined : 2,
+                      }}>
+                        {verification?.summary?.summary_text || verification?.summary?.overall_comment}
+                      </p>
+                      <button
+                        onClick={() => setSummaryOpen(o => !o)}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          marginTop: 10, padding: 0, border: 'none', background: 'transparent',
+                          cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#2563eb',
+                        }}
+                      >
+                        {summaryOpen ? 'Hide' : 'View Full Report'}
+                        <span style={{ fontSize: 10, transition: 'transform .15s', transform: summaryOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>▼</span>
+                      </button>
+                    </div>
+                  )}
+
                   {/* Re-run Verification + Download Report Controls */}
-                  <div style={{ marginTop: 24, marginBottom: 24, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
+                  <div className="pl-actions-row" style={{ marginTop: 24, marginBottom: 24, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
                     {verification?.status !== "error" && verification?.items?.length ? (
                     <button
                       className="btn btn-secondary"
@@ -1838,7 +1866,7 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                       }}
                     >
                       <Download size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-                      Download PDF Report
+                      Download Report
                     </button>
                     ) : null}
                     <button
@@ -1847,7 +1875,7 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                       onClick={runAnalysis}
                     >
                       <RefreshCw size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-                      {analyzing ? 'Analyzing…' : 'Re-run Verification'}
+                      {analyzing ? 'Analyzing…' : 'Re Run Verification'}
                     </button>
                   </div>
 
