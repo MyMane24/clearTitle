@@ -7,7 +7,7 @@
       "field": "Property survey/CTS number",
       "sd_value": "value from Sale Deed",
       "ec_value": "value from EC ledger",
-      "status": "VERIFIED | NOT_VERIFIED | N/A",
+      "status": "VERIFIED | FLAG | NEEDS_REVIEW | N/A",
       "notes": "explanation"
     }
   ],

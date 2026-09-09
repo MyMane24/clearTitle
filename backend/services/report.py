@@ -183,7 +183,7 @@ def _issues_list(verification: dict | None, documents: list) -> list:
     items = ver.get("items") or []
     if isinstance(items, list):
         for it in items:
-            if isinstance(it, dict) and any(kw in str(it.get("status", "")).upper() for kw in ("NOT_VERIFIED", "ATTENTION", "DISCREPAN")):
+            if isinstance(it, dict) and str(it.get("status", "")).upper() == "FLAG":
                 label = it.get("field") or it.get("title") or "Item"
                 issues.append(f"{label}: {it.get('notes') or 'could not be verified against records.'}")
     for d in documents:

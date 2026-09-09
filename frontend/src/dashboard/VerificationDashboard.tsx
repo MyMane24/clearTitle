@@ -514,7 +514,7 @@ function ChainTimeline({ chain, status, titleStory }: {
 function vrfStatusClass(s: string): string {
   const up = (s || "N/A").toUpperCase();
   if (up === "VERIFIED") return "ok";
-  if (up === "NOT_VERIFIED") return "fail";
+  if (up === "FLAG" || up === "NOT_VERIFIED" || up.includes("ATTENTION") || up.includes("DISCREPANC")) return "fail";
   return "na";
 }
 
@@ -607,11 +607,8 @@ function TypewriterBullets({ sentences, speed = 14 }: { sentences: string[]; spe
 function FieldRow({ it, index }: { it: VerificationItem; index: number }) {
   const [open, setOpen] = useState(false);
   const s = (it.status || "N/A").toUpperCase();
-  const isClear = s === "VERIFIED" || s === "CLEAR_TITLE" || s.includes("CLEAR");
-  const isAttention = s === "NOT_VERIFIED" || s === "REQUIRED_ATTENTION" || s.includes("ATTENTION") || s.includes("DISCREPANC") || s.includes("NOT_");
-  const displayStatus = isClear ? "Verified" : isAttention ? "Attention Required" : "N/A";
   const cls = vrfStatusClass(s);
-  const Icon = isClear ? CheckCircle2 : isAttention ? XCircle : MinusCircle;
+  const Icon = s === "VERIFIED" ? CheckCircle2 : s === "FLAG" || s.includes("ATTENTION") || s.includes("NOT_") || s === "NEEDS_REVIEW" ? XCircle : MinusCircle;
 
   return (
     <div
@@ -631,7 +628,7 @@ function FieldRow({ it, index }: { it: VerificationItem; index: number }) {
     >
       <span className="vrf-field-icon"><Icon size={16} /></span>
       <span className="vrf-field-name">{it.field || "—"}</span>
-      <span className={`vrf-badge ${cls}`}>{displayStatus}</span>
+      <span className={`vrf-status-text ${cls}`}>{s}</span>
 
       <div className="vrf-evidence">
         <div className="vrf-evidence-row">
@@ -658,8 +655,8 @@ function PipelineTrace({ item }: { item: any }) {
   const hasEc = item.ec_value != null && item.ec_value !== '';
   const hasNote = item.notes;
   if (!hasSd && !hasEc && !hasNote) return null;
-  const status = String(item.status || (item.pass ? 'VERIFIED' : 'NOT_VERIFIED')).toUpperCase();
-  const isFail = status === 'NOT_VERIFIED' || status.includes('DISCREPANC') || status.includes('ATTENTION');
+  const status = String(item.status || (item.pass ? 'VERIFIED' : 'N/A')).toUpperCase();
+  const isFail = status === 'FLAG' || status === 'NEEDS_REVIEW' || status === 'NOT_VERIFIED' || status.includes('ATTENTION');
   return (
     <div className="trace-comparison-box pipeline-trace-enter">
       {hasSd && (
@@ -677,7 +674,7 @@ function PipelineTrace({ item }: { item: any }) {
       {hasNote && (
         <div className="trace-row conclusion">
           <span className="trace-label">Conclusion</span>
-          <span className="trace-value" style={isFail ? { color: '#dc2626' } : undefined}>
+          <span className={`trace-value${isFail ? ' fail-text' : ''}`} style={isFail ? { color: '#dc2626' } : undefined}>
             {isFail ? <XCircle size={14} style={{ color: '#dc2626' }} /> : <CheckCircle2 size={14} />}
             {' '}{item.notes}
           </span>
@@ -689,8 +686,8 @@ function PipelineTrace({ item }: { item: any }) {
 
 function PipelineNode({ item, index }: { item: any; index: number }) {
   const [open, setOpen] = useState(false);
-  const status = String(item.status || (item.pass ? 'VERIFIED' : 'NOT_VERIFIED')).toUpperCase();
-  const ok = status === 'VERIFIED' || status === 'CLEAR_TITLE' || status.includes('CLEAR');
+  const status = String(item.status || (item.pass ? 'VERIFIED' : 'N/A')).toUpperCase();
+  const ok = status === 'VERIFIED';
   const na = status === 'N/A';
   const title = item.title || item.check_name || item.field || 'Verification Check';
   const desc = item.description || item.comment || item.details;
@@ -718,7 +715,7 @@ function PipelineNode({ item, index }: { item: any; index: number }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <h3 className="pipeline-node-title">{title}</h3>
           <span className={`badge-verified-sm ${ok ? 'ok' : na ? 'na' : 'fail'}`}>
-            {ok ? 'Verified' : na ? 'N/A' : 'Attention Required'}
+            {ok ? 'Verified' : na ? 'N/A' : 'Flag'}
           </span>
         </div>
         {desc && <p className="pipeline-node-desc">{desc}</p>}

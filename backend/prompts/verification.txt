@@ -32,7 +32,12 @@ the user should do about them.
 - field: the field name (e.g. 'Property survey/CTS number')
 - sd_value: value extracted from the Sale Deed
 - ec_value: value from the EC ledger (or 'Not found in EC')
-- status: VERIFIED | NOT_VERIFIED | N/A
+- status: VERIFIED | FLAG | NEEDS_REVIEW | N/A
+  VERIFIED: the value is present in both docs and matches exactly — and the notes describe NO problem
+  FLAG: concrete discrepancy — values exist in both docs but don't match
+  NEEDS_REVIEW: ambiguous — can't confirm from documents alone, needs human investigation
+  N/A: field absent from both documents
+- CRITICAL: status must AGREE with notes. If the notes mention any party missing from the EC, any value that does not match, or anything requiring investigation, the status CANNOT be VERIFIED — use FLAG (concrete mismatch) or NEEDS_REVIEW (uncertain). Never write a conclusion describing a problem and then mark the item VERIFIED.
 - notes: brief explanation of why this status
 
 Compare these fields: property identifiers (CTS/survey/plot numbers,
@@ -45,7 +50,7 @@ date.
 
 RULES:
 - If the EC property does not match the SD property at all, mark ALL
-items as NOT_VERIFIED and explain clearly in headline + summary.
+items as FLAG and explain clearly in headline + summary.
 - Do NOT guess or hallucinate values. Use 'Not found in EC' if a value
 is absent.
 - The headline and summary are the final conclusion. They must reflect

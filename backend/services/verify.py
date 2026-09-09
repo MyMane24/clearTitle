@@ -18,7 +18,7 @@ from backend.shared.constants import ENCUMBRANCE_CERTIFICATE, SALE_DEED
 
 logger = get_logger(__name__)
 
-VERIFICATION_STATUSES = {"VERIFIED", "NOT_VERIFIED", "N/A"}
+VERIFICATION_STATUSES = {"VERIFIED", "FLAG", "NEEDS_REVIEW", "N/A"}
 VERDICTS = {"CLEAR_TITLE", "ATTENTION_REQUIRED"}
 
 VERIFY_RESPONSE_SCHEMA = load_schema("verification_schema")
