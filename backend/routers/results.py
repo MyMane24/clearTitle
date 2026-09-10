@@ -53,8 +53,6 @@ async def get_report_pdf(case_id: str, user: dict | None = Depends(get_optional_
 async def trigger_analysis(case_id: str, user: dict | None = Depends(get_optional_user)):
     """Manually (re)run the title-chain + verification pass for a completed case."""
     _enforce_access(case_id, user)
-    from backend.workers.title_chain_tasks import build_title_chain_task, verify_case_task
-    build_title_chain_task.apply_async(
-        args=[case_id], link=verify_case_task.si(case_id)
-    )
+    from backend.workers.title_chain_tasks import run_case_analysis_task
+    run_case_analysis_task.apply_async(args=[case_id])
     return {"case_id": case_id, "status": "queued"}

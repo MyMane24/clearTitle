@@ -1369,30 +1369,38 @@ export function VerificationDashboard() {
 
     const startedAt = Date.now();
     const POLL_MS = 3000;
+    const finish = async (fresh: CaseResults | null, done: boolean) => {
+      if (fresh) setResults(fresh);
+      setAnalyzing(false);
+      loadCases();
+      addLog(
+        done
+          ? "✓ Verification refreshed with latest results"
+          : "⚠ Verification still running — showing latest available results",
+        done ? "log-ok" : "log-warn"
+      );
+    };
     const tick = async () => {
+      let fresh: CaseResults | null = null;
       try {
-        const fresh = await API.getResults(currentCaseId);
-        const ver = fresh.verification;
-        const done = !!ver &&
-          ver.status &&
-          (ver.status === 'complete' || ver.status === 'error' || ver.status === 'skipped') &&
-          ver.updated_at && ver.updated_at !== before;
-        if (done || Date.now() - startedAt > ANALYSIS_WAIT_MS) {
-          setResults(fresh);
-          setAnalyzing(false);
-          addLog(
-            done
-              ? "✓ Verification refreshed with latest results"
-              : "⚠ Verification still running — showing latest available results",
-            done ? "log-ok" : "log-warn"
-          );
-          return;
-        }
-        analysisTimerRef.current = window.setTimeout(tick, POLL_MS);
+        fresh = await API.getResults(currentCaseId);
       } catch (e: any) {
         addLog(`⚠ Checking results failed: ${e.message}`, "log-warn");
-        analysisTimerRef.current = window.setTimeout(tick, POLL_MS);
       }
+      if (Date.now() - startedAt > ANALYSIS_WAIT_MS) {
+        await finish(fresh, false);
+        return;
+      }
+      const ver = fresh?.verification;
+      const done = !!ver &&
+        ver.status &&
+        (ver.status === 'complete' || ver.status === 'error' || ver.status === 'skipped') &&
+        ver.updated_at && ver.updated_at !== before;
+      if (done) {
+        await finish(fresh, true);
+        return;
+      }
+      analysisTimerRef.current = window.setTimeout(tick, POLL_MS);
     };
     await tick();
   };
