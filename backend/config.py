@@ -42,7 +42,7 @@ SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # ── Gemini ─────────────────────────────────────────────────────────────────────
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 GEMINI_MAX_CONTEXT_CHARS = int(os.getenv("GEMINI_MAX_CONTEXT_CHARS", "800000"))
 GEMINI_CACHE_TTL = int(os.getenv("GEMINI_CACHE_TTL", "3600"))
 

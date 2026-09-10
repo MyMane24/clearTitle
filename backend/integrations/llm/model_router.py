@@ -36,29 +36,29 @@ DEFAULT_ROUTING_MAP = {
     "TAX_RECEIPT": {"provider": "groq", "model": "openai/gpt-oss-20b"},
     "PROPERTY_TAX_ASSESSMENT": {"provider": "groq", "model": "openai/gpt-oss-20b"},
     "PROPERTY_REGISTER_CARD": {"provider": "groq", "model": "openai/gpt-oss-20b"},
-    "SALE_DEED": {"provider": "gemini", "model": "gemini-2.5-flash"},
-    "ENCUMBRANCE_CERTIFICATE": {"provider": "gemini", "model": "gemini-2.5-flash"},
-    "GIFT_DEED": {"provider": "gemini", "model": "gemini-2.5-flash"},
-    "PARTITION_DEED": {"provider": "gemini", "model": "gemini-2.5-flash"},
+    "SALE_DEED": {"provider": "gemini", "model": "gemini-3.6-flash"},
+    "ENCUMBRANCE_CERTIFICATE": {"provider": "gemini", "model": "gemini-3.6-flash"},
+    "GIFT_DEED": {"provider": "gemini", "model": "gemini-3.6-flash"},
+    "PARTITION_DEED": {"provider": "gemini", "model": "gemini-3.6-flash"},
     "KHATA": {"provider": "groq", "model": "openai/gpt-oss-120b"},
     "MUTATION": {"provider": "groq", "model": "openai/gpt-oss-20b"},
     "RTC_PAHANI": {"provider": "groq", "model": "openai/gpt-oss-20b"},
     "LEGAL_HEIR_CERTIFICATE": {"provider": "groq", "model": "openai/gpt-oss-120b"},
-    "COURT_ORDER": {"provider": "gemini", "model": "gemini-2.5-flash"},
+    "COURT_ORDER": {"provider": "gemini", "model": "gemini-3.6-flash"},
     "POSSESSION_CERTIFICATE": {"provider": "groq", "model": "openai/gpt-oss-20b"},
     "CONVERSION_ORDER": {"provider": "groq", "model": "openai/gpt-oss-20b"},
     "CDP_PLAN": {"provider": "groq", "model": "openai/gpt-oss-20b"},
     "RERA_CERTIFICATE": {"provider": "groq", "model": "openai/gpt-oss-20b"},
     "LITIGATION_AFFIDAVIT": {"provider": "groq", "model": "openai/gpt-oss-20b"},
     "ALLOTMENT_LETTER": {"provider": "groq", "model": "openai/gpt-oss-20b"},
-    "BUILDING_LICENSE": {"provider": "gemini", "model": "gemini-2.5-flash"},
-    "COMPLETION_CERTIFICATE": {"provider": "gemini", "model": "gemini-2.5-flash"},
+    "BUILDING_LICENSE": {"provider": "gemini", "model": "gemini-3.6-flash"},
+    "COMPLETION_CERTIFICATE": {"provider": "gemini", "model": "gemini-3.6-flash"},
 }
 
 FALLBACK_CHAIN = [
     {"provider": "groq", "model": "openai/gpt-oss-120b"},
     {"provider": "groq", "model": "openai/gpt-oss-20b"},
-    {"provider": "gemini", "model": "gemini-2.5-flash"},
+    {"provider": "gemini", "model": "gemini-3.6-flash"},
 ]
 
 
@@ -78,13 +78,13 @@ ROUTING_MAP = _load_routing_map()
 def resolve_model(doc_type: str) -> tuple[str, str]:
     """
     Returns (provider, model) for the given doc_type.
-    Falls back to default (gemini, gemini-2.5-flash) for unknown types.
+    Falls back to default (gemini, gemini-3.6-flash) for unknown types.
     """
     route = ROUTING_MAP.get(doc_type)
     if route:
         return route["provider"], route["model"]
     if doc_type in REASONING_DOC_TYPES:
-        return "gemini", "gemini-2.5-flash"
+        return "gemini", "gemini-3.6-flash"
     return "groq", "openai/gpt-oss-20b"
 
 
@@ -112,4 +112,4 @@ def is_deterministic_doc(doc_type: str) -> bool:
 
 def resolve_analysis_task() -> tuple[str, str]:
     """Route the title-chain / verification analysis pass (needs strong reasoning)."""
-    return "gemini", "gemini-2.5-flash"
+    return "gemini", "gemini-3.6-flash"
