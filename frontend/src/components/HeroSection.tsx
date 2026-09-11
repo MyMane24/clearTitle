@@ -31,7 +31,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onStartAudit, onSeeDem
             Verify property documents
             <br />
             without the{' '}
-            <span className="font-serif-display text-[1.14em] font-normal italic text-gradient-brand relative inline-block drop-shadow-[0_4px_14px_rgba(249,115,22,0.25)]">
+            <span className="font-serif-display text-[1.14em] font-normal italic text-gradient-brand relative inline-block px-[0.12em] -mx-[0.12em] drop-shadow-[0_4px_14px_rgba(249,115,22,0.25)]">
               chaos
             </span>
           </h1>
