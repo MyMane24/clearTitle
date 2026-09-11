@@ -12,18 +12,6 @@ from backend.logger import get_logger
 
 logger = get_logger(__name__)
 
-DETERMINISTIC_DOC_TYPES = {
-    "E_PAYMENT_RECEIPT",
-    "PROPERTY_TAX_ASSESSMENT",
-    "TAX_RECEIPT",
-    "PROPERTY_REGISTER_CARD",
-    "RERA_CERTIFICATE",
-    "LITIGATION_AFFIDAVIT",
-    "ALLOTMENT_LETTER",
-    "BUILDING_LICENSE",
-    "COMPLETION_CERTIFICATE",
-}
-
 REASONING_DOC_TYPES = {
     "SALE_DEED",
     "ENCUMBRANCE_CERTIFICATE",
@@ -102,10 +90,6 @@ def get_fallback_chain(doc_type: str) -> list[tuple[str, str]]:
             chain.append(key)
             seen.add(key)
     return chain
-
-
-def is_deterministic_doc(doc_type: str) -> bool:
-    return doc_type in DETERMINISTIC_DOC_TYPES
 
 
 # ── Case-level analysis tasks ─────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-"""Central constants for document types, pipeline statuses, and step names.
+"""Central constants for document types and pipeline statuses.
 
 Extracted verbatim from `backend/constants.py`.
 """
@@ -31,28 +31,13 @@ UNKNOWN_DOC = "UNKNOWN"
 # ── Pipeline statuses ───────────────────────────────────────────────────────
 
 STATUS_PROCESSING = "processing"
-STATUS_PREPROCESSING = "preprocessing"
 STATUS_PREPROCESSED = "preprocessed"
-STATUS_OCR_IN_PROGRESS = "ocr_in_progress"
 STATUS_OCR_DONE = "ocr_done"
-STATUS_MERGING = "merging"
 STATUS_MERGED = "merged"
 STATUS_CLASSIFYING = "classifying"
 STATUS_CLASSIFICATION_FAILED = "classification_failed"
 STATUS_STRUCTURING = "structuring"
 STATUS_STRUCTURED = "structured"
 STATUS_FAILED = "failed"
-STATUS_COMPLETE = "complete"
-STATUS_PARTIAL = "partial"
 STATUS_NO_TRANSACTIONS = "no_transactions"
 STATUS_PENDING_RETRY = "pending_retry"
-
-# ── Pipeline step names ─────────────────────────────────────────────────────
-
-STEP_PIPELINE = "pipeline"
-STEP_PREPROCESSING = "preprocessing"
-STEP_OCR = "ocr"
-STEP_MERGE = "merge"
-STEP_CLASSIFY = "classify"
-STEP_STRUCTURE = "structure"
-STEP_DONE = "done"

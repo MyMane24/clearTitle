@@ -11,9 +11,8 @@ import json
 import random
 import time
 from dataclasses import dataclass
-
-from datetime import datetime, timedelta, timezone
-from typing import Any, cast
+from datetime import datetime, timezone
+from typing import Any
 
 from backend.config import (
     GEMINI_BURST,
@@ -215,22 +214,3 @@ class LLMCallTracker:
             logger.warning("Failed to record LLM call metric: %s", e)
 
         return entry
-
-    @staticmethod
-    def get_recent(minutes: int = 60) -> list[dict]:
-        r = _get_redis()
-        raw_items = r.lrange("llm_call_log", 0, -1)
-        items: list[Any] = cast(list[Any], raw_items)
-        results = []
-        cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
-        for item in items:
-            try:
-                entry = json.loads(item)
-                ts = datetime.fromisoformat(entry["timestamp"])
-                if ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=timezone.utc)
-                if ts >= cutoff:
-                    results.append(entry)
-            except Exception:
-                pass
-        return results

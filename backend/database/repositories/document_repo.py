@@ -42,7 +42,6 @@ def update_document_status(
     latency_ms: int = 0,
     cost_usd: float = 0,
     model_used: str = "",
-    raw_ocr_path: str | None = None,
 ) -> None:
     with _get_conn() as conn:
         cursor = conn.cursor()
@@ -65,8 +64,6 @@ def update_document_status(
             fields["cost_usd"] = cost_usd
         if model_used:
             fields["model_used"] = model_used
-        if raw_ocr_path:
-            fields["raw_ocr_path"] = raw_ocr_path
 
         set_clause = ", ".join(f"{k} = %s" for k in fields)
         values = [*list(fields.values())]
@@ -91,7 +88,7 @@ def get_case_documents(case_id: str) -> list[dict]:
         cursor.execute(
             "SELECT doc_id, doc_index, filename, document_type, page_count, status, "
             "structured_data AS structured_json, file_paths, input_tokens, output_tokens, "
-            "latency_ms, cost_usd, model_used, raw_ocr_path, error, created_at "
+            "latency_ms, cost_usd, model_used, error, created_at "
             "FROM documents WHERE case_id = %s ORDER BY doc_index ASC",
             (case_id,),
         )

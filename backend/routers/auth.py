@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -17,8 +16,6 @@ from backend.services.auth import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class RegisterRequest(BaseModel):

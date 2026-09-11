@@ -68,7 +68,6 @@ CREATE TABLE IF NOT EXISTS documents (
     latency_ms INT NOT NULL DEFAULT 0,
     cost_usd DECIMAL(10,6) NOT NULL DEFAULT 0,
     model_used VARCHAR(64) DEFAULT '',
-    raw_ocr_path VARCHAR(512) DEFAULT NULL,
     error TEXT NULL,
     retry_count INT NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -167,6 +166,7 @@ def ensure_tables():
             "ALTER TABLE title_chains DROP COLUMN latency_ms",
             "ALTER TABLE title_chains DROP COLUMN cost_usd",
             "ALTER TABLE title_chains DROP COLUMN model_used",
+            "ALTER TABLE documents DROP COLUMN raw_ocr_path",
             "ALTER TABLE verification_results DROP COLUMN input_tokens",
             "ALTER TABLE verification_results DROP COLUMN output_tokens",
             "ALTER TABLE verification_results DROP COLUMN latency_ms",
@@ -179,8 +179,3 @@ def ensure_tables():
             except Exception:
                 conn.rollback()
     _tables_initialized = True
-
-
-def _ensure_tables():
-    """Deprecated: use ensure_tables() at startup instead."""
-    ensure_tables()

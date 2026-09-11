@@ -147,13 +147,13 @@ function BoundaryPlot({ bounds }: { bounds: Record<string, unknown> }) {
   );
 }
 
-export interface FlatRow {
+interface FlatRow {
   key: string;
   value: unknown;
   raw: unknown;
 }
 
-export function flattenObj(obj: any, prefix: string, depth: number): FlatRow[] {
+function flattenObj(obj: any, prefix: string, depth: number): FlatRow[] {
   if (depth > 4) return [];
   const rows: FlatRow[] = [];
   for (const [k, v] of Object.entries(obj || {})) {
@@ -177,7 +177,7 @@ interface SummaryGroup {
   fields: { name: string; value: string }[];
 }
 
-export function buildSummaryGroups(structured: any): SummaryGroup[] {
+function buildSummaryGroups(structured: any): SummaryGroup[] {
   const rows = flattenObj(structured, "", 0)
     .filter(r => r.value !== null && r.value !== "" && !Array.isArray(r.raw));
 
@@ -204,7 +204,7 @@ export function buildSummaryGroups(structured: any): SummaryGroup[] {
 
 const GROUP_COLORS = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
-export function SummaryTable({ structured }: { structured: any }) {
+function SummaryTable({ structured }: { structured: any }) {
   const groups = buildSummaryGroups(structured);
   if (!groups.length) {
     return <div className="vr-sheet-empty">No fields populated for this document.</div>;

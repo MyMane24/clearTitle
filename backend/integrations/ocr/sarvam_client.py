@@ -22,7 +22,7 @@ CHUNK_SIZE      = 10               # Sarvam hard limit
 CHUNK_OVERLAP   = 1                # overlap pages between chunks
 MAX_WORKERS     = 8                # parallel Sarvam calls
 MAX_RETRIES     = 3
-RETRY_DELAYS    = [5, 15, 30]
+RETRY_DELAYS    = [5, 15]
 OUTPUT_LANGUAGE = "kn-IN"          # Kannada + English
 OUTPUT_FORMAT   = "md"
 

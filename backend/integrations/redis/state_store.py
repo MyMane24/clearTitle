@@ -37,20 +37,11 @@ def _meta_key(case_id: str) -> str:
 def _files_key(case_id: str) -> str:
     return f"case:{case_id}:files"
 
-def _results_key(case_id: str) -> str:
-    return f"case:{case_id}:results"
-
-def _errors_key(case_id: str) -> str:
-    return f"case:{case_id}:errors"
-
 def _log_key(case_id: str) -> str:
     return f"case:{case_id}:log"
 
 def _docs_status_key(case_id: str) -> str:
     return f"case:{case_id}:docs"
-
-def _done_count_key(case_id: str) -> str:
-    return f"case:{case_id}:done_count"
 
 
 # ── Case-level operations ────────────────────────────────────────────────────────
@@ -97,11 +88,8 @@ def init_case(case_id: str, files_data: list[dict]) -> None:
         pipe.hset(_meta_key(case_id), "status", "uploaded")
         pipe.hset(_meta_key(case_id), "total_docs", str(len(files_data)))
         pipe.set(_files_key(case_id), json.dumps(files_data))
-        pipe.delete(_results_key(case_id))
-        pipe.delete(_errors_key(case_id))
         pipe.delete(_log_key(case_id))
         pipe.delete(_docs_status_key(case_id))
-        pipe.delete(_done_count_key(case_id))
         pipe.lpush(_log_key(case_id), f"Case {case_id} created — {len(files_data)} file(s) uploaded")
         pipe.ltrim(_log_key(case_id), 0, 199)
         pipe.execute()
@@ -254,14 +242,7 @@ def get_doc_filename(case_id: str, doc_id: str) -> str | None:
 
 
 def get_case_results(case_id: str) -> list[dict]:
-    try:
-        r = _get_client()
-        items = r.lrange(_results_key(case_id), 0, -1)
-        return [json.loads(x) for x in items]
-    except Exception as e:
-        print(f"Redis cache unavailable for get_case_results: {e}")
-
-    # MySQL is authoritative
+    """Results are always read from MySQL (no Redis cache for this key)."""
     try:
         return _mysql_case_payload(case_id).get("results", [])
     except Exception as e:
@@ -270,14 +251,7 @@ def get_case_results(case_id: str) -> list[dict]:
 
 
 def get_case_errors(case_id: str) -> list[dict]:
-    try:
-        r = _get_client()
-        items = r.lrange(_errors_key(case_id), 0, -1)
-        return [json.loads(x) for x in items]
-    except Exception as e:
-        print(f"Redis cache unavailable for get_case_errors: {e}")
-
-    # MySQL is authoritative
+    """Errors are always read from MySQL (no Redis cache for this key)."""
     try:
         return _mysql_case_payload(case_id).get("errors", [])
     except Exception as e:
@@ -324,14 +298,7 @@ def append_log(case_id: str, msg: str) -> None:
 
 
 def get_done_count(case_id: str) -> int:
-    try:
-        r = _get_client()
-        val = r.get(_done_count_key(case_id))
-        return int(val) if val else 0
-    except Exception as e:
-        print(f"Redis cache unavailable for get_done_count: {e}")
-
-    # MySQL is authoritative
+    """Done count is always read from MySQL (no Redis cache for this key)."""
     try:
         with _get_conn() as conn:
             cursor = conn.cursor()
@@ -400,9 +367,6 @@ def reset_for_retry(case_id: str) -> None:
     try:
         r = _get_client()
         pipe = r.pipeline()
-        pipe.delete(_done_count_key(case_id))
-        pipe.delete(_results_key(case_id))
-        pipe.delete(_errors_key(case_id))
         pipe.delete(_docs_status_key(case_id))
         pipe.hset(_meta_key(case_id), "status", "processing")
         pipe.execute()
