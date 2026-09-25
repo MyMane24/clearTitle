@@ -2253,7 +2253,7 @@
 /* -- Title chain vertical nodes (gemini-code-1786707819942) -- */
 .ctd-root .chain-nodes{
   position:relative;
-  max-width:1024px;
+  max-width:75rem;
   display:flex; flex-direction:column; gap:64px;
   padding-left:16px;
 }
@@ -4076,7 +4076,7 @@
 /* ── Main Tab Container Layout ── */
 .ctd-root .report-main-wrap {
   flex: 1;
-  max-width: 50rem;
+  max-width: 75rem;
   width: 100%;
   margin: 0 auto;
   padding: 8px 24px 32px 24px;
@@ -5067,6 +5067,7 @@
     font-size: 16px;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
     word-break: break-word;

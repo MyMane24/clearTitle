@@ -74,7 +74,32 @@ EXCLUDE entries on other properties (different survey number and
 locality) — the LLM must not return them. INCLUDE the SD's own entry
 with chain_role THE_SD.
 
-STEP 4 — TITLE STORY (COMPREHENSIVE MULTI-PARAGRAPH AUDIT).
+STEP 4 — GENERATE THE "REQUIRED DOCUMENTS" TABLE FOR COMPLETE VERIFICATION.
+Return "required_documents": one row per EC ledger entry PLUS one row for
+every missing instrument you identified during the party cross-referencing
+in STEP 3 (e.g. an earlier Sale Deed referred to in a later deed but absent
+from the ledger, a missing Legal Heir Certificate, Partition Deed, Will,
+or Death Certificate step). For each row provide:
+- date: the transaction/event date in DD-MM-YYYY. If the ledger gives only
+  a year, use that year.
+- instrument_event: the registered instrument or event name, exactly as it
+  appears or is referred to (e.g. 'Sale', 'Agreement of Sale',
+  'Cancellation Deed', 'Earlier Sale Deed referred to in 2009 deed').
+- parties_effect: 'Vendor → Purchaser; share; consideration amount', or
+  for a gap row describe whose acquisition is being claimed (e.g.
+  'Jayashree's claimed acquisition').
+- required_docs: the SPECIFIC physical documents needed at the sub-
+  registrar/office to conclude and verify that transaction (e.g.
+  'Sale Deed (original)', 'Legal Heir Certificate + Death Certificate',
+  'Khata/Mutation extract', 'No-Due / Release certificate from the
+  bank', 'Partition Deed', 'Will / Probate'). Be concrete and actionable.
+  NEVER list 'Encumbrance Certificate' (or 'EC') as a required document —
+  the latest Encumbrance Certificate is already uploaded by the user and
+  governs the whole verification.
+Base every row on the actual ledger data; NEVER invent dates or parties.
+Only the gap rows may be derived, from the cross-referencing analysis.
+
+STEP 5 — TITLE STORY (COMPREHENSIVE MULTI-PARAGRAPH AUDIT).
 Do NOT summarize in 3-5 lines. Write a detailed, multi-paragraph plain-language narrative story for "title_story" covering:
 
 Paragraph 1 — CHRONOLOGICAL TITLE FLOW: Trace every transaction in sequence from the root/earliest entry to the latest entry. For each step, state the date, registration reference, parties (Vendor -> Purchaser), property portion, and nature of conveyance.

@@ -16,5 +16,13 @@
       "explanation": "plain-language explanation of this entry's role in the title story"
     }
   ],
-  "title_story": "Detailed, multi-paragraph plain-language narrative of how title to the conveyed share was built, detailing each transaction chronologically, acquisition links/gaps (including potential legal heir inheritance hypotheses), current ownership status, active encumbrances, and EC recency."
+  "title_story": "Detailed, multi-paragraph plain-language narrative of how title to the conveyed share was built, detailing each transaction chronologically, acquisition links/gaps (including potential legal heir inheritance hypotheses), current ownership status, active encumbrances, and EC recency.",
+  "required_documents": [
+    {
+      "date": "DD-MM-YYYY of the transaction or event",
+      "instrument_event": "e.g. 'Sale', 'Agreement of Sale', 'Cancellation Deed', 'Earlier Sale Deed referred to in 2009 deed'",
+      "parties_effect": "'Vendor → Purchaser; share; consideration', or whose acquisition is claimed for a gap row",
+      "required_docs": "the specific physical documents needed to conclude and verify this transaction"
+    }
+  ]
 }

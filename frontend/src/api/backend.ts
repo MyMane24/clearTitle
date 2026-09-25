@@ -120,6 +120,12 @@ export interface CaseResults {
       title_story?: string | null;
       sd_property?: any;
       message?: string | null;
+      required_documents?: Array<{
+        date?: string | null;
+        instrument_event?: string | null;
+        parties_effect?: string | null;
+        required_docs?: string | null;
+      }>;
     } | null;
   } | null;
   verification: {

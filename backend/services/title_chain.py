@@ -9,11 +9,16 @@ merges that enrichment onto the ledger entries and sorts them chronologically.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 from datetime import datetime
 
 from backend.database.repositories.document_repo import get_case_bundle
-from backend.database.repositories.title_chain_repo import save_title_chain
+from backend.database.repositories.title_chain_repo import (
+    get_title_chain,
+    save_title_chain,
+)
 from backend.integrations.llm.analysis_executor import run_analysis
 from backend.logger import get_logger
 from backend.prompts.loader import load_prompt, load_schema
@@ -48,6 +53,13 @@ CHAIN_ROLES = {
 }
 
 ENCUMBRANCE_KEYWORDS = ("mortgage", "lease", "agreement", "cancellation", "dtd", "charge", "deposit")
+
+
+def _input_fingerprint(sd_data: dict, ledger: list) -> str:
+    return hashlib.sha256(
+        json.dumps([sd_data, ledger], default=str,
+                   sort_keys=True, ensure_ascii=False).encode()
+    ).hexdigest()
 
 
 def _is_ec(doc: dict) -> bool:
@@ -181,6 +193,35 @@ def _default_portion(entry: dict) -> str:
     return "Whole property"
 
 
+def _required_documents(result: dict) -> list:
+    """Normalize the LLM's per-transaction required-documents table."""
+    rows = []
+    for item in result.get("required_documents") or []:
+        if not isinstance(item, dict):
+            continue
+        docs = str(item.get("required_docs") or "").strip()
+        docs = _strip_ec_docs(docs)
+        row = {
+            "date": str(item.get("date") or "").strip(),
+            "instrument_event": str(item.get("instrument_event") or "").strip(),
+            "parties_effect": str(item.get("parties_effect") or "").strip(),
+            "required_docs": docs,
+        }
+        if any(row.values()):
+            rows.append(row)
+    return rows
+
+
+def _strip_ec_docs(text: str) -> str:
+    """Drop 'Encumbrance Certificate' mentions from required_docs — the user
+    already uploads the latest EC, so listing it is redundant."""
+    if not text:
+        return text
+    segs = [s for s in re.split(r"[,;]", text)
+            if "encumbrance certificate" not in s.lower()]
+    return "; ".join(s.strip() for s in segs if s.strip())
+
+
 def _default_explanation(entry: dict, sd_identity: dict) -> str:
     pd = entry.get("property_details") or {}
     desc = (pd.get("description") or "").strip()
@@ -246,6 +287,29 @@ def build_title_chain(case_id: str) -> dict:
             "message": NO_EC_TRANSACTIONS_MESSAGE,
         }
 
+    fingerprint = _input_fingerprint(sd_data, ledger)
+
+    # ponytail: reuse the prior analysis when the input (SD + EC ledger) is
+    # byte-identical — Gemini is not deterministic at temperature 0, so a
+    # "Re Run Verification" must not churn the required-documents table.
+    # Fresh generation happens on any data change (different fingerprint).
+    existing = get_title_chain(case_id)
+    if existing and existing.get("status") == "complete":
+        prev_source = existing.get("source") if isinstance(existing.get("source"), dict) else {}
+        if (
+            prev_source.get("input_fingerprint") == fingerprint
+            and (existing.get("chain") or prev_source.get("message"))
+        ):
+            logger.info("Title chain input unchanged for case %s — reusing previous analysis", case_id)
+            return {
+                "case_id": case_id,
+                "status": "complete",
+                "chain": existing.get("chain") or [],
+                "sd_property": prev_source.get("sd_property"),
+                "title_story": prev_source.get("title_story"),
+                "required_documents": prev_source.get("required_documents") or [],
+            }
+
     indexed_entries = [
         {**entry, "_idx": entry.get("transaction_index", i + 1)}
         for i, entry in enumerate(ledger)
@@ -271,6 +335,7 @@ def build_title_chain(case_id: str) -> dict:
 
     result = response.get("result", {})
     sd_identity = _sd_identity(sd_data)
+    required_documents = _required_documents(result)
 
     raw_entries = result.get("transactions") or []
     enrichment = {}
@@ -316,6 +381,8 @@ def build_title_chain(case_id: str) -> dict:
                 "sale_deed_doc_id": sale_deed["doc_id"], "ec_doc_id": ec["doc_id"],
                 "sd_property": result.get("sd_property") or sd_identity,
                 "title_story": title_story,
+                "required_documents": required_documents,
+                "input_fingerprint": fingerprint,
                 "message": NO_MATCHING_PROPERTY_MESSAGE,
             },
         )
@@ -325,6 +392,7 @@ def build_title_chain(case_id: str) -> dict:
             "chain": [],
             "sd_property": result.get("sd_property") or sd_identity,
             "title_story": title_story,
+            "required_documents": required_documents,
         }
 
     if not matched_entries:
@@ -364,6 +432,8 @@ def build_title_chain(case_id: str) -> dict:
             "sale_deed_doc_id": sale_deed["doc_id"], "ec_doc_id": ec["doc_id"],
             "sd_property": result.get("sd_property") or sd_identity,
             "title_story": result.get("title_story"),
+            "required_documents": required_documents,
+            "input_fingerprint": fingerprint,
         },
     )
 
@@ -374,4 +444,5 @@ def build_title_chain(case_id: str) -> dict:
         "chain": chain,
         "sd_property": result.get("sd_property") or sd_identity,
         "title_story": result.get("title_story"),
+        "required_documents": required_documents,
     }
