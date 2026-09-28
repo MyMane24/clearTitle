@@ -48,6 +48,16 @@ DOC_TYPE_KEYWORDS = {
         "amount paid",
         "sas no",
     ],
+    # KHATA must precede PROPERTY_TAX_ASSESSMENT: Nomune-2/3 extracts carry the
+    # generic property-tax phrase "PID", so the weaker "pid" keyword below must
+    # not shadow a genuine Khata Extract.
+    KHATA: [
+        "khata", "katha", "khatha", "a-khata", "b-khata",
+        "ಖಾತಾ", "ಖಾತೆ",
+        "ನಮೂನೆ-2", "ನಮೂನೆ 2", "ನಮೂನೆ-3", "ನಮೂನೆ 3",
+        "nomune", "acknowledgement/extract",
+        "as per a register", "as per b register",
+    ],
     PROPERTY_TAX_ASSESSMENT: [
         "belagavi mahanagara palike",
         "property type: assessed",
@@ -89,10 +99,6 @@ DOC_TYPE_KEYWORDS = {
     RTC_PAHANI: [
         "rtc", "pahani", "hissa", "cultivator", "kharab",
         "ಆರ್.ಟಿ.ಸಿ", "ಪಹಣಿ", "ಹಿಸ್ಸಾ", "ಆರ್‌ಟಿಸಿ",
-    ],
-    KHATA: [
-        "khata", "katha", "khatha", "a-khata", "b-khata",
-        "ಖಾತಾ", "ಖಾತೆ",
     ],
     MUTATION: [
         "mutation", "name change", "transfer of ownership",

@@ -1,6 +1,7 @@
 Verify the Karnataka Sale Deed (SD) against the Encumbrance Certificate
-(EC) historical ledger for the same property. The SD is the source of
-truth for what was conveyed; the EC ledger must be consistent with it.
+(EC) historical ledger and the Khata Extract (municipal tax register) for
+the same property. The SD is the source of truth for what was conveyed;
+the EC ledger and the Khata extract must be consistent with it.
 
 OUTPUT — You must return exactly these fields:
 
@@ -24,11 +25,12 @@ property shows multiple subsequent sales and an active mortgage that
 require investigation.'
 
 4. "summary": A detailed verification report (2-3 paragraphs) that synthesizes ALL findings into one coherent conclusion. Cover:
-   - What was checked (property identifiers, dates, parties, consideration)
-   - What matched between SD and EC
+   - What was checked (property identifiers, dates, parties, consideration, khata register)
+   - What matched between SD and EC (and the Khata Extract, if provided)
    - What did not match or is missing
-   - Title chain acquisition analysis: Cross-reference Vendor names in subsequent sales against prior Purchasers. If Vendors share family initials/names with a prior purchaser (e.g. 'G.' matching 'Gundappa') but no registered Partition Deed/Will is in the EC, explicitly state that the vendors appear to be legal heirs (wife/children), note the missing EC evidence, and advise inspecting physical Legal Heir Certificates, Death Certificates, and Khata mutation records.
-   - Current Ownership & Encumbrances: State explicitly whether the purchaser named in the provided Sale Deed currently holds clear title or if title moved to subsequent buyers, and detail any active bank mortgages (Deposit of Title Deeds).
+- Title chain acquisition analysis: Cross-reference Vendor names in subsequent sales against prior Purchasers. If Vendors share family initials/names with a prior purchaser (e.g. 'G.' matching 'Gundappa') but no registered Partition Deed/Will is in the EC, explicitly state that the vendors appear to be legal heirs (wife/children), note the missing EC evidence, and advise inspecting physical Legal Heir Certificates, Death Certificates, and Khata mutation records.
+    - Khata Register cross-check: State the Khata holder, khata type (A-Khata or B-Khata via Nomune 2/Form 2 vs Nomune 3/Form 3), and whether the SD purchaser is the recorded khata holder. Flag B-Khata (unauthorised/pending violations) status and any property-tax dues/arrears.
+    - Current Ownership & Encumbrances: State explicitly whether the purchaser named in the provided Sale Deed currently holds clear title or if title moved to subsequent buyers, and detail any active bank mortgages (Deposit of Title Deeds).
    - EC Recency & Next Steps: Check if the EC search end date is up to date; if old, recommend obtaining a fresh Encumbrance Certificate up to the current date. List exact offline/online documents the user should investigate.
 
 Write for a non-legal audience. Do NOT end with a single-word verdict.
@@ -40,6 +42,8 @@ the user should do about them.
 - field: the field name (e.g. 'Property survey/CTS number')
 - sd_value: value extracted from the Sale Deed
 - ec_value: value from the EC ledger (or 'Not found in EC')
+- khata_value: value from the Khata Extract (or 'Not found in Khata'; omit
+  entirely if NO Khata Extract was provided)
 - status: VERIFIED | FLAG | NEEDS_REVIEW | N/A
   VERIFIED: the value is present in both docs and matches exactly — and the notes describe NO problem
   FLAG: concrete discrepancy — values exist in both docs but don't match
@@ -54,13 +58,37 @@ consideration amount. Also check whether the EC shows any later
 encumbrance (mortgage, sale, agreement) on the property AFTER the SD
 date.
 
+KHATA EXTRACT CHECKS (only if a Khata Extract was provided):
+A Khata Extract is the municipal Property Tax Register extract. Nomune 2
+(Form 2) is issued for authorised/A-Khata properties; Nomune 3 (Form 3)
+or Form 2A is the acknowledgment for B-Khata properties (unauthorised or
+with pending violations, but still tax-assessed).
+- Khata holder name must match the SD purchaser (or vice-versa). A
+  different/historic holder means the SD purchaser's mutation into the
+  municipal register is yet to happen — flag it and note the required
+  mutation.
+- Khata PID / assessment number, survey/CTS number and locality must
+  agree with the SD and EC. Disagreement = the khata may belong to a
+  different property.
+- Khata type/form: B-Khata (Nomune 3/Form 3) must be flagged — the
+  property is unauthorised or has pending violations and title is at
+  risk; state the follow-up (regularisation/conversion).
+- Property tax dues/arrears, if stated, are reported as NEEDS_REVIEW
+  with the arrears amount; unpaid tax is a liability the buyer
+  inherits.
+
 6. "overall_comment": A concise 1-paragraph (4-5 plain-language lines) final conclusion certificate for the PDF report. State clearly whether the title is clear/marketable or has critical title risks (such as subsequent transfers away from the SD purchaser, unverified legal heir transfers, or active bank mortgages), and summarize the single most important action the user must take.
 
 RULES:
 - If the EC property does not match the SD property at all, mark ALL
 items as FLAG and explain clearly in headline + summary.
+- If a Khata Extract is provided but its holder/property identifiers do
+not match the SD, the SD purchaser's legal title may not yet be
+mutated/recorded in the municipal register — this is a title-chain gap;
+do NOT mark such items VERIFIED.
 - Do NOT guess or hallucinate values. Use 'Not found in EC' if a value
-is absent.
+is absent. If NO Khata Extract was provided, do not invent khata items —
+simply omit the khata_value field.
 - The headline and summary are the final conclusion. They must reflect
 ALL findings — field matches, chain gaps, legal heir ambiguities, subsequent sales, active encumbrances — not just field-level checks. A property can have all fields VERIFIED but still have a problematic title due to subsequent transactions or unverified family transfers.
 - overall_comment MUST be a single concise paragraph of 4-5 lines specifically designed for Section 5 (Final Conclusion / Certificate) of the PDF report.

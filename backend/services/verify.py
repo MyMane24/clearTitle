@@ -14,7 +14,11 @@ from backend.database.repositories.verification_results_repo import save_verific
 from backend.integrations.llm.analysis_executor import run_analysis
 from backend.logger import get_logger
 from backend.prompts.loader import load_prompt, load_schema
-from backend.shared.constants import ENCUMBRANCE_CERTIFICATE, SALE_DEED
+from backend.shared.constants import (
+    ENCUMBRANCE_CERTIFICATE,
+    KHATA,
+    SALE_DEED,
+)
 
 logger = get_logger(__name__)
 
@@ -32,6 +36,10 @@ def _normalize_llm_verdict(value) -> str | None:
 
 def _is_ec(doc: dict) -> bool:
     return (doc.get("document_type") or "").upper() == ENCUMBRANCE_CERTIFICATE
+
+
+def _is_khata(doc: dict) -> bool:
+    return (doc.get("document_type") or "").upper() == KHATA
 
 
 def _is_sale_deed(doc: dict) -> bool:
@@ -53,11 +61,31 @@ def _summarize(items: list[dict]) -> dict:
     }
 
 
+def _normalize_items(raw_items) -> list[dict]:
+    items = []
+    for raw in raw_items or []:
+        if not isinstance(raw, dict):
+            continue
+        status = str(raw.get("status", "N/A")).upper()
+        if status not in VERIFICATION_STATUSES:
+            status = "N/A"
+        items.append({
+            "field": raw.get("field"),
+            "sd_value": raw.get("sd_value"),
+            "ec_value": raw.get("ec_value"),
+            "khata_value": raw.get("khata_value"),
+            "status": status,
+            "notes": raw.get("notes"),
+        })
+    return items
+
+
 def verify_case(case_id: str) -> dict:
     """Run the verification pass and persist results."""
     bundle = get_case_bundle(case_id)
     sale_deed = next((d for d in bundle if _is_sale_deed(d)), None)
     ec = next((d for d in bundle if _is_ec(d)), None)
+    khata = next((d for d in bundle if _is_khata(d)), None)
 
     if not sale_deed or not ec:
         msg = "Verification skipped: need both SALE_DEED and ENCUMBRANCE_CERTIFICATE"
@@ -70,6 +98,7 @@ def verify_case(case_id: str) -> dict:
 
     sd_data = sale_deed.get("structured_json") or {}
     ec_data = ec.get("structured_json") or {}
+    khata_data = khata.get("structured_json") if khata else None
     ledger = ec_data.get("historical_ledger") or []
 
     prompt = (
@@ -79,6 +108,11 @@ def verify_case(case_id: str) -> dict:
         "--- EC HISTORICAL LEDGER ---\n"
         f"{json.dumps(ledger, ensure_ascii=False, default=str)}"
     )
+    if khata_data:
+        prompt += (
+            "\n\n--- KHATA EXTRACT ---\n"
+            f"{json.dumps(khata_data, ensure_ascii=False, default=str)}"
+        )
 
     try:
         response = run_analysis(prompt, task="verification", response_schema=VERIFY_RESPONSE_SCHEMA)
@@ -92,21 +126,7 @@ def verify_case(case_id: str) -> dict:
         return {"case_id": case_id, "status": "error", "verdict": "N/A", "error": str(e)}
 
     result = response.get("result", {})
-
-    items = []
-    for raw in result.get("items") or []:
-        if not isinstance(raw, dict):
-            continue
-        status = str(raw.get("status", "N/A")).upper()
-        if status not in VERIFICATION_STATUSES:
-            status = "N/A"
-        items.append({
-            "field": raw.get("field"),
-            "sd_value": raw.get("sd_value"),
-            "ec_value": raw.get("ec_value"),
-            "status": status,
-            "notes": raw.get("notes"),
-        })
+    items = _normalize_items(result.get("items"))
 
     verdict = _normalize_llm_verdict(result.get("verdict"))
     if verdict is None:

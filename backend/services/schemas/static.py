@@ -562,6 +562,44 @@ BUILDING_LICENSE_SCHEMA = {
     },
 }
 
+KHATA_SCHEMA = {
+    "document_type": "KHATA",
+    "file_metadata": {
+        "form_number": None,                # Nomune 2 (Form 2, A-Khata) / Nomune 3 (Form 3, B-Khata)
+        "khata_number": None,
+        "khata_type": None,                 # "A" (authorized) | "B" (unauthorized / pending violations)
+        "issuing_authority": None,          # e.g. Belagavi Mahanagara Palike
+        "issue_date": None,
+        "ward_or_zone": None,
+        "pid": None,                        # Property ID / Assessment number
+    },
+    "property_details": {
+        "pid": None,                        # PID (ನಿರ್ದರ್ಣಾ ಸಂಖ್ಯೆ / Property ID)
+        "property_number": None,            # ಸ್ವತ್ತಿನ ಸಂಖ್ಯೆ — Property/Asset number on the extract
+        "old_assessment_number": None,
+        "survey_number": None,
+        "cts_number": None,
+        "plot_or_site_number": None,
+        "locality": None,
+        "property_type": None,              # Residential / Commercial / etc.
+        "area_sq_meters": None,
+        "built_up_area_sq_meters": None,
+        "boundaries": {"north": None, "east": None, "west": None, "south": None},
+    },
+    "khata_holders": [
+        {"name": None, "father_or_husband_name": None, "address": None, "share": None}
+    ],
+    "property_tax": {
+        "assessment_year": None,
+        "annual_tax_amount": None,
+        "tax_paid_up_to": None,             # date/period up to which tax is paid
+        "dues_or_arrears": None,            # pending tax liability if any
+    },
+    "certification": {
+        "signed_by": None, "designation": None, "issue_date": None, "office": None,
+    },
+}
+
 COMPLETION_CERTIFICATE_SCHEMA = {
     "document_type": "COMPLETION_CERTIFICATE",
     "file_metadata": {
@@ -608,4 +646,5 @@ SCHEMA_MAP = {
     "BUILDING_LICENSE": BUILDING_LICENSE_SCHEMA,
     "PARTITION_DEED": PARTITION_DEED_SCHEMA,
     "COMPLETION_CERTIFICATE": COMPLETION_CERTIFICATE_SCHEMA,
+    "KHATA": KHATA_SCHEMA,
 }

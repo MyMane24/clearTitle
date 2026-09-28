@@ -4,11 +4,12 @@
   "headline": "2-3 line plain-language conclusion about the verification result — the main finding the user should know",
   "headline": "2-3 line plain-language conclusion about the verification result — the main finding the user should know",
   "summary": "Detailed verification report narrative synthesizing field matches, title chain acquisition analysis (including potential legal heir inheritance hypotheses), current ownership status, active encumbrances, EC recency, and actionable next steps",
-  "items": [
+"items": [
     {
       "field": "Property survey/CTS number",
       "sd_value": "value from Sale Deed",
       "ec_value": "value from EC ledger",
+      "khata_value": "value from Khata Extract (omit when no Khata Extract provided)",
       "status": "VERIFIED | FLAG | NEEDS_REVIEW | N/A",
       "notes": "explanation"
     }
