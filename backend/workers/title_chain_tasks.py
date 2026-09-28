@@ -45,3 +45,41 @@ def run_case_analysis_task(case_id: str):
         append_log(case_id, f"✗ Verification failed: {e}")
 
     return {"case_id": case_id}
+
+
+@celery_app.task(ignore_result=True)
+def run_verification_only_task(case_id: str):
+    """Re-run only the verification pass (independent LLM call)."""
+    from backend.integrations.redis.state_store import append_log
+    from backend.services.verify import verify_case
+
+    logger.info("Re-running verification only for case %s", case_id)
+    try:
+        vf = verify_case(case_id)
+        append_log(case_id, f"── Re-verification complete: {vf.get('verdict', 'N/A')} ──")
+    except Exception as e:
+        logger.error("Verification failed for case %s: %s", case_id, e)
+        append_log(case_id, f"✗ Verification failed: {e}")
+    return {"case_id": case_id}
+
+
+@celery_app.task(ignore_result=True)
+def run_title_chain_only_task(case_id: str):
+    """Re-run only the title-chain build (independent LLM call)."""
+    from backend.integrations.redis.state_store import append_log
+    from backend.services.title_chain import build_title_chain
+
+    logger.info("Re-running title chain only for case %s", case_id)
+    try:
+        tc = build_title_chain(case_id)
+        tc_status = tc.get("status")
+        if tc_status == "complete":
+            append_log(case_id, f"── Title chain rebuilt: {len(tc.get('chain', []))} entry(s) ──")
+        elif tc_status == "no_transactions":
+            append_log(case_id, "⚠ No transactions exist for this property in EC — please upload a valid EC.")
+        else:
+            append_log(case_id, f"── Title chain: {tc_status} ──")
+    except Exception as e:
+        logger.error("Title chain build failed for case %s: %s", case_id, e)
+        append_log(case_id, f"✗ Title chain build failed: {e}")
+    return {"case_id": case_id}

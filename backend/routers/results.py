@@ -56,3 +56,21 @@ async def trigger_analysis(case_id: str, user: dict | None = Depends(get_optiona
     from backend.workers.title_chain_tasks import run_case_analysis_task
     run_case_analysis_task.apply_async(args=[case_id])
     return {"case_id": case_id, "status": "queued"}
+
+
+@router.post("/results/{case_id}/verify")
+async def trigger_verification(case_id: str, user: dict | None = Depends(get_optional_user)):
+    """Re-run only the verification pass for a completed case."""
+    _enforce_access(case_id, user)
+    from backend.workers.title_chain_tasks import run_verification_only_task
+    run_verification_only_task.apply_async(args=[case_id])
+    return {"case_id": case_id, "status": "queued"}
+
+
+@router.post("/results/{case_id}/title-chain")
+async def trigger_title_chain(case_id: str, user: dict | None = Depends(get_optional_user)):
+    """Re-run only the title-chain build for a completed case."""
+    _enforce_access(case_id, user)
+    from backend.workers.title_chain_tasks import run_title_chain_only_task
+    run_title_chain_only_task.apply_async(args=[case_id])
+    return {"case_id": case_id, "status": "queued"}

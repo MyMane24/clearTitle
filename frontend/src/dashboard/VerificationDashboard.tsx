@@ -639,6 +639,12 @@ function FieldRow({ it, index }: { it: VerificationItem; index: number }) {
           <span className="vrf-evidence-label">EC Ledger</span>
           <span className="vrf-evidence-value">{it.ec_value != null && it.ec_value !== "" ? String(it.ec_value) : "—"}</span>
         </div>
+        {it.khata_value != null && it.khata_value !== "" && (
+          <div className="vrf-evidence-row">
+            <span className="vrf-evidence-label">Khata Extract</span>
+            <span className="vrf-evidence-value">{String(it.khata_value)}</span>
+          </div>
+        )}
         {it.notes ? (
           <div className="vrf-evidence-note">
             <span className="vrf-evidence-label">Conclusion</span>
@@ -653,8 +659,9 @@ function FieldRow({ it, index }: { it: VerificationItem; index: number }) {
 function PipelineTrace({ item }: { item: any }) {
   const hasSd = item.sd_value != null && item.sd_value !== '';
   const hasEc = item.ec_value != null && item.ec_value !== '';
+  const hasKhata = item.khata_value != null && item.khata_value !== '';
   const hasNote = item.notes;
-  if (!hasSd && !hasEc && !hasNote) return null;
+  if (!hasSd && !hasEc && !hasKhata && !hasNote) return null;
   const status = String(item.status || (item.pass ? 'VERIFIED' : 'N/A')).toUpperCase();
   const isFail = status === 'FLAG' || status === 'NEEDS_REVIEW' || status === 'NOT_VERIFIED' || status.includes('ATTENTION');
   return (
@@ -669,6 +676,12 @@ function PipelineTrace({ item }: { item: any }) {
         <div className="trace-row">
           <span className="trace-label">EC Ledger</span>
           <span className="trace-value">{String(item.ec_value)}</span>
+        </div>
+      )}
+      {hasKhata && (
+        <div className="trace-row">
+          <span className="trace-label">Khata Extract</span>
+          <span className="trace-value">{String(item.khata_value)}</span>
         </div>
       )}
       {hasNote && (
@@ -691,7 +704,7 @@ function PipelineNode({ item, index }: { item: any; index: number }) {
   const na = status === 'N/A';
   const title = item.title || item.check_name || item.field || 'Verification Check';
   const desc = item.description || item.comment || item.details;
-  const hasTrace = item.sd_value != null || item.ec_value != null || item.notes;
+  const hasTrace = item.sd_value != null || item.ec_value != null || item.khata_value != null || item.notes;
 
   return (
     <div
@@ -1354,15 +1367,22 @@ export function VerificationDashboard() {
     API.link(caseId).catch(() => {});
   }, [auth, authLoading, searchParams]);
 
-  const runAnalysis = async () => {
+  const runAnalysisTask = async (kind: 'reverify' | 'chain') => {
     if (!currentCaseId) return;
     setAnalyzing(true);
-    const before = results?.verification?.updated_at || null;
+    const isChain = kind === 'chain';
+    const before = isChain
+      ? results?.title_chain?.updated_at || null
+      : results?.verification?.updated_at || null;
+    const logMsg = isChain
+      ? "⏳ Title-chain rebuild queued…"
+      : "⏳ Re-verification queued…";
     try {
-      await API.analyze(currentCaseId);
-      addLog("⏳ Title-chain + verification queued…", "log-info");
+      if (isChain) await API.rerunTitleChain(currentCaseId);
+      else await API.reverify(currentCaseId);
+      addLog(logMsg, "log-info");
     } catch (e: any) {
-      addLog(`✗ Analyze failed: ${e.message}`, "log-err");
+      addLog(`✗ Re-run failed: ${e.message}`, "log-err");
       setAnalyzing(false);
       return;
     }
@@ -1375,8 +1395,8 @@ export function VerificationDashboard() {
       loadCases();
       addLog(
         done
-          ? "✓ Verification refreshed with latest results"
-          : "⚠ Verification still running — showing latest available results",
+          ? "✓ Results refreshed with latest output"
+          : "⚠ Task still running — showing latest available results",
         done ? "log-ok" : "log-warn"
       );
     };
@@ -1391,11 +1411,12 @@ export function VerificationDashboard() {
         await finish(fresh, false);
         return;
       }
-      const ver = fresh?.verification;
-      const done = !!ver &&
-        ver.status &&
-        (ver.status === 'complete' || ver.status === 'error' || ver.status === 'skipped') &&
-        ver.updated_at && ver.updated_at !== before;
+      const outcome = isChain ? fresh?.title_chain : fresh?.verification;
+      const done = !!outcome &&
+        outcome.status &&
+        (outcome.status === 'complete' || outcome.status === 'error' ||
+         outcome.status === 'skipped' || outcome.status === 'no_transactions') &&
+        outcome.updated_at && outcome.updated_at !== before;
       if (done) {
         await finish(fresh, true);
         return;
@@ -1404,6 +1425,9 @@ export function VerificationDashboard() {
     };
     await tick();
   };
+
+  const runVerification = () => runAnalysisTask('reverify');
+  const runTitleChain = () => runAnalysisTask('chain');
 
   // ── Results actions ──
   const skipDoc = async (docId: string) => {
@@ -1880,7 +1904,8 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                     <button
                       className="btn btn-primary"
                       disabled={!allComplete || analyzing}
-                      onClick={runAnalysis}
+                      onClick={runVerification}
+                      title="Re-run only the verification pass (title chain is left as-is)"
                     >
                       <RefreshCw size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
                       {analyzing ? 'Analyzing…' : 'Re Run Verification'}
@@ -2031,6 +2056,15 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                       <p className="chain-page-sub">Chronological property devolution, ownership transitions, and adverse encumbrance tracking.</p>
                     </div>
                     <div className="chain-page-head-right">
+                      <button
+                        className="chain-rerun-btn"
+                        disabled={!allComplete || analyzing}
+                        onClick={runTitleChain}
+                        title="Re-run only the title chain build (verification is left as-is)"
+                      >
+                        <RefreshCw size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+                        {analyzing ? 'Rebuilding…' : 'Re Run Title Chain'}
+                      </button>
                       <button className="chain-back-btn" onClick={() => setActiveReportTab('verification')}>
                         <ArrowLeft size={14} /> Back to Report
                       </button>

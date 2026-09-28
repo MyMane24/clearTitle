@@ -1,8 +1,8 @@
 import React from 'react';
 import {
-  ArrowDownRight, ArrowUpRight, Building2, Check, ChevronLeft,
-  ChevronRight, FileText, LandPlot, MapPin, Route,
-  Ruler, Users, Wallet,
+  ArrowDownRight, ArrowUpRight, BadgeCheck, Building2, Check, ChevronLeft,
+  ChevronRight, FileText, LandPlot, MapPin, ReceiptText, Route,
+  Ruler, Stamp, TriangleAlert, Users, Wallet,
 } from 'lucide-react';
 
 const AVATAR_COLORS = ['#ea580c', '#0891b2', '#7c3aed', '#059669', '#d97706', '#dc2626'];
@@ -242,8 +242,9 @@ export interface DocSummaryData {
 
 const HANDLED_KEYS = [
   'document_type', 'file_metadata', 'document_metadata', 'financial_summary',
-  'parties', 'property_schedule', 'property_identification',
+  'parties', 'property_schedule', 'property_identification', 'property_details',
   'statutory_valuation_endorsement', 'search_criteria', 'historical_ledger',
+  'khata_holders', 'property_tax', 'certification',
 ];
 
 function FallbackSections({ structured }: { structured: any }) {
@@ -408,6 +409,211 @@ function LedgerSection({ ledger }: { ledger: any[] }) {
   );
 }
 
+function KhataChip({ khataType }: { khataType: unknown }) {
+  if (!isFilled(khataType)) return <span className="ds-khata-chip na">—</span>;
+  const t = fmt(khataType).toLowerCase();
+  const cls = /(^|[ -])b|unauthor|pending/.test(t) ? 'b'
+    : (/(^|[ -])a|author/.test(t)) ? 'a' : 'na';
+  const label = cls === 'a' ? 'A-Khata · Authorized'
+    : cls === 'b' ? 'B-Khata · Unauthorized' : fmt(khataType);
+  return <span className={`ds-khata-chip ${cls}`}>{label}</span>;
+}
+
+function KhataSection({ s }: { s: any }) {
+  const meta = s.file_metadata || {};
+  const prop = s.property_details || {};
+  const holders = Array.isArray(s.khata_holders) ? s.khata_holders : [];
+  const tax = s.property_tax || {};
+  const cert = s.certification || {};
+  const bounds = prop.boundaries || {};
+
+  const isPropNumber = (v: unknown) => /^\d{8,15}$/.test(String(v ?? '').trim());
+  const propNumber = prop.property_number ?? (isPropNumber(prop.survey_number) ? prop.survey_number : undefined);
+  const surveyNo = isPropNumber(prop.survey_number) ? undefined : prop.survey_number;
+
+  const propFields: [string, unknown][] = [
+    ['Property Number (ಸ್ವತ್ತಿನ ಸಂಖ್ಯೆ)', propNumber],
+    ['Survey Number (ಸರ್ವೇ ನಂಬರ್)', surveyNo],
+    ['CTS Number', prop.cts_number],
+    ['Plot / Site Number', prop.plot_or_site_number],
+    ['Old Assessment No', prop.old_assessment_number],
+    ['Property Type', prop.property_type],
+    ['Locality', prop.locality],
+    ['Area (sq.m)', prop.area_sq_meters],
+    ['Built-up Area (sq.m)', prop.built_up_area_sq_meters],
+  ].filter(([, v]) => isFilled(v)) as [string, unknown][];
+
+  const hasDues = isFilled(tax.dues_or_arrears) && fmt(tax.dues_or_arrears).toLowerCase() !== 'nil';
+  const taxFields: [string, unknown][] = [
+    ['Assessment Year', tax.assessment_year],
+    ['Annual Tax Amount', isFilled(tax.annual_tax_amount) && Number(tax.annual_tax_amount) !== 0 ? money(tax.annual_tax_amount) : (isFilled(tax.annual_tax_amount) ? fmt(tax.annual_tax_amount) : undefined)],
+    ['Tax Paid Up To', tax.tax_paid_up_to],
+  ].filter(([, v]) => isFilled(v)) as [string, unknown][];
+
+  const certFields: [string, unknown][] = [
+    ['Signed By', cert.signed_by],
+    ['Designation', cert.designation],
+    ['Office', cert.office],
+    ['Issue Date', cert.issue_date],
+  ].filter(([, v]) => isFilled(v)) as [string, unknown][];
+
+  return (
+    <>
+      {/* ── Top Metadata Grid ── */}
+      <div className="ds-meta-grid">
+        <div className="ds-meta-cell">
+          <span className="ds-meta-label">DOCUMENT TYPE</span>
+          <span className="ds-meta-value headline">{s.document_type || 'KHATA'}</span>
+        </div>
+        <div className="ds-meta-cell">
+          <span className="ds-meta-label">KHATA TYPE</span>
+          <KhataChip khataType={meta.khata_type ?? prop.khata_classification} />
+        </div>
+        {isFilled(meta.form_number) && (
+          <div className="ds-meta-cell">
+            <span className="ds-meta-label">FORM NO</span>
+            <span className="ds-meta-value mono">{fmt(meta.form_number)}</span>
+          </div>
+        )}
+        {isFilled(meta.khata_number) && (
+          <div className="ds-meta-cell">
+            <span className="ds-meta-label">KHATA NUMBER</span>
+            <span className="ds-meta-value mono accent">{fmt(meta.khata_number)}</span>
+          </div>
+        )}
+        {isFilled(meta.pid) && (
+          <div className="ds-meta-cell">
+            <span className="ds-meta-label">PID / ASSESSMENT NO</span>
+            <span className="ds-meta-value mono">{fmt(meta.pid)}</span>
+          </div>
+        )}
+        {isFilled(meta.ward_or_zone) && (
+          <div className="ds-meta-cell">
+            <span className="ds-meta-label">WARD / ZONE</span>
+            <span className="ds-meta-value mono">{fmt(meta.ward_or_zone)}</span>
+          </div>
+        )}
+        {isFilled(meta.issuing_authority) && (
+          <div className="ds-meta-cell">
+            <span className="ds-meta-label">ISSUING AUTHORITY</span>
+            <span className="ds-meta-value">{fmt(meta.issuing_authority)}</span>
+          </div>
+        )}
+        {isFilled(meta.issue_date) && (
+          <div className="ds-meta-cell">
+            <span className="ds-meta-label">ISSUE DATE</span>
+            <span className="ds-meta-value mono">{fmt(meta.issue_date)}</span>
+          </div>
+        )}
+      </div>
+
+      {/* ── Property Details ── */}
+      {propFields.length > 0 && (
+        <div className="ds-block">
+          <h3 className="ds-block-heading">
+            <span className="ds-split-ico"><LandPlot size={16} /></span>
+            Property Details
+          </h3>
+          <div className="ds-prop-grid">
+            {propFields.map(([label, value], i) => (
+              <div className={`ds-prop-cell${label.length > 24 ? ' full' : ''}`} key={i}>
+                <span className="ds-meta-label">{label.toUpperCase()}</span>
+                <span className="ds-meta-value">{fmt(value)}</span>
+              </div>
+            ))}
+          </div>
+          <BoundaryPlot bounds={bounds} />
+        </div>
+      )}
+
+      {/* ── Khata Holders ── */}
+      {holders.length > 0 && (
+        <div className="ds-block">
+          <h3 className="ds-block-heading">
+            <span className="ds-split-ico"><Users size={16} /></span>
+            Khata Holders
+          </h3>
+          {holders.map((h, i) => (
+            <div className="ds-party" key={i} style={{ marginBottom: 14 }}>
+              <div className="ds-avatar" style={{ background: AVATAR_COLORS[i % AVATAR_COLORS.length] }}>
+                {initials(h.name || h.holder_name || '')}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="ds-party-name">{fmt(h.name || h.holder_name)}</div>
+                {isFilled(h.father_or_husband_name) && h.father_or_husband_name !== '—' && (
+                  <div className="ds-party-line">
+                    <span className="ds-party-tag">S/O · W/O</span> {fmt(h.father_or_husband_name)}
+                  </div>
+                )}
+                {isFilled(h.address) && (
+                  <div className="ds-party-line"><MapPin size={12} style={{ flexShrink: 0, color: 'var(--blue)', marginTop: 2 }} />{fmt(h.address)}</div>
+                )}
+                {isFilled(h.share) && (
+                  <div className="ds-party-line">Share: {fmt(h.share)}</div>
+                )}
+                {!isFilled(h.father_or_husband_name) && !isFilled(h.address) && !isFilled(h.share) && (
+                  <div className="ds-empty">No further details stated</div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Property Tax ── */}
+      {(taxFields.length > 0 || hasDues) && (
+        <div className="ds-block">
+          <h3 className="ds-block-heading">
+            <span className="ds-split-ico"><ReceiptText size={16} /></span>
+            Property Tax
+          </h3>
+          <div className="ds-prop-grid">
+            {taxFields.map(([label, value], i) => (
+              <div className="ds-prop-cell" key={i}>
+                <span className="ds-meta-label">{label.toUpperCase()}</span>
+                <span className="ds-meta-value">{fmt(value)}</span>
+              </div>
+            ))}
+          </div>
+          {hasDues ? (
+            <div className="ds-dues-warn">
+              <TriangleAlert size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+              <span><strong>Tax dues / arrears:</strong> {fmt(tax.dues_or_arrears)}</span>
+            </div>
+          ) : (
+            isFilled(tax.tax_paid_up_to) && (
+              <div className="ds-dues-ok">
+                <BadgeCheck size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>No arrears stated — tax covered up to {fmt(tax.tax_paid_up_to)}</span>
+              </div>
+            )
+          )}
+        </div>
+      )}
+
+      {/* ── Certification ── */}
+      {certFields.length > 0 && (
+        <div className="ds-block">
+          <h3 className="ds-block-heading">
+            <span className="ds-split-ico"><Stamp size={16} /></span>
+            Certification
+          </h3>
+          <div className="ds-prop-grid">
+            {certFields.map(([label, value], i) => (
+              <div className="ds-prop-cell" key={i}>
+                <span className="ds-meta-label">{label.toUpperCase()}</span>
+                <span className="ds-meta-value">{fmt(value)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <FallbackSections structured={s} />
+    </>
+  );
+}
+
 export function DocSummary({ res }: { res: DocSummaryData }) {
   const s = res.structured || {};
   const docType = res.doc_type || res.document_type || s.document_type || "";
@@ -435,6 +641,7 @@ export function DocSummary({ res }: { res: DocSummaryData }) {
   ].filter(([, v]) => isFilled(v)) as [string, unknown][];
 
   const isEC = /encumbrance/i.test(docType);
+const isKhata = /khata/i.test(docType);
 
   const hasFullDesc = isFilled(prop.full_schedule_description);
   const hasParties = vendors.length > 0 || purchasers.length > 0;
@@ -445,6 +652,10 @@ export function DocSummary({ res }: { res: DocSummaryData }) {
 
   return (
     <div className="ds">
+      {isKhata ? (
+        <KhataSection s={s} />
+      ) : (
+        <>
       {/* ── Top Metadata Grid ── */}
       <div className="ds-meta-grid">
         <div className="ds-meta-cell">
@@ -594,6 +805,8 @@ export function DocSummary({ res }: { res: DocSummaryData }) {
 
       {/* ── Fallback sections for any unhandled keys ── */}
       <FallbackSections structured={s} />
+        </>
+      )}
     </div>
   );
 }

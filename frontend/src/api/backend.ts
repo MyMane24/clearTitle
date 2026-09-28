@@ -93,6 +93,7 @@ export interface VerificationItem {
   field?: string;
   sd_value?: unknown;
   ec_value?: unknown;
+  khata_value?: unknown;
   status: "VERIFIED" | "NOT_VERIFIED" | "N/A" | string;
   notes?: string;
 }
@@ -256,5 +257,13 @@ export const API = {
 
   async analyze(caseId: string): Promise<{ case_id: string; status: string }> {
     return request(`/api/results/${caseId}/analyze`, { method: "POST" });
+  },
+
+  async reverify(caseId: string): Promise<{ case_id: string; status: string }> {
+    return request(`/api/results/${caseId}/verify`, { method: "POST" });
+  },
+
+  async rerunTitleChain(caseId: string): Promise<{ case_id: string; status: string }> {
+    return request(`/api/results/${caseId}/title-chain`, { method: "POST" });
   },
 };

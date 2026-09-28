@@ -2250,6 +2250,15 @@
 }
 .ctd-root .chain-back-btn:hover{ border-color:#ea580c; color:#ea580c; background:#fff; }
 
+.ctd-root .chain-rerun-btn{
+  display:inline-flex; align-items:center; gap:8px;
+  font-family:'Plus Jakarta Sans',sans-serif; font-size:12px; font-weight:600;
+  color:#fff; background:#ea580c; border:1px solid #ea580c; border-radius:10px;
+  padding:9px 16px; cursor:pointer; transition:opacity .2s, background .2s;
+}
+.ctd-root .chain-rerun-btn:hover{ background:#c2410c; }
+.ctd-root .chain-rerun-btn:disabled{ opacity:.5; cursor:not-allowed; background:#ea580c; }
+
 /* -- Title chain vertical nodes (gemini-code-1786707819942) -- */
 .ctd-root .chain-nodes{
   position:relative;
@@ -2922,6 +2931,49 @@
   border-radius: 6px;
   width: fit-content;
 }
+
+/* ── Khata Extract ── */
+.ctd-root .ds-khata-chip{
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  border-radius: 6px;
+  padding: 4px 12px;
+  width: fit-content;
+}
+.ctd-root .ds-khata-chip.a{ color: #047857; background: #ecfdf5; }
+.ctd-root .ds-khata-chip.b{ color: #b45309; background: #fffbeb; }
+.ctd-root .ds-khata-chip.na{ color: #6b7280; background: #f1f5f9; }
+.ctd-root .ds-dues-warn{
+  margin-top: 16px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.ctd-root .ds-dues-warn svg{ color: #dc2626; }
+.ctd-root .ds-dues-ok{
+  margin-top: 16px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #065f46;
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.ctd-root .ds-dues-ok svg{ color: #059669; }
 
 /* ── Section Blocks (stacked vertically) ── */
 .ctd-root .ds-block{
