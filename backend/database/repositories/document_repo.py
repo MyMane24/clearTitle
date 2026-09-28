@@ -10,6 +10,7 @@ import json
 from typing import Any
 
 from backend.database.connection import _get_conn
+from backend.shared.ec_ledger import normalize_ec_structured
 
 
 def init_document(*, case_id: str, doc_id: str, doc_index: int, filename: str, file_paths: dict | None = None, expected_type: str | None = None) -> None:
@@ -98,6 +99,8 @@ def get_case_documents(case_id: str) -> list[dict]:
             for field in ("structured_json", "file_paths"):
                 if doc.get(field) and isinstance(doc[field], str):
                     doc[field] = json.loads(doc[field])
+            if isinstance(doc.get("structured_json"), dict):
+                doc["structured_json"] = normalize_ec_structured(doc["structured_json"])
             result.append(doc)
         return result
 
@@ -118,6 +121,8 @@ def get_case_bundle(case_id: str) -> list[dict]:
             doc = dict(row)
             if doc.get("structured_json") and isinstance(doc["structured_json"], str):
                 doc["structured_json"] = json.loads(doc["structured_json"])
+            if isinstance(doc.get("structured_json"), dict):
+                doc["structured_json"] = normalize_ec_structured(doc["structured_json"])
             result.append(doc)
         return result
 
