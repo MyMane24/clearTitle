@@ -39,6 +39,7 @@ MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", os.getenv("MYSQL_DATABASE_V2", "pro
 # ── API keys ───────────────────────────────────────────────────────────────────
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "")
+BODHAN_API_KEY = os.getenv("BODHAN_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # ── Gemini ─────────────────────────────────────────────────────────────────────

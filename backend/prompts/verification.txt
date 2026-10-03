@@ -58,6 +58,17 @@ consideration amount. Also check whether the EC shows any later
 encumbrance (mortgage, sale, agreement) on the property AFTER the SD
 date.
 
+AREA AND BOUNDARIES:
+- When comparing land area or dimensions, always normalize units before
+  judging: '9.14 X 12.19' (metres) = 111.42 sq m = 1200 sq ft; '1 gunta' =
+  101.17 sq m; '30 cents' = 1214.06 sq m. Never flag a match just because
+  the numbers or units look different.
+- The system deterministically computes area and boundary items AFTER your
+  response (area: dimensions-vs-declared, SD-vs-EC, SD-vs-Khata; boundaries:
+  SD-vs-EC, SD-vs-Khata) using the same unit normalization. Do NOT emit
+  items whose field is about 'area', 'dimensions', or 'boundaries' — leave
+  those to the deterministic check so they are never double-counted.
+
 KHATA EXTRACT CHECKS (only if a Khata Extract was provided):
 A Khata Extract is the municipal Property Tax Register extract. Nomune 2
 (Form 2) is issued for authorised/A-Khata properties; Nomune 3 (Form 3)
