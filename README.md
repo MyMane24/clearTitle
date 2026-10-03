@@ -77,7 +77,9 @@ flowchart TD
 
 - **Title Chain** — every EC ledger transaction is classified (`THE_SD`, `PREDECESSOR_TITLE`, `SUBSEQUENT_TRANSFER`, `DIVERGENT_BRANCH`, `ENCUMBRANCE`, `UNRELATED`), sorted chronologically, and merged into a timeline.
 - **Cross-Document Verification** — a field-by-field comparison (property identifiers, dates, parties, consideration) between the Sale Deed and the EC ledger, with a deterministic `VERIFIED` / `NOT_VERIFIED` / `N/A` verdict.
-- **Self-Service Re-run** — every completed case can re-run the title-chain + verification pass (`POST /api/results/{case_id}/analyze`).
+- **Khata-aware** — KHATA extracts get an A-Khata/B-Khata/authorized hint and khata-fee verification fields, plus a themed structured view (holders, property details, tax dues, certification).
+- **EC page-split merge** — a ledger row split across consecutive pages (missing both date and registration reference) is recombined before verification/title-chain, so one transaction is never counted twice.
+- **Self-Service Re-run** — every completed case can re-run verification and the title chain independently (`POST /api/results/{case_id}/verify`, `POST /api/results/{case_id}/title-chain`), or both at once (`POST /api/results/{case_id}/analyze`).
 - **PDF Title Verification Report** — generates a professional legal-style PDF report per case (`GET /api/results/{case_id}/report/pdf`).
 - **No misleading success on failure** — if verification can't complete (e.g. a temporary LLM outage), the case is marked `error`, the dashboard shows a clear "please retry" state with no fabricated green checks, and the PDF report is only downloadable once verification has actually produced results.
 - **Idempotent Stages** — Celery `acks_late` + per-stage idempotency guards make re-runs and retries safe.
@@ -117,6 +119,10 @@ Open `.env` and fill in the API keys (everything else works as-is):
 SARVAM_API_KEY=your_key_here
 GROQ_API_KEY=your_key_here
 GEMINI_API_KEY=your_key_here
+
+# optional — only needed to run the local OCR comparison probes
+# (sarvam_digitize_probe / sarvam_extract_probe / bodhan_ocr_probe)
+BODHAN_API_KEY=your_bodhan_key_here
 ```
 
 ### 2. Start everything
@@ -211,7 +217,9 @@ docker compose exec mysql mysql -u root -ppassword property_ocr_v2
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/results/{case_id}` | Full results payload: case info, documents + structured JSON, title chain, verification |
-| `POST` | `/api/results/{case_id}/analyze` | (Re)run the title-chain + verification pass for a completed case |
+| `POST` | `/api/results/{case_id}/analyze` | (Re)run title-chain + verification for a completed case |
+| `POST` | `/api/results/{case_id}/verify` | Re-run only the verification pass |
+| `POST` | `/api/results/{case_id}/title-chain` | Re-run only the title-chain build |
 | `GET` | `/api/results/{case_id}/report/pdf` | Download a PDF Title Verification Report (only available once verification completes) |
 | `GET` | `/api/case/{case_id}/doc/{doc_id}/pdf` | Serve original PDF (authenticated, opens in new tab) |
 
@@ -323,6 +331,7 @@ clearTitle/
 │   │                               #  verification, verification_results, user)
 │   │
 │   ├── shared/constants.py         # doc-type + status string constants
+│   ├── shared/ec_ledger.py         # EC page-split row recombinator (read-boundary fix)
 │   └── tests/                      # pytest suite
 │
 ├── frontend/                       # React SPA (Vite)
@@ -474,4 +483,4 @@ pytest backend/tests      # backend unit tests
 
 ---
 
-*Last updated: 2 September 2026*
+*Last updated: 3 October 2026*
