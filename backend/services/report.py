@@ -79,11 +79,18 @@ def _extract_sd(documents: list) -> dict:
     return {}
 
 
+def _party_name(p) -> str:
+    """Party entries arrive as plain strings or as dicts with entity_name."""
+    if isinstance(p, dict):
+        return str(p.get("entity_name") or "").strip()
+    return str(p or "").strip()
+
+
 def _build_subject(sd: dict) -> str:
     survey = _get(sd, "property_schedule.survey_number", "property_schedule.cts_number")
     buyers = []
     for p in (sd.get("parties", {}).get("purchasers") or []):
-        name = p.get("entity_name") if isinstance(p, dict) else p
+        name = _party_name(p)
         if name and name not in buyers:
             buyers.append(name)
     holders = ", ".join(buyers) if buyers else "the party"
@@ -98,12 +105,12 @@ def _owner_blocks(sd: dict) -> list[dict]:
         return [{"label": "Current Owner", "name": "—", "address": ""}]
     blocks = []
     for i, p in enumerate(purchasers):
-        name = p.get("entity_name") or "—"
-        rep = p.get("represented_by") or ""
+        meta = p if isinstance(p, dict) else {}
         blocks.append({
             "label": "Current Owner" if i == 0 else f"Co-Owner {i + 1}",
-            "name": name + (f" (Rep. by {rep})" if rep else ""),
-            "address": p.get("address") or "",
+            "name": (_party_name(p) or "—")
+            + (f" (Rep. by {meta['represented_by']})" if meta.get("represented_by") else ""),
+            "address": meta.get("address") or "",
         })
     return blocks
 
@@ -181,11 +188,12 @@ def _docs_required_for_transaction(tx: dict) -> str:
 
 def _parties_effect(tx: dict) -> str:
     parties = tx.get("parties") or {}
-    names = [
-        str(p.get("entity_name") or "").strip()
-        for p in (parties.get("vendors") or []) + (parties.get("purchasers") or [])
-        if p.get("entity_name")
-    ]
+    names = []
+    for role in ("vendors", "purchasers"):
+        for p in parties.get(role) or []:
+            name = _party_name(p)
+            if name and name not in names:
+                names.append(name)
     return " → ".join(names)
 
 
