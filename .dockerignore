@@ -15,6 +15,9 @@ uploads/
 outputs/
 dump.rdb
 
+# Local mysqldump snapshots — never send to build context
+backups/
+
 # Git
 .git/
 .gitignore
