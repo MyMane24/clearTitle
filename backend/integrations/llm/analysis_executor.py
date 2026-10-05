@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import random
 import re
 import time
 
@@ -17,6 +18,16 @@ from backend.prompts.loader import load_prompt
 logger = get_logger(__name__)
 
 _ANALYSIS_SYSTEM_TEMPLATE = load_prompt("analysis_system")
+_ANALYSIS_MAX_ATTEMPTS = 5
+
+
+def _is_transient(e: Exception) -> bool:
+    msg = str(e).lower()
+    return any(
+        x in msg
+        for x in ["503", "429", "quota", "exhausted", "resource_exhausted",
+                  "rate", "unavailable", "too many requests"]
+    )
 
 
 def run_analysis(prompt: str, *, task: str, response_schema: dict) -> dict:
@@ -32,27 +43,37 @@ def run_analysis(prompt: str, *, task: str, response_schema: dict) -> dict:
     client = genai.Client(api_key=GEMINI_API_KEY)
     start = time.time()
 
-    try:
-        acquired = gemini_limiter.wait_and_acquire(tokens=1)
-        if not acquired:
-            logger.warning("Rate limit wait timeout for analysis task %s", task)
+    last_exc: Exception | None = None
+    for attempt in range(1, _ANALYSIS_MAX_ATTEMPTS + 1):
+        try:
+            acquired = gemini_limiter.wait_and_acquire(tokens=1)
+            if not acquired:
+                logger.warning("Rate limit wait timeout for analysis task %s", task)
 
-        response = client.models.generate_content(
-            model=model,
-            contents=prompt,
-            config={
-                "response_mime_type": "application/json",
-                "temperature": 0.0,
-                "max_output_tokens": 32768,
-                "system_instruction": (
-                    f"{_ANALYSIS_SYSTEM_TEMPLATE}\n\n"
-                    f"EXPECTED OUTPUT SHAPE:\n{json.dumps(response_schema, indent=2)}"
-                ),
-            },
-        )
-    except Exception as e:
-        logger.error("Gemini analysis call failed for %s: %s", task, e)
-        raise
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config={
+                    "response_mime_type": "application/json",
+                    "temperature": 0.0,
+                    "max_output_tokens": 32768,
+                    "system_instruction": (
+                        f"{_ANALYSIS_SYSTEM_TEMPLATE}\n\n"
+                        f"EXPECTED OUTPUT SHAPE:\n{json.dumps(response_schema, indent=2)}"
+                    ),
+                },
+            )
+            break
+        except Exception as e:
+            if not _is_transient(e) or attempt == _ANALYSIS_MAX_ATTEMPTS:
+                logger.error("Gemini analysis call failed for %s: %s", task, e)
+                raise
+            delay = min(2 ** attempt, 30) + random.uniform(0, 1)
+            logger.warning(
+                "Gemini transient failure %s for %s — attempt %d/%d, retrying in %.1fs",
+                e, task, attempt, _ANALYSIS_MAX_ATTEMPTS, delay,
+            )
+            time.sleep(delay)
 
     latency_ms = int((time.time() - start) * 1000)
     raw_response = response.text or ""
