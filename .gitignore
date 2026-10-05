@@ -17,6 +17,9 @@ dump.rdb
 # Database & runtime stores
 /data/
 
+# Local rollback snapshots — mysqldump output, never commit
+backups/
+
 # Scratch directory
 scratch/
 
