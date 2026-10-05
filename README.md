@@ -141,7 +141,7 @@ This starts 5 services automatically:
 | **Redis** | internal only | Celery broker + state store |
 | **Celery Worker** | internal only | Background task processing (`--concurrency=2`) |
 
-On subsequent runs just use `docker compose up`. Rebuild with `docker compose up --build` after changing code — the React SPA is baked into the image.
+On subsequent runs just use `docker compose up`. Rebuild with `docker compose up --build` after changing code — the React SPA is baked into the image. A rebuild replaces the `:latest` tag, so tag the current image before a risky change (see [Backup & Rollback](#backup--rollback)).
 
 ---
 
@@ -187,6 +187,114 @@ Database: property_ocr_v2
 ```bash
 docker compose exec mysql mysql -u root -ppassword property_ocr_v2
 ```
+
+---
+
+## Backup & Rollback
+
+The app is three independent layers. Each needs its own undo — `git` covers only the first.
+
+| Layer | What it is | Recovered by |
+|---|---|---|
+| **Code** | `backend/`, `frontend/` | `git reset --hard <tag>` |
+| **Running build** | Docker image — code **+ baked-in React SPA** | `docker tag` a known image back onto `:latest` |
+| **Data** | MySQL `property_ocr_v2`, plus `outputs/` | `mysqldump` / file copy |
+
+`git reset` alone does **not** roll back the running app: the React bundle is compiled into the image, and MySQL is never touched by git.
+
+### What is not in version control
+
+| Path | In git? | Consequence |
+|---|---|---|
+| `.env` | No (secrets) | Must be backed up separately, stored securely |
+| `outputs/` | No | ~895 MB of OCR text + structured JSON. **Irreplaceable** — recovering it means re-running paid OCR |
+| `uploads/` | No | Original scanned PDFs. Re-uploadable from your own copies |
+| `backups/` | No | Local dump snapshots (see below) |
+
+### Take a database snapshot
+
+```bash
+mkdir -p backups                                    # Windows PowerShell: New-Item -ItemType Directory backups
+docker compose exec -T mysql sh -c 'mysqldump -u root -p"$MYSQL_ROOT_PASSWORD" \
+  --single-transaction --skip-lock-tables --no-tablespaces \
+  --default-character-set=utf8mb4 --routines --triggers \
+  --set-gtid-purged=OFF property_ocr_v2 > /tmp/db.sql'
+docker compose cp mysql:/tmp/db.sql "backups/db-$(date +%F-%H%M%S).sql"
+```
+
+Why each flag matters:
+
+| Flag | Reason |
+|---|---|
+| `--single-transaction` | Consistent snapshot of InnoDB tables with **no table locks** — the app keeps serving during the dump |
+| `--skip-lock-tables` | Belt-and-braces: never take a global read lock |
+| `--default-character-set=utf8mb4` | Kannada party names survive the round-trip |
+| no `--databases` | Omits `CREATE DATABASE`/`USE`, so a restore can only touch the database you name explicitly |
+| `docker compose cp` | Avoids piping binary through the host shell — PowerShell redirection corrupts UTF-8 |
+
+### Restore a snapshot
+
+> **This replaces the current contents of the target database** (the dump contains `DROP TABLE IF EXISTS`). Stop the app first and keep a fresh snapshot of anything you want to keep.
+
+```bash
+# 1. take a snapshot of the CURRENT state before overwriting it
+# 2. stop everything that writes to MySQL
+docker compose stop api worker
+
+# 3. copy the dump in and restore it
+docker compose cp backups/db-2026-10-05-pre-big-change.sql mysql:/tmp/restore.sql
+docker compose exec -T mysql sh -c 'mysql -u root -p"$MYSQL_ROOT_PASSWORD" \
+  -D property_ocr_v2 < /tmp/restore.sql'
+
+docker compose up -d
+```
+
+### Roll back the running build
+
+`docker compose up --build` overwrites the `:latest` tag, so a rebuild makes the previously working image unreachable. Name the image **before** you start changing things:
+
+```bash
+docker tag cleartitle-api:latest   cleartitle-api:b1196fc     # b1196fc = your commit SHA
+docker tag cleartitle-worker:latest cleartitle-worker:b1196fc
+```
+
+Later, to return to it without rebuilding:
+
+```bash
+docker tag cleartitle-api:b1196fc    cleartitle-api:latest
+docker tag cleartitle-worker:b1196fc cleartitle-worker:latest
+docker compose up -d --force-recreate --no-build
+```
+
+Always confirm an image really contains the code you think it does — a build from a dirty working tree can look fine while missing your newest commits:
+
+```bash
+# Linux / macOS
+docker create --name chk cleartitle-api:b1196fc
+docker cp chk:/app/backend/services/report.py /tmp/report.py
+git hash-object /tmp/report.py
+git rev-parse b1196fc:backend/services/report.py   # the two hashes must match
+docker rm chk
+```
+
+```powershell
+# Windows PowerShell
+docker create --name chk cleartitle-api:b1196fc
+docker cp chk:/app/backend/services/report.py "$env:TEMP\report.py"
+git hash-object "$env:TEMP\report.py"
+git rev-parse b1196fc:backend/services/report.py
+docker rm chk
+```
+
+### Current known-good baseline
+
+| Artifact | Value |
+|---|---|
+| Git tag | `pre-big-change` → `b1196fc` (pushed to origin) |
+| Images | `cleartitle-api:b1196fc`, `cleartitle-worker:b1196fc` |
+| Database dump | `backups/db-2026-10-05-pre-big-change.sql` |
+
+> `docker-compose.yml` sets no `image:` key, so `docker compose build` always writes to `:latest`. Tag explicitly before a risky change, as above.
 
 ---
 
@@ -349,10 +457,12 @@ clearTitle/
 │   ├── server.ts                   # Dev server (Express + Vite middleware)
 │   └── index.html
 │
-├── outputs/                        # PDFs + structured outputs (bind-mounted, persists across restarts)
-├── docs/                           # Architecture guide + pipeline issues analysis
+├── outputs/                        # PDFs + structured outputs (bind-mounted, persists across restarts, NOT in git)
+├── uploads/                        # Original uploaded PDFs (bind-mounted, NOT in git)
+├── backups/                        # Local mysqldump snapshots (NOT in git)
+├── docs/                           # Local-only design notes (gitignored — not in a fresh clone)
 ├── docker-compose.yml              # 5 services: api, worker, mysql, redis, phpmyadmin
-├── Dockerfile                      # Single-stage build (Python 3.11 + Node 20)
+├── Dockerfile                      # Multi-stage build (Node 20 builds SPA → Python 3.11 runtime)
 ├── requirements.txt                # Python dependencies
 └── .env                            # Environment variables (not committed)
 ```
@@ -483,4 +593,4 @@ pytest backend/tests      # backend unit tests
 
 ---
 
-*Last updated: 3 October 2026*
+*Last updated: 5 October 2026*
