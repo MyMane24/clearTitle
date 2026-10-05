@@ -46,6 +46,7 @@ from backend.shared.constants import (
     STATUS_STRUCTURING,
     UNKNOWN_DOC,
 )
+from backend.shared.ec_ledger import normalize_ec_structured
 from backend.workers.context import StageContext
 from backend.workers.stage_base import ExtractionStage
 
@@ -318,7 +319,11 @@ class PersistStage(ExtractionStage):
         structured_data = llm_result["structured_data"]
         analytics = llm_result.get("_analytics", {})
 
+        if doc_type == ENCUMBRANCE_CERTIFICATE:
+            structured_data = normalize_ec_structured(structured_data)
+
         # Read merged_ocr info to get total page count
+
         merged_path = case_dir / "ocr_raw" / f"{doc_id}_merged.json"
         total_pages = 0
         if merged_path.exists():

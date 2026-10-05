@@ -27,22 +27,17 @@ GROQ_MODELS = [
 ]
 
 # Import shared schemas
+from backend.services.extraction_prompts import _build_static_content
 from backend.services.schemas import SCHEMA_MAP, _generic_schema
 from backend.shared.helpers import merge_dict_list
 
-SYSTEM_PROMPT_BASE = load_prompt("groq_system").strip()
 _GROQ_USER_TEMPLATE = load_prompt("groq_user").strip()
 
 
 def _build_system_message(doc_type: str) -> str:
     """Build a byte-identical system message per doc_type for implicit caching."""
-    schema = deepcopy(SCHEMA_MAP.get(doc_type, _generic_schema(doc_type)))
-    schema_json = json.dumps(schema, indent=2)
+    return _build_static_content(doc_type)
 
-    return (
-        f"{SYSTEM_PROMPT_BASE}\n\n"
-        f"TARGET JSON SCHEMA:\n{schema_json}"
-    )
 
 
 def structure_document(merged_ocr: dict, doc_type: str,
