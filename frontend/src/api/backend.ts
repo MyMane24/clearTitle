@@ -111,6 +111,7 @@ export interface CaseResults {
     updated_at?: string;
   };
   documents: any[];
+  needs_action?: any[];
   title_chain: {
     status?: string;
     chain: TitleChainEntry[];

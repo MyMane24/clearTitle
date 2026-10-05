@@ -29,7 +29,7 @@ def update_case_status(*, case_id: str) -> None:
         cursor.execute("""
             UPDATE cases SET
                 completed_docs = (SELECT COUNT(*) FROM documents
-                    WHERE case_id = %s AND status = 'structured'),
+                    WHERE case_id = %s AND status IN ('structured', 'skipped')),
                 failed_docs = (SELECT COUNT(*) FROM documents
                     WHERE case_id = %s AND status IN ('failed','classification_failed')),
                 status = CASE
@@ -37,7 +37,7 @@ def update_case_status(*, case_id: str) -> None:
                         WHERE case_id = %s AND status IN ('failed','classification_failed')) > 0
                     THEN 'partial'
                     WHEN (SELECT COUNT(*) FROM documents
-                        WHERE case_id = %s AND status = 'structured') = total_docs
+                        WHERE case_id = %s AND status IN ('structured','skipped')) = total_docs
                     THEN 'complete'
                     ELSE 'processing'
                 END

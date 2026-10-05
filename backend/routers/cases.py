@@ -226,8 +226,9 @@ async def process_case(case_id: str, user: dict | None = Depends(get_optional_us
 @router.get("/status/{case_id}")
 async def get_status(case_id: str, user: dict | None = Depends(get_optional_user)):
     import asyncio
-    if not redis_case_exists(case_id):
-        raise HTTPException(status_code=404, detail="Case not found")
+    # NOTE: intentionally no redis_case_exists gate — MySQL is the source of
+    # truth (get_case_status_payload raises KeyError → 404). Redis can restart or
+    # expire case keys; the status payload (incl. needs_action) must still load.
     _enforce_access(case_id, user)
 
     from backend.database.repositories.case_repo import get_case_status_payload
@@ -441,12 +442,24 @@ async def skip_document_endpoint(
     doc_id: str,
     user: dict | None = Depends(get_optional_user),
 ):
-    if not redis_case_exists(case_id):
-        raise HTTPException(status_code=404, detail="Case not found")
     _enforce_access(case_id, user)
 
     skip_document(case_id=case_id, doc_id=doc_id)
     append_log(case_id, f"[{doc_id}] Document skipped")
+
+    from backend.database.repositories.case_repo import update_case_status
+    update_case_status(case_id=case_id)
+
+    from backend.database.repositories.document_repo import get_case_documents
+    unresolved = [
+        d for d in get_case_documents(case_id)
+        if d.get("status") in ("failed", "classification_failed")
+    ]
+    if not unresolved:
+        from backend.workers.title_chain_tasks import run_case_analysis_task
+        run_case_analysis_task.apply_async(args=[case_id])
+        append_log(case_id, "── All documents resolved — running title chain + verification ──")
+
     return {"case_id": case_id, "doc_id": doc_id, "status": "skipped"}
 
 

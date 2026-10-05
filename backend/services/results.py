@@ -72,6 +72,27 @@ def build_case_results(case_id: str) -> dict:
             }
             for d in documents
         ],
+        "needs_action": _needs_action(case_id),
         "title_chain": title_chain,
         "verification": verification,
     }
+
+
+def _needs_action(case_id: str) -> list[dict]:
+    from backend.database.repositories.document_repo import get_classification_failed_documents
+    return [
+        {
+            "doc_id": d["doc_id"],
+            "filename": d["filename"],
+            "message": f"'{d['filename']}' — document type not recognised.",
+            "choices": [
+                {"action": "skip", "method": "POST",
+                 "url": f"/api/case/{case_id}/doc/{d['doc_id']}/skip",
+                 "label": "Continue without this document"},
+                {"action": "replace", "method": "POST",
+                 "url": f"/api/case/{case_id}/doc/{d['doc_id']}/replace",
+                 "label": "Upload a replacement document"},
+            ],
+        }
+        for d in get_classification_failed_documents(case_id)
+    ]

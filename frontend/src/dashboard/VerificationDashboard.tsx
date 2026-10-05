@@ -1434,7 +1434,9 @@ export function VerificationDashboard() {
     if (!currentCaseId) return;
     try {
       await API.skipDoc(currentCaseId, docId);
-      addLog(`Skipped ${docId}`, "log-warn");
+      addLog(`Skipped ${docId} — finishing analysis…`, "log-warn");
+      setView('processing');
+      startPolling(currentCaseId);
     } catch (e: any) {
       addLog(`✗ Skip failed: ${e.message}`, "log-err");
     }
@@ -1500,7 +1502,7 @@ export function VerificationDashboard() {
     );
   }
 
-  const needsAction = statusData?.needs_action || [];
+  const needsAction = statusData?.needs_action || results?.needs_action || [];
   const activeDoc = results?.documents?.find(d => String(d.doc_id) === String(activeDocId));
 const chain = results?.title_chain?.chain || [];
 const sortedChain = sortChain(chain);
