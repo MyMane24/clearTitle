@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>clearTitle Dev Guide - Index</title>
+<title>clearTitle Dev Guide - ADR-001</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
@@ -94,17 +94,18 @@ article tr:nth-child(even){background:rgba(15,23,42,.45)}
 </aside>
 <main class="content">
 <article>
-<h1>clearTitle Developer Guide</h1>
-<p>This is the canonical developer guide for clearTitle. Start from Overview.</p>
-<h2>Navigation</h2>
+<h1>ADR-001: Multi-stage Docker build (SPA baked in)</h1>
+<h2>Status</h2>
+<p>Accepted</p>
+<h2>Context</h2>
+<p>Serve React SPA from same FastAPI process in production; keep dev simple.</p>
+<h2>Decision</h2>
+<p>Node 20 builds <code>frontend/dist</code> in first stage; Python 3.11 runtime copies built assets to <code>/app/frontend/dist</code> and FastAPI serves them.</p>
+<h2>Consequences</h2>
 <ul>
-<li><a href="00-overview.html">00 Overview</a></li>
-<li><a href="01-requirements/functional.html">01 Requirements</a></li>
-<li><a href="02-design/architecture.html">02 Design</a></li>
-<li><a href="03-implementation/tasks.html">03 Implementation</a></li>
-<li><a href="04-testing/test-strategy.html">04 Testing</a></li>
-<li><a href="05-evaluation/evaluation-plan.html">05 Evaluation</a></li>
-<li><a href="06-release/release-checklist.html">06 Release</a></li>
+<li>Single image for api+worker (worker overrides CMD)</li>
+<li>Rebuild required when frontend changes</li>
+<li><code>git reset</code> doesn't affect running image → must tag images before risky changes</li>
 </ul></article>
 </main>
 </div>

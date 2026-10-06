@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>clearTitle Dev Guide - Index</title>
+<title>clearTitle Dev Guide - Components</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
@@ -63,7 +63,7 @@ article tr:nth-child(even){background:rgba(15,23,42,.45)}
 <div class="nav-group">
 <h2>02 Design</h2>
 <a class="nav-link " href="02-design/architecture.html">Architecture</a>
-<a class="nav-link " href="02-design/components.html">Components</a>
+<a class="nav-link active" href="02-design/components.html">Components</a>
 <a class="nav-link " href="02-design/data-flow.html">Data Flow</a>
 <a class="nav-sublink" href="02-design/decisions/ADR-001.html">ADR-001</a>
 <a class="nav-sublink" href="02-design/decisions/ADR-002.html">ADR-002</a>
@@ -94,18 +94,20 @@ article tr:nth-child(even){background:rgba(15,23,42,.45)}
 </aside>
 <main class="content">
 <article>
-<h1>clearTitle Developer Guide</h1>
-<p>This is the canonical developer guide for clearTitle. Start from Overview.</p>
-<h2>Navigation</h2>
-<ul>
-<li><a href="00-overview.html">00 Overview</a></li>
-<li><a href="01-requirements/functional.html">01 Requirements</a></li>
-<li><a href="02-design/architecture.html">02 Design</a></li>
-<li><a href="03-implementation/tasks.html">03 Implementation</a></li>
-<li><a href="04-testing/test-strategy.html">04 Testing</a></li>
-<li><a href="05-evaluation/evaluation-plan.html">05 Evaluation</a></li>
-<li><a href="06-release/release-checklist.html">06 Release</a></li>
-</ul></article>
+<h1>Components</h1>
+<table>
+<thead><tr><th>Component</th><th>Location</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>API Routers</td><td>backend/routers/</td><td>Thin HTTP layer</td></tr>
+<tr><td>Services</td><td>backend/services/</td><td>Orchestration, classifier, extract, verify, title_chain, report</td></tr>
+<tr><td>Workers/Stages</td><td>backend/workers/</td><td>Idempotent Celery tasks</td></tr>
+<tr><td>LLM Executors</td><td>backend/integrations/llm/</td><td>Gemini/Groq clients + routing + rate limiting</td></tr>
+<tr><td>OCR</td><td>backend/integrations/ocr/</td><td>Sarvam client, merger, preprocessor</td></tr>
+<tr><td>Storage</td><td>backend/integrations/storage/</td><td>File utils/service</td></tr>
+<tr><td>DB</td><td>backend/database/</td><td>Connection, migrations, repositories</td></tr>
+<tr><td>Frontend</td><td>frontend/src/</td><td>React SPA + dashboard</td></tr>
+</tbody>
+</table></article>
 </main>
 </div>
 <script>hljs.highlightAll();</script>

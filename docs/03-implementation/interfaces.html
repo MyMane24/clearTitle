@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>clearTitle Dev Guide - Index</title>
+<title>clearTitle Dev Guide - Interfaces</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
@@ -71,7 +71,7 @@ article tr:nth-child(even){background:rgba(15,23,42,.45)}
 <div class="nav-group">
 <h2>03 Implementation</h2>
 <a class="nav-link " href="03-implementation/tasks.html">Tasks</a>
-<a class="nav-link " href="03-implementation/interfaces.html">Interfaces</a>
+<a class="nav-link active" href="03-implementation/interfaces.html">Interfaces</a>
 </div>
 <div class="nav-group">
 <h2>04 Testing</h2>
@@ -94,17 +94,26 @@ article tr:nth-child(even){background:rgba(15,23,42,.45)}
 </aside>
 <main class="content">
 <article>
-<h1>clearTitle Developer Guide</h1>
-<p>This is the canonical developer guide for clearTitle. Start from Overview.</p>
-<h2>Navigation</h2>
+<h1>Interfaces</h1>
+<h2>HTTP (selected)</h2>
+<table>
+<thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>POST</td><td>/api/upload</td><td>Upload PDFs</td></tr>
+<tr><td>POST</td><td>/api/process/{case_id}</td><td>Start pipeline</td></tr>
+<tr><td>GET</td><td>/api/status/{case_id}</td><td>Progress + verification status</td></tr>
+<tr><td>GET</td><td>/api/results/{case_id}</td><td>Full case results</td></tr>
+<tr><td>POST</td><td>/api/results/{case_id}/analyze|verify|title-chain</td><td>Re-run</td></tr>
+<tr><td>GET</td><td>/api/results/{case_id}/report/pdf</td><td>PDF report</td></tr>
+</tbody>
+</table>
+<h2>DB Model (key tables)</h2>
 <ul>
-<li><a href="00-overview.html">00 Overview</a></li>
-<li><a href="01-requirements/functional.html">01 Requirements</a></li>
-<li><a href="02-design/architecture.html">02 Design</a></li>
-<li><a href="03-implementation/tasks.html">03 Implementation</a></li>
-<li><a href="04-testing/test-strategy.html">04 Testing</a></li>
-<li><a href="05-evaluation/evaluation-plan.html">05 Evaluation</a></li>
-<li><a href="06-release/release-checklist.html">06 Release</a></li>
+<li><code>users(id, email, password_hash, ...)</code></li>
+<li><code>cases(id, user_id, status, verification_status, ...)</code></li>
+<li><code>documents(id, case_id, file_path, document_type, status, structured_data, ...)</code></li>
+<li><code>title_chains(id, case_id, chain_json, ...)</code></li>
+<li><code>verification_results(id, case_id, result_json, verdict, ...)</code></li>
 </ul></article>
 </main>
 </div>

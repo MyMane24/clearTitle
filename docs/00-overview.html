@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>clearTitle Dev Guide - Index</title>
+<title>clearTitle Dev Guide - Overview</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
@@ -52,7 +52,7 @@ article tr:nth-child(even){background:rgba(15,23,42,.45)}
 <aside class="sidebar">
 <div class="nav-group">
 <h2>Overview</h2>
-<a class="nav-link " href="00-overview.html">Overview</a>
+<a class="nav-link active" href="00-overview.html">Overview</a>
 </div>
 <div class="nav-group">
 <h2>01 Requirements</h2>
@@ -94,21 +94,26 @@ article tr:nth-child(even){background:rgba(15,23,42,.45)}
 </aside>
 <main class="content">
 <article>
-<h1>clearTitle Developer Guide</h1>
-<p>This is the canonical developer guide for clearTitle. Start from Overview.</p>
-<h2>Navigation</h2>
+<h1>clearTitle - Developer Guide</h1>
+<p>clearTitle is an end-to-end property title verification platform for Karnataka property documents. It extracts structured data from scanned PDFs (Sarvam OCR), runs LLM-powered structuring (Gemini primary, Groq fallback), builds a title chain, performs cross-document verification, and presents results via a React SPA backed by FastAPI + Celery.</p>
+
+<h2>What this guide covers</h2>
 <ul>
-<li><a href="00-overview.html">00 Overview</a></li>
-<li><a href="01-requirements/functional.html">01 Requirements</a></li>
-<li><a href="02-design/architecture.html">02 Design</a></li>
-<li><a href="03-implementation/tasks.html">03 Implementation</a></li>
-<li><a href="04-testing/test-strategy.html">04 Testing</a></li>
-<li><a href="05-evaluation/evaluation-plan.html">05 Evaluation</a></li>
-<li><a href="06-release/release-checklist.html">06 Release</a></li>
+<li>Requirements, design, implementation, testing, evaluation, release artifacts</li>
+<li>How the system actually works (based on current codebase)</li>
+<li>Operations: setup, pipeline, APIs, data model, backup & rollback</li>
+</ul>
+
+<h2>TL;DR</h2>
+<ul>
+<li><strong>Frontend</strong>: React 19 + Vite + TypeScript (SPA served by FastAPI in production; built in multi-stage Docker)</li>
+<li><strong>Backend</strong>: FastAPI + Celery + Redis + MySQL 8.0</li>
+<li><strong>Pipeline</strong>: 6 per-document stages → finalize → title-chain → verify</li>
+<li><strong>OCR/LLM</strong>: Sarvam Vision OCR, Gemini 2.5 Flash (primary), Groq (fallback)</li>
+<li><strong>Data</strong>: <code>users, cases, documents, title_chains, verification_results</code></li>
 </ul></article>
 </main>
 </div>
 <script>hljs.highlightAll();</script>
 </body>
 </html>
-
