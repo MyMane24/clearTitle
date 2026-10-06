@@ -1,0 +1,955 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ARCHITECTURE_OVERVIEW</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+<style>
+:root{--bg:#0f172a;--bg2:#0b1226;--panel:#0f172a;--text:#e5e7eb;--muted:#94a3b8;--primary:#f97316;--border:rgba(148,163,184,.25);--codebg:#0b1226}
+*{box-sizing:border-box;margin:0;padding:0;font-family:Inter,system-ui,-apple-system,sans-serif}
+body{background:radial-gradient(circle at top,rgba(249,115,22,.08),transparent 60%),var(--bg2);color:var(--text);line-height:1.8}
+header{padding:clamp(1.2rem,3vw,2rem) clamp(1rem,5vw,2.5rem);border-bottom:1px solid var(--border);background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(15,23,42,.92));position:sticky;top:0;backdrop-filter:blur(8px);z-index:10;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:1rem}
+header h1{font-family:'Plus Jakarta Sans',Inter,sans-serif;font-size:clamp(1.1rem,2.2vw,1.6rem);letter-spacing:-.01em}
+nav{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center}
+nav a{color:var(--muted);text-decoration:none;padding:.4rem .7rem;border-radius:.6rem;border:1px solid transparent;font-weight:500;transition:.15s ease}
+nav a:hover,nav a.active{color:var(--text);border-color:var(--border);background:rgba(15,23,42,.5)}
+main{display:flex;gap:clamp(1rem,3vw,2rem);padding:clamp(1rem,3vw,2rem) clamp(1rem,5vw,2.5rem);max-width:1600px;margin:0 auto}
+aside{width:min(320px,28vw);flex-shrink:0;position:sticky;top:clamp(4.5rem,8vw,5.5rem);align-self:flex-start;max-height:calc(100vh - clamp(5rem,9vw,6rem));overflow:auto;padding-right:.25rem}
+.toc{background:linear-gradient(160deg,rgba(15,23,42,.96),rgba(15,23,42,.92));border:1px solid var(--border);border-radius:.9rem;padding:clamp(1rem,2vw,1.25rem);display:flex;flex-direction:column;gap:1rem;box-shadow:0 40px 70px -40px rgba(15,23,42,.9)}
+.toc h2{font-size:.98rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.toc ul{list-style:none;display:flex;flex-direction:column;gap:.45rem}
+.toc li a{color:var(--muted);text-decoration:none;font-size:.98rem;display:block;padding:.35rem .5rem;border-radius:.5rem;transition:.15s ease}
+.toc li a:hover{color:var(--text);background:rgba(148,163,184,.12)}
+.toc li a.active{color:#fff;background:rgba(249,115,22,.22);border:1px solid rgba(249,115,22,.45)}
+article{flex:1;min-width:0;background:linear-gradient(160deg,rgba(15,23,42,.98),rgba(15,23,42,.94));border:1px solid var(--border);border-radius:1rem;padding:clamp(1.25rem,4vw,2.75rem);box-shadow:0 60px 90px -40px rgba(15,23,42,.95);overflow:auto}
+article h1,article h2,article h3,article h4,article h5,article h6{font-family:'Plus Jakarta Sans',Inter,sans-serif;line-height:1.15;margin-top:clamp(1.5rem,4vw,2.5rem);margin-bottom:clamp(.8rem,2vw,1rem);scroll-margin-top:clamp(5rem,9vw,6rem)}
+article h1:first-child{margin-top:0}
+article h1{font-size:clamp(1.8rem,4.5vw,3rem);letter-spacing:-.03em}
+article h2{font-size:clamp(1.35rem,3.2vw,2rem)}
+article h3{font-size:clamp(1.15rem,2.6vw,1.4rem)}
+article p{margin-bottom:1.1rem;color:#e2e8f0}
+article a{color:var(--primary);text-decoration:none}
+article a:hover{text-decoration:underline}
+article ul,article ol{padding-left:1.5rem;margin-bottom:1.2rem;display:flex;flex-direction:column;gap:.6rem}
+article li{color:#e2e8f0}
+article code{font-family:'JetBrains Mono',monospace;background:var(--codebg);padding:.05rem .4rem;border-radius:.4rem;border:1px solid var(--border);font-size:.96rem}
+article pre{margin:1.25rem 0;background:var(--codebg);border:1px solid var(--border);border-radius:.8rem;padding:clamp(1rem,2vw,1.25rem);overflow:auto}
+article pre code{background:transparent;border:none;padding:0;font-size:.98rem;line-height:1.9}
+article table{width:100%;border-collapse:collapse;margin:1.5rem 0;border:1px solid var(--border);border-radius:.6rem;overflow:hidden}
+article th,article td{padding:.8rem 1rem;border-bottom:1px solid var(--border);text-align:left}
+article th{background:rgba(148,163,184,.12);font-weight:600}
+article tr:nth-child(even){background:rgba(15,23,42,.4)}
+article blockquote{margin:1.25rem 0;padding:1rem 1.25rem;border-left:3px solid var(--primary);background:rgba(249,115,22,.12);border-radius:0 .6rem .6rem 0;color:#fef3c7}
+hr{border:none;border-top:1px solid var(--border);margin:2rem 0}
+@media(max-width:980px){aside{display:none}main{flex-direction:column}}
+</style>
+</head>
+<body>
+<header>
+<h1>ARCHITECTURE_OVERVIEW</h1>
+<nav>
+<a href="../index.html">Docs Home</a>
+<a href="./index.html" class="active">Developer Guide</a>
+<a href="../artifacts/">Artifacts</a>
+<a href="../docs-dev/">Raw Markdown</a>
+</nav>
+</header>
+<main>
+<aside>
+<div class="toc">
+<h2>On this page</h2>
+<ul id="toc"></ul>
+</div>
+</aside>
+<article><h1 id="cleartitle-architecture-codebase-guide-simplified">ClearTitle — Architecture &amp; Codebase Guide (Simplified)</h1>
+<blockquote>
+<p>A plain-English, ground-up walkthrough of the <strong>ClearTitle property title
+verification app</strong> — what it does, how the pieces fit together, how data
+flows through the pipeline, what is stored where (and what is wasted), and
+how to build correct retry / fallback / error handling on top of it.</p>
+</blockquote>
+<hr />
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#1-what-this-app-does">What This App Does (30-second version)</a></li>
+<li><a href="#2-technology-stack">Technology Stack — short list</a></li>
+<li><a href="#3-high-level-architecture-hld">High-Level Architecture (HLD)</a></li>
+<li><a href="#4-low-level-architecture-lld">Low-Level Architecture (LLD) — components &amp; their jobs</a></li>
+<li><a href="#5-the-document-pipeline">The Document Pipeline — one document, end to end</a></li>
+<li><a href="#6-request-flow">Request Flow — what happens when you click "Verify Title"</a></li>
+<li><a href="#7-how-redis--celery-work-here">How Redis &amp; Celery work here</a></li>
+<li><a href="#8-preprocessing--sarvam-ocr-in-detail">Preprocessing &amp; Sarvam OCR — inputs and outputs in detail</a></li>
+<li><a href="#9-structuring--llm-routing">Structuring &amp; the LLM routing / fallback chain</a></li>
+<li><a href="#10-title-chain--verification">Title Chain &amp; Verification (case-level analysis)</a></li>
+<li><a href="#11-database">Database — schema, and what we store unnecessarily</a></li>
+<li><a href="#12-tradeoffs--known-issues">Tradeoffs &amp; Known Issues</a></li>
+<li><a href="#13-retry-fallback-error-handling">How to build correct retry / fallback / error handling</a></li>
+</ol>
+<hr />
+<h2 id="1-what-this-app-does">1. What This App Does</h2>
+<p>ClearTitle answers one question about a <strong>Karnataka property</strong>:</p>
+<blockquote>
+<p><strong>"Does the buyer of this property have a clean title?"</strong></p>
+</blockquote>
+<p>It does this in three stages:</p>
+<ol>
+<li><strong>Read the paperwork.</strong> The user uploads scanned PDFs (usually a <strong>Sale
+   Deed</strong> and an <strong>Encumbrance Certificate / EC</strong>, plus optional extras like
+   RTC, Khata, Mutation). The app converts each scan into searchable text with
+   <strong>Sarvam OCR</strong> (it understands Kannada + English mixed documents).</li>
+<li><strong>Extract structured data.</strong> An LLM (Gemini first, Groq as fallback) reads
+   the OCR text and fills a strict JSON schema — parties, property survey
+   numbers, consideration amount, EC historical ledger, etc.</li>
+<li><strong>Analyze the title.</strong> A second LLM pass builds a <strong>title chain</strong> (a
+   timeline of every registered transaction on the property) and <strong>verifies</strong>
+   that the Sale Deed's claims (survey number, parties, dates, encumbrances)
+   match what the EC ledger says. Result: a <code>VERIFIED</code> / <code>NOT_VERIFIED</code>
+   verdict.</li>
+</ol>
+<p>Everything runs in the background (Celery), and the frontend polls the status
+and shows a live log, the extracted fields, the title-chain timeline, and the
+verification table.</p>
+<hr />
+<h2 id="2-technology-stack">2. Technology Stack</h2>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Technology</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Frontend</strong></td>
+<td>React 19, Vite 6, TypeScript, Tailwind CSS, lucide-react</td>
+<td>SPA: landing page + dashboard (upload → processing → results)</td>
+</tr>
+<tr>
+<td><strong>Backend API</strong></td>
+<td>FastAPI + Uvicorn (Python 3.11)</td>
+<td>REST endpoints: auth, upload, process, status, retry, results</td>
+</tr>
+<tr>
+<td><strong>Async jobs</strong></td>
+<td>Celery</td>
+<td>Background workers that run the 6-stage per-document pipeline</td>
+</tr>
+<tr>
+<td><strong>Broker / queue</strong></td>
+<td>Redis 7</td>
+<td>Celery message broker + result backend</td>
+</tr>
+<tr>
+<td><strong>State cache</strong></td>
+<td>Redis</td>
+<td>Hot-path cache of case status/logs; <strong>MySQL is the source of truth</strong></td>
+</tr>
+<tr>
+<td><strong>Relational DB</strong></td>
+<td>MySQL 8</td>
+<td>Persistent storage: <code>cases</code>, <code>documents</code>, <code>title_chains</code>, <code>verification_results</code>, <code>users</code></td>
+</tr>
+<tr>
+<td><strong>OCR</strong></td>
+<td>Sarvam AI Vision (<code>sarvamai</code> SDK)</td>
+<td>Scan → text for Kannada+English docs; chunks &gt;10 pages</td>
+</tr>
+<tr>
+<td><strong>Image preprocess</strong></td>
+<td>OpenCV (cv2) + PyMuPDF (fitz) + Pillow + numpy</td>
+<td>Contrast/denoise/deskew the scan before OCR</td>
+</tr>
+<tr>
+<td><strong>LLM structuring</strong></td>
+<td>Google Gemini 2.5 Flash (primary), Groq llama-3.3-70b / 3.1-8b (fallback)</td>
+<td>OCR text → strict JSON</td>
+</tr>
+<tr>
+<td><strong>LLM analysis</strong></td>
+<td>Gemini 2.5 Flash</td>
+<td>Title chain + verification passes</td>
+</tr>
+<tr>
+<td><strong>Infra</strong></td>
+<td>Docker Compose</td>
+<td>5 services: api, worker, mysql, redis, phpmyadmin</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="3-high-level-architecture-hld">3. High-Level Architecture (HLD)</h2>
+<div class="codehilite"><pre><span></span><code><span class="w">                          </span><span class="err">┌─────────────────────────────┐</span>
+<span class="w">                          </span><span class="err">│</span><span class="w">        </span><span class="n">BROWSER</span><span class="w"> </span><span class="p">(</span><span class="n">React</span><span class="w"> </span><span class="n">SPA</span><span class="p">)</span><span class="w">   </span><span class="err">│</span>
+<span class="w">                          </span><span class="err">│</span><span class="w">  </span><span class="n">Upload</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">Poll</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">Results</span><span class="w">     </span><span class="err">│</span>
+<span class="w">                          </span><span class="err">└──────────────┬──────────────┘</span>
+<span class="w">                                         </span><span class="err">│</span><span class="w">  </span><span class="n">HTTP</span><span class="w"> </span><span class="p">(</span><span class="n">JSON</span><span class="p">)</span><span class="w">  </span><span class="n">port</span><span class="w"> </span><span class="mi">8000</span>
+<span class="w">                                         </span><span class="err">▼</span>
+<span class="w">                          </span><span class="err">┌─────────────────────────────┐</span>
+<span class="w">                          </span><span class="err">│</span><span class="w">     </span><span class="n">FastAPI</span><span class="w"> </span><span class="p">(</span><span class="n">api</span><span class="w"> </span><span class="n">service</span><span class="p">)</span><span class="w">    </span><span class="err">│</span>
+<span class="w">                          </span><span class="err">│</span><span class="w">  </span><span class="o">/</span><span class="n">api</span><span class="o">/</span><span class="n">upload</span><span class="w"> </span><span class="o">/</span><span class="n">process</span><span class="o">/</span><span class="n">status</span><span class="w"> </span><span class="err">│</span>
+<span class="w">                          </span><span class="err">│</span><span class="w">  </span><span class="o">/</span><span class="n">api</span><span class="o">/</span><span class="n">retry</span><span class="w"> </span><span class="o">/</span><span class="n">results</span><span class="w"> </span><span class="o">...</span><span class="w">     </span><span class="err">│</span>
+<span class="w">                          </span><span class="err">└───────┬───────────────┬──────┘</span>
+<span class="w">                                  </span><span class="err">│</span><span class="w"> </span><span class="n">start</span><span class="w"> </span><span class="n">pipeline</span><span class="w"> </span><span class="err">│</span><span class="w"> </span><span class="n">enqueue</span>
+<span class="w">                                  </span><span class="err">▼</span><span class="w">               </span><span class="err">▼</span>
+<span class="w">                          </span><span class="err">┌─────────────────────────────┐</span>
+<span class="w">                          </span><span class="err">│</span><span class="w">     </span><span class="n">CELERY</span><span class="w"> </span><span class="n">WORKER</span><span class="p">(</span><span class="n">s</span><span class="p">)</span><span class="w">         </span><span class="err">│</span><span class="w">  </span><span class="err">──┐</span>
+<span class="w">                          </span><span class="err">│</span><span class="w">  </span><span class="p">(</span><span class="n">celery</span><span class="w"> </span><span class="o">-</span><span class="n">A</span><span class="w"> </span><span class="n">backend</span><span class="o">.</span><span class="n">celery</span><span class="p">)</span><span class="w">  </span><span class="err">│</span><span class="w">    </span><span class="err">│</span><span class="w"> </span><span class="n">async</span>
+<span class="w">                          </span><span class="err">└───────┬───────────────┬──────┘</span><span class="w">    </span><span class="err">│</span>
+<span class="w">                                  </span><span class="err">│</span><span class="w">              </span><span class="err">│</span><span class="w">           </span><span class="err">▼</span>
+<span class="w">                                  </span><span class="err">▼</span><span class="w">              </span><span class="err">▼</span><span class="w">        </span><span class="err">┌──────────────┐</span>
+<span class="w">                          </span><span class="err">┌───────────────┐</span><span class="w">  </span><span class="err">┌───────────▼──┐</span><span class="w">   </span><span class="n">REDIS</span><span class="w">      </span><span class="err">│</span>
+<span class="w">                          </span><span class="err">│</span><span class="w">    </span><span class="n">MYSQL</span><span class="w">      </span><span class="err">│</span><span class="w">  </span><span class="err">│</span><span class="w">   </span><span class="n">REDIS</span><span class="w">       </span><span class="err">│</span><span class="w"> </span><span class="n">broker</span><span class="o">+</span><span class="n">state</span><span class="w"> </span><span class="err">│</span>
+<span class="w">                          </span><span class="err">│</span><span class="w"> </span><span class="p">(</span><span class="n">source</span><span class="w"> </span><span class="n">of</span><span class="w">    </span><span class="err">│</span><span class="w">  </span><span class="err">│</span><span class="w"> </span><span class="p">(</span><span class="n">broker</span><span class="p">,</span><span class="w">      </span><span class="err">│</span><span class="w"> </span><span class="n">cache</span><span class="w">        </span><span class="err">│</span>
+<span class="w">                          </span><span class="err">│</span><span class="w">  </span><span class="n">truth</span><span class="p">)</span><span class="w">       </span><span class="err">│</span><span class="w">  </span><span class="err">│</span><span class="w">  </span><span class="n">locks</span><span class="p">,</span><span class="w"> </span><span class="n">cache</span><span class="p">)</span><span class="err">│</span><span class="w">              </span><span class="err">│</span>
+<span class="w">                          </span><span class="err">└───────────────┘</span><span class="w">  </span><span class="err">└───────────┬──┘</span><span class="w">              </span><span class="err">│</span>
+<span class="w">                                  </span><span class="err">▲</span><span class="w">                      </span><span class="err">│</span><span class="w">                 </span><span class="err">│</span>
+<span class="w">                                  </span><span class="err">│</span><span class="w"> </span><span class="n">files</span><span class="w"> </span><span class="n">on</span><span class="w"> </span><span class="n">disk</span><span class="w">        </span><span class="err">│</span><span class="w">                 </span><span class="err">│</span>
+<span class="w">                          </span><span class="err">┌───────┴────────┐</span><span class="w">    </span><span class="err">┌────────▼─────────┐</span><span class="w">       </span><span class="err">│</span>
+<span class="w">                          </span><span class="err">│</span><span class="w"> </span><span class="n">uploads</span><span class="o">/</span><span class="w"> </span><span class="o">+</span><span class="w">      </span><span class="err">│</span><span class="w">    </span><span class="err">│</span><span class="w">  </span><span class="n">EXTERNAL</span><span class="w"> </span><span class="n">APIs</span><span class="p">:</span><span class="w">  </span><span class="err">│</span><span class="w">       </span><span class="err">│</span>
+<span class="w">                          </span><span class="err">│</span><span class="w"> </span><span class="n">outputs</span><span class="o">/</span><span class="p">{</span><span class="n">case</span><span class="p">}</span><span class="o">/</span><span class="w"> </span><span class="err">│</span><span class="w">    </span><span class="err">│</span><span class="w">  </span><span class="n">Sarvam</span><span class="w"> </span><span class="n">OCR</span><span class="w">      </span><span class="err">│</span><span class="w">       </span><span class="err">│</span>
+<span class="w">                          </span><span class="err">│</span><span class="w"> </span><span class="p">(</span><span class="n">PDFs</span><span class="p">,</span><span class="w"> </span><span class="n">JSONs</span><span class="p">)</span><span class="w">   </span><span class="err">│</span><span class="w">    </span><span class="err">│</span><span class="w">  </span><span class="n">Gemini</span><span class="w">          </span><span class="err">│</span><span class="w">       </span><span class="err">│</span>
+<span class="w">                          </span><span class="err">└────────────────┘</span><span class="w">    </span><span class="err">│</span><span class="w">  </span><span class="n">Groq</span><span class="w">            </span><span class="err">│</span><span class="w">       </span><span class="err">│</span>
+<span class="w">                                                </span><span class="err">└──────────────────┘</span><span class="w">       </span><span class="err">│</span>
+</code></pre></div>
+
+<p><strong>The two most important architectural facts:</strong></p>
+<ul>
+<li><strong>MySQL is the single source of truth.</strong> Redis is only a cache in front of it
+  (see §7). If Redis dies, the pipeline still works; if MySQL dies, it doesn't.</li>
+<li><strong>The pipeline is asynchronous.</strong> The API never runs OCR/LLM inline — it
+  enqueues Celery tasks and returns immediately. The frontend polls
+  <code>/api/status/{case_id}</code> every 2 seconds to watch progress.</li>
+</ul>
+<hr />
+<h2 id="4-low-level-architecture-lld">4. Low-Level Architecture (LLD)</h2>
+<p>The backend is split into clean layers (this is the <em>new</em> layout after the
+refactor — the README still describes the old one):</p>
+<div class="codehilite"><pre><span></span><code><span class="n">backend</span><span class="o">/</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">main</span><span class="o">.</span><span class="n">py</span><span class="w">                  </span><span class="c1"># FastAPI app: routers + static SPA serving</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">celery_app</span><span class="o">.</span><span class="n">py</span><span class="w">            </span><span class="c1"># Celery config (broker, acks_late, timeouts)</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">config</span><span class="o">.</span><span class="n">py</span><span class="w">                </span><span class="c1"># ALL env vars in one place (single loader)</span>
+<span class="err">│</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">routers</span><span class="o">/</span><span class="w">                 </span><span class="c1"># HTTP layer (thin: validate → call service)</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">auth</span><span class="o">.</span><span class="n">py</span><span class="w">              </span><span class="c1">#   register / login / me</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">cases</span><span class="o">.</span><span class="n">py</span><span class="w">             </span><span class="c1">#   upload, process, status, retry, delete, clear</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">results</span><span class="o">.</span><span class="n">py</span><span class="w">           </span><span class="c1">#   results/{id}, results/{id}/analyze</span>
+<span class="err">│</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">services</span><span class="o">/</span><span class="w">                </span><span class="c1"># Business logic (no HTTP, no Celery)</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">orchestrator</span><span class="o">.</span><span class="n">py</span><span class="w">      </span><span class="c1">#   builds Celery chains + chords</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">classifier</span><span class="o">.</span><span class="n">py</span><span class="w">        </span><span class="c1">#   keyword-based doc-type detection</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">extract</span><span class="o">.</span><span class="n">py</span><span class="w">           </span><span class="c1">#   OCR retry + LLM fallback-chain driver</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">title_chain</span><span class="o">.</span><span class="n">py</span><span class="w">       </span><span class="c1">#   build title tree from SD + EC ledger</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">verify</span><span class="o">.</span><span class="n">py</span><span class="w">            </span><span class="c1">#   cross-document verification pass</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">results</span><span class="o">.</span><span class="n">py</span><span class="w">           </span><span class="c1">#   assemble /api/results payload</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">extraction_prompts</span><span class="o">.</span><span class="n">py</span><span class="c1">#   Gemini prompt builders</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">auth</span><span class="o">.</span><span class="n">py</span><span class="w">              </span><span class="c1">#   JWT + bcrypt helpers</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">schemas</span><span class="o">/</span><span class="w">             </span><span class="c1">#   per-doc-type JSON extraction schemas</span>
+<span class="err">│</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">workers</span><span class="o">/</span><span class="w">                 </span><span class="c1"># Celery layer (thin task wrappers)</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">tasks</span><span class="o">.</span><span class="n">py</span><span class="w">             </span><span class="c1">#   6 idempotent stage tasks</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">stages</span><span class="o">.</span><span class="n">py</span><span class="w">            </span><span class="c1">#   the actual stage logic (preprocess→persist)</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">stage_base</span><span class="o">.</span><span class="n">py</span><span class="w">        </span><span class="c1">#   ExtractionStage contract</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">stage_adapter</span><span class="o">.</span><span class="n">py</span><span class="w">     </span><span class="c1">#   task → stage.invoke adapter</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">idempotency</span><span class="o">.</span><span class="n">py</span><span class="w">       </span><span class="c1">#   skip-already-done guard</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">finalize</span><span class="o">.</span><span class="n">py</span><span class="w">          </span><span class="c1">#   chord callback: recompute status + queue analysis</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">title_chain_tasks</span><span class="o">.</span><span class="n">py</span><span class="w"> </span><span class="c1">#   build_title_chain_task + verify_case_task</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">context</span><span class="o">.</span><span class="n">py</span><span class="w">           </span><span class="c1">#   StageContext (dependencies handed to stages)</span>
+<span class="err">│</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">domain</span><span class="o">/</span><span class="n">state_machine</span><span class="o">.</span><span class="n">py</span><span class="w">  </span><span class="c1"># Stage enum + status→stage mapping (pure logic)</span>
+<span class="err">│</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">integrations</span><span class="o">/</span><span class="w">            </span><span class="c1"># Adapters to external/plumbing systems</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">llm</span><span class="o">/</span><span class="w">                 </span><span class="c1">#   gemini_executor, groq_executor,</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">                        </span><span class="c1">#   model_router, rate_limiter, analysis_executor</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">ocr</span><span class="o">/</span><span class="w">                 </span><span class="c1">#   sarvam_client, ocr_merger, preprocessor</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">redis</span><span class="o">/</span><span class="w">               </span><span class="c1">#   client, state_store, lock</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">storage</span><span class="o">/</span><span class="w">             </span><span class="c1">#   file_utils (paths, save, delete)</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="p">(</span><span class="n">database</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">database</span><span class="o">/</span><span class="p">)</span>
+<span class="err">│</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">database</span><span class="o">/</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">connection</span><span class="o">.</span><span class="n">py</span><span class="w">        </span><span class="c1">#  MySQL connection helper</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">migrations</span><span class="o">.</span><span class="n">py</span><span class="w">        </span><span class="c1">#  DDL bootstrap (runs at startup)</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">repositories</span><span class="o">/</span><span class="w">        </span><span class="c1">#  SQL access (case_repo, document_repo, ...)</span>
+<span class="err">│</span>
+<span class="err">└──</span><span class="w"> </span><span class="n">shared</span><span class="o">/</span><span class="n">constants</span><span class="o">.</span><span class="n">py</span><span class="w">      </span><span class="c1"># doc-type + status string constants</span>
+</code></pre></div>
+
+<p><strong>Design pattern that matters:</strong> stages get everything through a
+<code>StageContext</code> (<code>workers/context.py</code>) — never globals. Each stage exposes
+<code>invoke(ctx, input_data) -&gt; dict</code>. Celery tasks are thin wrappers that add
+retry + idempotency and call the stage through <code>stage_adapter.run_stage()</code>.
+This is what makes stages unit-testable and swap-able.</p>
+<hr />
+<h2 id="5-the-document-pipeline">5. The Document Pipeline</h2>
+<p>Every uploaded PDF goes through <strong>6 stages</strong>, each its own Celery task, chained
+with <code>chain(...)</code> so they run strictly in order. A Celery <strong>chord</strong> runs one
+chain per document in parallel and then calls <code>finalize_case_task</code>.</p>
+<div class="codehilite"><pre><span></span><code>DOC_001 ──► preprocess ──► ocr ──► merge ──► classify ──► structure ──► persist ──┐
+DOC_002 ──► preprocess ──► ocr ──► merge ──► classify ──► structure ──► persist ──┼──► finalize
+DOC_003 ──► preprocess ──► ocr ──► merge ──► classify ──► structure ──► persist ──┘
+</code></pre></div>
+
+<h3 id="stage-by-stage-with-inputs-outputs">Stage-by-stage (with inputs → outputs)</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Stage</th>
+<th>Input</th>
+<th>Work</th>
+<th>Output</th>
+<th>Writes status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>Preprocess</strong> (<code>stages.py:64</code>)</td>
+<td>raw PDF path (<code>file_paths.raw</code>)</td>
+<td>contrast (CLAHE), denoise, deskew, sharpen via OpenCV → new PDF</td>
+<td><code>outputs/{case}/preprocessed/{doc}_prep.pdf</code>; path saved to <code>file_paths.preprocessed</code></td>
+<td><code>preprocessed</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>OCR</strong> (<code>stages.py:102</code>)</td>
+<td>preprocessed (or raw) PDF</td>
+<td>call Sarvam: ≤10 pages → 1 call; &gt;10 pages → overlapping 10-page chunks in parallel</td>
+<td>chunk response zips + <code>ocr_raw/{doc}_chunks.json</code> (list of <code>ChunkResult</code>); path <code>file_paths.ocr_chunks</code></td>
+<td><code>ocr_done</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>Merge</strong> (<code>stages.py:151</code>)</td>
+<td><code>{doc}_chunks.json</code></td>
+<td>de-duplicate overlapping pages, re-join split tables, strip base64 blobs</td>
+<td><code>ocr_raw/{doc}_merged.json</code> = <code>{total_pages, full_text, pages[], tables[]}</code>; path <code>file_paths.merged_ocr</code></td>
+<td><code>merged</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>Classify</strong> (<code>stages.py:188</code>)</td>
+<td>filename + first 2000 chars of <code>full_text</code></td>
+<td>keyword match (filename first, then content, English + Kannada)</td>
+<td><code>document_type</code> (e.g. <code>SALE_DEED</code>, <code>UNKNOWN</code>)</td>
+<td><code>classified</code>, or <code>classification_failed</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>Structure</strong> (<code>stages.py:247</code>)</td>
+<td><code>merged.json</code> + <code>document_type</code> from DB</td>
+<td>LLM fills the JSON schema (Gemini primary, Groq fallback — see §9)</td>
+<td>temp file <code>structured/{doc}_temp.json</code> holding <code>{structured_data, _analytics}</code></td>
+<td><code>structuring_done</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>Persist</strong> (<code>stages.py:295</code>)</td>
+<td><code>{doc}_temp.json</code></td>
+<td>read temp, write final <code>structured/{doc}_{TYPE}.json</code>, save JSON + tokens/cost/model to MySQL, delete temp</td>
+<td>MySQL <code>documents</code> row: <code>status=structured</code>, <code>structured_data</code>, <code>page_count</code>, <code>input/output_tokens</code>, <code>cost_usd</code>, <code>model_used</code></td>
+<td><code>structured</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="the-three-files-on-disk-contracts-what-stages-hand-to-each-other">The three files-on-disk contracts (what stages hand to each other)</h3>
+<p>The pipeline deliberately uses <strong>JSON files on disk</strong> as the hand-off between
+stages (not Celery task return values). This makes a stage crash safe — the
+next stage can always re-read the file.</p>
+<ol>
+<li><code>ocr_raw/{doc}_chunks.json</code> — Sarvam's raw output per chunk.</li>
+<li><code>ocr_raw/{doc}_merged.json</code> — merged, deduplicated, clean text + pages + tables.</li>
+<li><code>structured/{doc}_temp.json</code> — the LLM's JSON + analytics (deleted after persist).</li>
+</ol>
+<hr />
+<h2 id="6-request-flow">6. Request Flow</h2>
+<p>What actually happens from button-click to final verdict:</p>
+<div class="codehilite"><pre><span></span><code><span class="n">User</span><span class="w"> </span><span class="n">clicks</span><span class="w"> </span><span class="s2">"Verify Title"</span>
+<span class="w">        </span><span class="err">│</span>
+<span class="w">        </span><span class="err">▼</span>
+<span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="n">POST</span><span class="w"> </span><span class="o">/</span><span class="n">api</span><span class="o">/</span><span class="n">upload</span><span class="w">  </span><span class="p">{</span><span class="n">files</span><span class="p">[],</span><span class="w"> </span><span class="n">slots</span><span class="p">[]}</span>
+<span class="w">        </span><span class="err">│</span><span class="w">   </span><span class="n">saves</span><span class="w"> </span><span class="n">PDFs</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">outputs</span><span class="o">/</span><span class="p">{</span><span class="n">case</span><span class="p">}</span><span class="o">/</span><span class="n">raw</span><span class="o">/</span>
+<span class="w">        </span><span class="err">│</span><span class="w">   </span><span class="n">creates</span><span class="w"> </span><span class="n">case</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">MySQL</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">Redis</span><span class="w"> </span><span class="n">meta</span>
+<span class="w">        </span><span class="err">▼</span>
+<span class="p">(</span><span class="mi">2</span><span class="p">)</span><span class="w"> </span><span class="n">POST</span><span class="w"> </span><span class="o">/</span><span class="n">api</span><span class="o">/</span><span class="n">process</span><span class="o">/</span><span class="p">{</span><span class="n">case_id</span><span class="p">}</span>
+<span class="w">        </span><span class="err">│</span><span class="w">   </span><span class="n">acquires</span><span class="w"> </span><span class="n">Redis</span><span class="w"> </span><span class="n">lock</span><span class="w"> </span><span class="p">(</span><span class="n">case</span><span class="p">:{</span><span class="n">id</span><span class="p">}:</span><span class="n">pipeline_lock</span><span class="p">)</span>
+<span class="w">        </span><span class="err">│</span><span class="w">   </span><span class="n">sets</span><span class="w"> </span><span class="n">case</span><span class="w"> </span><span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"processing"</span>
+<span class="w">        </span><span class="err">│</span><span class="w">   </span><span class="n">builds</span><span class="w"> </span><span class="n">Celery</span><span class="w"> </span><span class="n">CHORD</span><span class="p">:</span>
+<span class="w">        </span><span class="err">│</span><span class="w">     </span><span class="k">for</span><span class="w"> </span><span class="n">each</span><span class="w"> </span><span class="n">unprocessed</span><span class="w"> </span><span class="n">doc</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">chain</span><span class="p">(</span><span class="n">preprocess</span><span class="p">,</span><span class="w"> </span><span class="n">ocr</span><span class="p">,</span><span class="w"> </span><span class="n">merge</span><span class="p">,</span>
+<span class="w">        </span><span class="err">│</span><span class="w">                                 </span><span class="n">classify</span><span class="p">,</span><span class="w"> </span><span class="n">structure</span><span class="p">,</span><span class="w"> </span><span class="n">persist</span><span class="p">)</span>
+<span class="w">        </span><span class="err">│</span><span class="w">     </span><span class="n">chord</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">finalize_case_task</span>
+<span class="w">        </span><span class="err">▼</span>
+<span class="p">(</span><span class="mi">3</span><span class="p">)</span><span class="w"> </span><span class="n">Celery</span><span class="w"> </span><span class="n">worker</span><span class="w"> </span><span class="n">picks</span><span class="w"> </span><span class="n">up</span><span class="w"> </span><span class="n">tasks</span><span class="p">,</span><span class="w"> </span><span class="n">runs</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="mi">6</span><span class="o">-</span><span class="n">stage</span><span class="w"> </span><span class="n">chains</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">parallel</span>
+<span class="w">        </span><span class="err">│</span><span class="w">   </span><span class="n">each</span><span class="w"> </span><span class="n">stage</span><span class="w"> </span><span class="n">updates</span><span class="w"> </span><span class="n">MySQL</span><span class="w"> </span><span class="n">doc</span><span class="w"> </span><span class="n">status</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">Redis</span><span class="w"> </span><span class="n">cache</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">appends</span><span class="w"> </span><span class="n">a</span>
+<span class="w">        </span><span class="err">│</span><span class="w">   </span><span class="nb">log</span><span class="w"> </span><span class="n">line</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">case</span><span class="w"> </span><span class="nb">log</span><span class="w"> </span><span class="p">(</span><span class="n">seen</span><span class="w"> </span><span class="n">live</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">UI</span><span class="p">)</span>
+<span class="w">        </span><span class="err">▼</span>
+<span class="p">(</span><span class="mi">4</span><span class="p">)</span><span class="w"> </span><span class="n">finalize_case_task</span><span class="w"> </span><span class="p">(</span><span class="n">runs</span><span class="w"> </span><span class="n">once</span><span class="w"> </span><span class="n">after</span><span class="w"> </span><span class="n">ALL</span><span class="w"> </span><span class="n">docs</span><span class="w"> </span><span class="n">finish</span><span class="p">)</span>
+<span class="w">        </span><span class="err">│</span><span class="w">   </span><span class="n">recompute_case_status</span><span class="p">()</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">case</span><span class="w"> </span><span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">complete</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">partial</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">failed</span>
+<span class="w">        </span><span class="err">│</span><span class="w">   </span><span class="n">IF</span><span class="w"> </span><span class="n">all</span><span class="w"> </span><span class="n">docs</span><span class="w"> </span><span class="n">structured</span><span class="w"> </span><span class="p">(</span><span class="n">status</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="s2">"complete"</span><span class="p">):</span>
+<span class="w">        </span><span class="err">│</span><span class="w">       </span><span class="n">build_title_chain_task</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="p">(</span><span class="n">linked</span><span class="p">)</span><span class="w"> </span><span class="n">verify_case_task</span>
+<span class="w">        </span><span class="err">▼</span>
+<span class="p">(</span><span class="mi">5</span><span class="p">)</span><span class="w"> </span><span class="n">build_title_chain_task</span><span class="w">  </span><span class="p">:</span><span class="w"> </span><span class="n">one</span><span class="w"> </span><span class="n">Gemini</span><span class="w"> </span><span class="n">call</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">title</span><span class="w"> </span><span class="n">tree</span><span class="p">,</span><span class="w"> </span><span class="n">saved</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="n">title_chains</span>
+<span class="p">(</span><span class="mi">6</span><span class="p">)</span><span class="w"> </span><span class="n">verify_case_task</span><span class="w">        </span><span class="p">:</span><span class="w"> </span><span class="n">one</span><span class="w"> </span><span class="n">Gemini</span><span class="w"> </span><span class="n">call</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">field</span><span class="o">-</span><span class="n">by</span><span class="o">-</span><span class="n">field</span><span class="w"> </span><span class="n">verification</span>
+<span class="w">                              </span><span class="err">→</span><span class="w"> </span><span class="n">verdict</span><span class="w"> </span><span class="p">(</span><span class="n">VERIFIED</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">NOT_VERIFIED</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">N</span><span class="o">/</span><span class="n">A</span><span class="p">)</span>
+<span class="w">        </span><span class="err">│</span><span class="w">                     </span><span class="n">saved</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="n">verification_results</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">cases</span><span class="o">.</span><span class="n">verdict</span>
+<span class="w">        </span><span class="err">▼</span>
+<span class="p">(</span><span class="mi">7</span><span class="p">)</span><span class="w"> </span><span class="n">Frontend</span><span class="w"> </span><span class="p">(</span><span class="n">polling</span><span class="w"> </span><span class="o">/</span><span class="n">api</span><span class="o">/</span><span class="n">status</span><span class="w"> </span><span class="n">every</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="n">s</span><span class="p">)</span><span class="w"> </span><span class="n">flips</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="s2">"results"</span>
+<span class="w">        </span><span class="err">│</span><span class="w">   </span><span class="n">shows</span><span class="w"> </span><span class="n">extracted</span><span class="w"> </span><span class="n">fields</span><span class="p">,</span><span class="w"> </span><span class="n">title</span><span class="o">-</span><span class="n">chain</span><span class="w"> </span><span class="n">timeline</span><span class="p">,</span><span class="w"> </span><span class="n">verification</span><span class="w"> </span><span class="n">table</span>
+<span class="w">        </span><span class="err">▼</span>
+<span class="w">    </span><span class="n">GET</span><span class="w"> </span><span class="o">/</span><span class="n">api</span><span class="o">/</span><span class="n">results</span><span class="o">/</span><span class="p">{</span><span class="n">case_id</span><span class="p">}</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">assembled</span><span class="w"> </span><span class="n">by</span><span class="w"> </span><span class="n">services</span><span class="o">/</span><span class="n">results</span><span class="o">.</span><span class="n">py</span>
+</code></pre></div>
+
+<p><strong>Special user-action flows:</strong></p>
+<ul>
+<li><strong>Retry</strong> (<code>POST /api/retry/{case_id}</code>): finds docs with status <code>failed</code> /
+  <code>pending_retry</code>, resets them, re-fires the chord for just those docs.</li>
+<li><strong>Replace</strong> (<code>POST /api/case/{id}/doc/{doc}/replace</code>): uploads a new PDF,
+  resets that doc to <code>failed</code> with <code>retry_count=0</code>, then you call retry.</li>
+<li><strong>Skip</strong> (<code>.../doc/{doc}/skip</code>): marks doc <code>skipped</code> so the case can
+  finalize without it.</li>
+<li><strong>Re-run analysis</strong> (<code>POST /api/results/{case_id}/analyze</code>): manually
+  re-triggers title chain + verification for a completed case.</li>
+</ul>
+<hr />
+<h2 id="7-how-redis-celery-work-here">7. How Redis &amp; Celery Work Here</h2>
+<h3 id="redis-does-3-separate-jobs-dont-confuse-them">Redis does 3 separate jobs (don't confuse them)</h3>
+<ol>
+<li><strong>Celery broker + result backend.</strong> The queue. The API <em>publishes</em> task
+   messages; the worker <em>consumes</em> them. Result backend is used for the chord
+   join. Configured in <code>celery_app.py</code>.</li>
+<li><strong>Pipeline state cache.</strong> Keys under <code>case:{case_id}:*</code>:</li>
+<li><code>case:{id}:meta</code> — hash <code>{status, total_docs}</code></li>
+<li><code>case:{id}:files</code> — list of uploaded files</li>
+<li><code>case:{id}:log</code> — last 200 log lines (a Redis list)</li>
+<li><code>case:{id}:docs</code> — per-doc status hash (merged via a Lua script)</li>
+<li><code>case:{id}:results</code> / <code>case:{id}:errors</code> / <code>case:{id}:done_count</code></li>
+<li><code>ratelimit:{gemini|groq}:*</code> — token buckets</li>
+<li><code>llm_call_log</code> — capped (10,000) list of per-call LLM metrics</li>
+<li><code>case:{id}:pipeline_lock</code> — the pipeline lock</li>
+<li><strong>Distributed lock + rate limiter.</strong></li>
+<li><strong>Lock</strong> (<code>integrations/redis/lock.py</code>): <code>SET key token NX PX</code> with a
+     background refresh timer (TTL 30 min, refresh every 5 min), atomic Lua
+     release/refresh. Prevents two "process" calls running the same case.</li>
+<li><strong>Rate limiter</strong> (<code>integrations/llm/rate_limiter.py</code>): a Redis <strong>token
+     bucket</strong> implemented as one atomic Lua script per provider, shared by all
+     workers, so N workers can't together exceed Gemini/Groq TPM/RPM. Acquires
+     with exponential backoff (<code>wait_and_acquire</code>).</li>
+</ol>
+<blockquote>
+<p><strong>Key rule in <code>state_store.py</code>:</strong> every write goes <strong>MySQL first</strong>, then
+updates Redis best-effort; every read tries <strong>Redis first</strong>, falls back to
+MySQL. All Redis calls are wrapped in try/except so a Redis outage degrades
+to MySQL-only instead of crashing the pipeline.</p>
+</blockquote>
+<h3 id="celery-configuration-highlights-celery_apppy">Celery configuration highlights (<code>celery_app.py</code>)</h3>
+<ul>
+<li><code>task_acks_late=True</code> + <code>worker_prefetch_multiplier=1</code> — a task is only
+  acked after it completes; a crashed worker's task gets redelivered. This is
+  the "at-least-once" guarantee that makes idempotency necessary.</li>
+<li><code>task_time_limit=7200</code>, <code>task_soft_time_limit=3600</code> — hard kill after 2h.</li>
+<li><code>visibility_timeout=7500</code> — a redelivered task reappears ~2h+ after a hard
+  kill (must exceed the time limit).</li>
+<li>Per-task <code>autoretry_for=(Exception,)</code>, <code>max_retries=5</code>, exponential backoff
+  with jitter (see <code>workers/tasks.py</code>).</li>
+<li><code>include=[...finalize, tasks, title_chain_tasks]</code> — these modules are
+  imported so their tasks are registered.</li>
+</ul>
+<h3 id="idempotency-why-stages-can-safely-run-twice">Idempotency (why stages can safely run twice)</h3>
+<p>Because <code>acks_late</code> means a task can run twice, every stage task is wrapped in
+<code>idempotent_stage(entry, complete)</code> (<code>workers/idempotency.py</code>):</p>
+<ul>
+<li>Reads the doc's current status from MySQL.</li>
+<li>If status is already <code>failed</code>/<code>classification_failed</code> → skip the chain.</li>
+<li>If status is already at/past the stage's <em>complete</em> state → skip.</li>
+<li>Otherwise sets the <em>entry</em> stage, runs the stage, then sets the <em>complete</em>
+  stage. On exception, it lets Celery retry up to <code>max_retries</code>, then marks
+  the doc <code>failed</code> permanently.</li>
+</ul>
+<h3 id="the-state-machine-domainstate_machinepy">The state machine (<code>domain/state_machine.py</code>)</h3>
+<p>A simple <code>IntEnum</code> ordering stages 0→12 plus negative terminal states
+(<code>FAILED = -1</code>, <code>CLASSIFICATION_FAILED = -2</code>, <code>SKIPPED = -3</code>).
+<code>stage_from_status(status)</code> maps a DB status string → enum;
+<code>already_past(status, target)</code> decides "have we already done this?".
+This ordering is exactly what idempotency relies on.</p>
+<hr />
+<h2 id="8-preprocessing-sarvam-ocr-in-detail">8. Preprocessing &amp; Sarvam OCR (in detail)</h2>
+<h3 id="8a-preprocess-integrationsocrpreprocessorpy">8a. Preprocess (<code>integrations/ocr/preprocessor.py</code>)</h3>
+<p>Input: raw PDF path. Output: enhanced PDF.</p>
+<p>Per page (rendered at 200 DPI via PyMuPDF):
+1. <strong>Deskew</strong> — Hough line transform, corrects tilt up to ±15° (only if the
+   median angle is meaningful; skips clean pages).
+2. <strong>Denoise</strong> — <code>fastNlMeansDenoisingColored</code> <em>only when</em> the page's pixel
+   std-dev &gt; 15 (skipped on clean digital PDFs to save CPU and avoid blur).
+3. <strong>CLAHE contrast</strong> on the LAB L-channel.
+4. <strong>Unsharp mask sharpen</strong>.
+5. Re-embeds images as JPEG (quality 92) into a new PDF.</p>
+<p>Fault tolerance: if preprocessing throws, the OCR stage <strong>uses the original
+PDF</strong> — preprocessing is non-fatal (<code>stages.py:91-98</code>).</p>
+<h3 id="8b-sarvam-ocr-integrationsocrsarvam_clientpy">8b. Sarvam OCR (<code>integrations/ocr/sarvam_client.py</code>)</h3>
+<p>Input: preprocessed (or raw) PDF. Output: <code>ChunkResult</code> list.</p>
+<ul>
+<li><code>SarvamAI.document_intelligence.create_job(language="kn-IN", output_format="md")</code>
+  → upload file → start → <code>wait_until_complete()</code> → download a zip.</li>
+<li><strong>Page count first</strong> (PyMuPDF). <code>&lt;= 10</code> pages → send the PDF in one job.
+  <code>&gt; 10</code> pages → chunk into overlapping 10-page windows (1-page overlap so a
+  table split across a boundary isn't lost), render pages to PNGs at 200 DPI,
+  zip each chunk, and process up to 8 chunks in parallel.</li>
+<li>Each chunk retried 3× (<code>RETRY_DELAYS = [5, 15, 30]</code>), and <code>run_ocr_with_retry</code>
+  in <code>services/extract.py</code> wraps the whole thing with 3 more outer retries.</li>
+<li>Zip extraction pulls the <code>.md</code> text and <code>.json</code> pages/tables into a
+  <code>ChunkResult{chunk_index, page_start, page_end, status, md_text, json_data, error}</code>.</li>
+</ul>
+<p><code>ChunkResult.status</code> can be <code>complete</code>, <code>failed</code>, or <code>complete</code> with an error
+note for <code>PartiallyCompleted</code>. If <strong>all</strong> chunks fail, the OCR stage raises
+<code>RuntimeError("All Sarvam OCR chunks failed. ...")</code> and the doc is marked
+<code>failed</code> (<code>stages.py:130-133</code>).</p>
+<h3 id="8c-merge-integrationsocrocr_mergerpy">8c. Merge (<code>integrations/ocr/ocr_merger.py</code>)</h3>
+<p>Input: list of <code>ChunkResult</code>. Output: <code>{total_pages, full_text, pages[], tables[]}</code>.</p>
+<ul>
+<li>Single chunk → trivially rebuilt.</li>
+<li>Multi-chunk → de-duplicate pages by absolute page number (keep first),
+  detect a markdown table split across a page boundary and re-join it,
+  strip embedded base64 image blobs and replace with <code>[OFFICIAL STAMP / SEAL]</code>
+  or <code>[IMAGE REMOVED]</code>.</li>
+<li><code>full_text</code> is assembled with <code>--- Page N ---</code> separators — this is exactly
+  the text the LLM later reads.</li>
+</ul>
+<hr />
+<h2 id="9-structuring-llm-routing">9. Structuring &amp; LLM Routing</h2>
+<h3 id="the-fallback-chain-servicesextractpy-integrationsllmmodel_routerpy">The fallback chain (<code>services/extract.py</code> + <code>integrations/llm/model_router.py</code>)</h3>
+<p>The router decides the <strong>primary</strong> provider per doc-type (<code>model_router.py</code>):</p>
+<ul>
+<li><strong>Gemini 2.5 Flash</strong> (reasoning-heavy): <code>SALE_DEED</code>, <code>ENCUMBRANCE_CERTIFICATE</code>,
+  <code>GIFT_DEED</code>, <code>PARTITION_DEED</code>, <code>COURT_ORDER</code>, <code>BUILDING_LICENSE</code>,
+  <code>COMPLETION_CERTIFICATE</code>.</li>
+<li><strong>Groq llama-3.1-8b-instant</strong> (cheap/deterministic): receipts, tax
+  assessments, khata, mutation, RTC, etc.</li>
+<li><strong>Groq llama-3.3-70b</strong>: <code>KHATA</code>, <code>LEGAL_HEIR_CERTIFICATE</code>.</li>
+</ul>
+<p><code>structure_document()</code> then builds a <strong>fallback chain</strong> (primary first):
+<code>get_fallback_chain()</code> = primary + <code>[groq-70b, groq-8b, gemini]</code> (dedup).
+For each (provider, model), it tries up to 3 attempts:</p>
+<ul>
+<li>Acquires a rate-limiter token (<code>wait_and_acquire(tokens=1)</code>).</li>
+<li>Calls the provider's executor.</li>
+<li>On error: if <code>is_transient_error</code> (503/429/500/413/rate-limit/JSON-parse) →
+  backoff and retry same model; if <code>is_rate_limit_error</code> (429/413/quota/…) →
+  fall through to the <strong>next</strong> model; otherwise → stop and raise.</li>
+</ul>
+<h3 id="gemini-executor-integrationsllmgemini_executorpy">Gemini executor (<code>integrations/llm/gemini_executor.py</code>)</h3>
+<ul>
+<li>Truncates OCR to <code>GEMINI_MAX_CONTEXT_CHARS</code> (800k chars).</li>
+<li>Uses the static prompt + schema as <code>system_instruction</code> with a per-doc-type
+  <strong>context cache</strong> (billed cheaper). <code>max_output_tokens=65536</code>.</li>
+<li>Parses JSON from <code>response.text</code>, with a fenced-json fallback.</li>
+<li>Records tokens/cost to <code>LLMCallTracker</code> (→ Redis <code>llm_call_log</code>).</li>
+</ul>
+<h3 id="groq-executor-integrationsllmgroq_executorpy">Groq executor (<code>integrations/llm/groq_executor.py</code>)</h3>
+<ul>
+<li>Tries <code>[model_override or llama-3.3-70b, llama-3.1-8b]</code>.</li>
+<li><code>max_tokens=5000</code> (recently reduced from 32000 — see §12).</li>
+<li>On rate-limit it logs and moves to the next model; if all fail it raises
+  <code>RuntimeError("All Groq models failed. ...")</code>.</li>
+</ul>
+<h3 id="what-the-llm-is-asked-to-produce">What the LLM is asked to produce</h3>
+<p><code>services/schemas/static.py</code> defines a strict schema per doc type (e.g. for
+<code>SALE_DEED</code>: <code>file_metadata</code>, <code>financial_summary</code>, <code>parties</code>, <code>property_schedule</code>,
+<code>statutory_valuation_endorsement</code>; for EC: <code>file_metadata</code>, <code>search_criteria</code>,
+<code>historical_ledger[]</code>). The prompt contract (<code>extraction_prompts.py</code>) demands:
+valid JSON only, <code>null</code> for missing, <code>YYYY-MM-DD</code> dates, numbers as numbers,
+extract ALL ledger transactions, prefer English over Kannada, never hallucinate.</p>
+<hr />
+<h2 id="10-title-chain-verification">10. Title Chain &amp; Verification</h2>
+<p>Both are <strong>one LLM call per case</strong> on Gemini, driven by
+<code>integrations/llm/analysis_executor.py::run_analysis()</code>.</p>
+<h3 id="title-chain-servicestitle_chainpy">Title chain (<code>services/title_chain.py</code>)</h3>
+<ul>
+<li>Reads the case bundle (structured docs) from MySQL: needs a <code>SALE_DEED</code> and
+  an <code>ENCUMBRANCE_CERTIFICATE</code> with a non-empty <code>historical_ledger</code>. Missing
+  either → saves a <code>no_transactions</code> / <code>error</code> status chain.</li>
+<li>Sends Gemini the SD's property schedule + the full EC ledger and asks it to
+  classify every matched entry: <code>THE_SD | PREDECESSOR_TITLE |
+  SUBSEQUENT_TRANSFER | DIVERGENT_BRANCH | ENCUMBRANCE | UNRELATED</code>, plus
+  portion / share fraction / explanation.</li>
+<li>Merges the LLM enrichment onto the ledger, sorts chronologically, fills in
+  deterministic defaults for anything the LLM missed (<code>_fallback_role</code>,
+  <code>_default_identity</code>, etc.), and persists to <code>title_chains</code> (one row per case).</li>
+</ul>
+<h3 id="verification-servicesverifypy">Verification (<code>services/verify.py</code>)</h3>
+<ul>
+<li>Same bundle; if no SD or no EC → saves <code>skipped</code>.</li>
+<li>Asks Gemini to compare material fields (survey/CTS numbers, locality, dates,
+  parties, consideration) between the SD and EC ledger, returning
+  <code>{items: [{field, sd_value, ec_value, status, notes}], overall_comment}</code>.</li>
+<li>Validates enums, computes a verdict deterministically
+  (<code>_summarize</code>): <code>VERIFIED</code> iff zero <code>NOT_VERIFIED</code> and at least one
+  <code>VERIFIED</code>; otherwise <code>NOT_VERIFIED</code> / <code>N/A</code>.</li>
+<li>Persists to <code>verification_results</code> and sets <code>cases.verification_status</code> +
+  <code>cases.verdict</code>.</li>
+</ul>
+<blockquote>
+<p>Both are only auto-queued when <strong>every</strong> document structured successfully
+(<code>finalize.py:61</code>). A partial case must use the manual
+<code>/api/results/{case_id}/analyze</code> endpoint.</p>
+</blockquote>
+<hr />
+<h2 id="11-database">11. Database</h2>
+<h3 id="tables-what-each-row-means">Tables &amp; what each row means</h3>
+<table>
+<thead>
+<tr>
+<th>Table</th>
+<th>Key fields</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>users</code></td>
+<td>id, email, password_hash</td>
+<td>auth accounts (bcrypt, JWT)</td>
+</tr>
+<tr>
+<td><code>cases</code></td>
+<td>id, user_id, status, total/completed/failed_docs, verification_status, verdict, pipeline_logs(JSON)</td>
+<td>one row per upload batch</td>
+</tr>
+<tr>
+<td><code>documents</code></td>
+<td>case_id, doc_id, document_type, status, structured_data(JSON), file_paths(JSON), input/output_tokens, cost_usd, model_used, page_count, error, retry_count, expected_type, stage_started/completed_at</td>
+<td>one row per uploaded PDF + all extraction results</td>
+</tr>
+<tr>
+<td><code>title_chains</code></td>
+<td>case_id, status, chain(JSON), source(JSON), model_used, tokens/cost</td>
+<td>one row per case</td>
+</tr>
+<tr>
+<td><code>verification_results</code></td>
+<td>case_id, status, verdict, summary(JSON), items(JSON), model_used</td>
+<td>one row per case</td>
+</tr>
+</tbody>
+</table>
+<p><code>structured_data</code> (documents) stores the full extracted JSON; <code>pipeline_logs</code>
+(cases) stores the last 200 log lines; <code>file_paths</code> (documents) accumulates
+<code>raw → preprocessed → ocr_chunks → merged_ocr → structured</code> paths.</p>
+<h3 id="what-we-store-unnecessarily-candidates-to-remove">What we store unnecessarily (candidates to remove)</h3>
+<ol>
+<li><strong><code>documents.raw_ocr_path</code></strong> — column exists (migrations + repo support it)
+   but <strong>no stage ever writes it</strong>. The OCR path is already tracked inside
+   <code>file_paths.ocr_chunks</code>. Dead column.</li>
+<li><strong><code>documents.trace_id</code> + <code>set_trace_id()</code></strong> — column and repo function
+   exist but <strong>nothing calls <code>set_trace_id</code></strong>. Dead (no OpenTelemetry in use).</li>
+<li><strong><code>cases.pipeline_status</code></strong> — column exists, <strong>never written</strong>. Dead.</li>
+<li><strong>Redis helpers that nothing calls anymore</strong> (<code>state_store.py</code>):
+   <code>add_result</code>, <code>add_error</code>, <code>remove_error_for_doc</code>, <code>increment_done_count</code>,
+   <code>set_doc_status</code> — all dead after the "MySQL is source of truth" refactor.
+   The status endpoint now reads <code>get_case_status_payload</code> from MySQL. Keeping
+   them is harmless but misleading.</li>
+<li><strong><code>_analytics</code> bloat in the persist hand-off</strong> — the temp JSON carries
+   <code>input_tokens/output_tokens/cached_tokens/charged_input_tokens/cost_usd</code>
+   etc.; only a subset lands in MySQL (<code>input_tokens</code>, <code>output_tokens</code>,
+   <code>latency_ms</code>, <code>cost_usd</code>, <code>model_used</code>). Not a big deal, but the payload
+   could be trimmed.</li>
+<li><strong><code>structured_data</code> duplicates the on-disk JSON.</strong> It's stored in MySQL
+   <em>and</em> as <code>outputs/{case}/structured/{doc}_{TYPE}.json</code>. Needed as long as
+   results are served from the DB, but worth noting as duplication.</li>
+<li><strong><code>cases.pipeline_logs</code> duplicates Redis <code>case:{id}:log</code></strong> — by design
+   (MySQL is truth, Redis is cache), so this is fine — just keep the parity.</li>
+</ol>
+<hr />
+<h2 id="12-tradeoffs-known-issues">12. Tradeoffs &amp; Known Issues</h2>
+<p>Ranked roughly by severity. The first two are the ones we already diagnosed in
+the field.</p>
+<h3 id="121-groq-free-tier-tpm-mismatch-the-413-request-too-large-errors">12.1 Groq free-tier TPM mismatch (the "413 Request too large" errors)</h3>
+<ul>
+<li><strong>Problem:</strong> <code>groq_executor.py</code> sent <code>max_tokens=32000</code>, and
+  <code>config.py</code> defaulted <code>GROQ_TPM=15000000</code> (a dev-tier number). On Groq's
+  <strong>free tier</strong> the per-minute TPM limits are <strong>12,000 (llama-3.3-70b)</strong> and
+  <strong>6,000 (llama-3.1-8b)</strong>. Groq's 413 <code>rate_limit_exceeded</code> counts
+  <code>prompt_tokens + max_tokens</code> as "Requested" tokens, so <em>any</em> request
+  reserving 32k was rejected before a single prompt token — e.g. a Kannada
+  Sale Deed requested 50,531 tokens (18.5k prompt + 32k max).</li>
+<li><strong>Impact:</strong> every doc routed to Groq (or any doc that fell back to Groq)
+  failed with 413. In production data this hit the 998A8755 Sale Deed; the
+  other 9 failures were a <em>different</em> cause (OCR credits, below).</li>
+<li><strong>Fix already applied:</strong> <code>max_tokens=32000 → 5000</code> and
+  <code>GROQ_TPM default 15000000 → 6000</code> (the safe shared value for both models).</li>
+<li><strong>Remaining risk:</strong> 5k + a Kannada-heavy prompt can still exceed 6k TPM. The
+  real durable fixes are (a) rely on Gemini for long docs (already primary for
+  SD/EC), (b) trim OCR junk before prompt-building, (c) upgrade Groq tier, or
+  (d) make max_tokens configurable per model and lower it.</li>
+</ul>
+<h3 id="122-sarvam-ocr-insufficient-credits-bulk-of-the-failures">12.2 Sarvam OCR "insufficient credits" (bulk of the failures)</h3>
+<ul>
+<li>9 of the 10 failed documents failed <strong>before</strong> any LLM call: Sarvam returned
+  <code>Insufficient credits for N pages. Please add more credits or reduce the
+  document size.</code> — the OCR account simply ran out of credits.</li>
+<li><strong>Impact:</strong> 6 cases blocked. <code>run_ocr_with_retry</code> retries 3×+3× but the
+  credit error is not transient, so retries just burn time.</li>
+<li><strong>Fix direction:</strong> detect credit/quota errors explicitly and fail fast with
+  a clear message (no pointless retries); top up or gate uploads by remaining
+  credits; consider page-count-based credit pre-checks before starting a case.</li>
+</ul>
+<h3 id="123-gemini-empty-response-safety-block-is-not-logged">12.3 Gemini empty-response / safety block is not logged</h3>
+<ul>
+<li>The 998A8755 Sale Deed returned HTTP 200 with <strong>empty text</strong> from Gemini 3×
+  (<code>json.JSONDecodeError: Expecting value: line 1 column 1 (char 0)</code>), then
+  fell back to Groq → 413 → fail. The likely cause is a safety block
+  (suspicious injected text about a "20,000 Rupee banknote" stamp in the OCR),
+  but <strong>the code never reads or logs <code>finish_reason</code> / <code>block_reason</code></strong>, so we
+  can't confirm.</li>
+<li><strong>Fix direction:</strong> log <code>response.candidates[0].finish_reason</code>,
+  <code>response.prompt_feedback.block_reason</code>, and <code>safety_ratings</code> on empty
+  responses before parsing; treat empty-response as its own error class with
+  its own retry/fallback policy.</li>
+</ul>
+<h3 id="124-progress-is-only-doc-count-based-and-caps-at-90">12.4 Progress is only doc-count based, and caps at 90%</h3>
+<ul>
+<li><code>get_case_job</code> / <code>get_case_status_payload</code> compute
+  <code>progress = (completed+failed)/total * 90</code> while <code>processing</code>, and the
+  frontend shows only <code>X/Y docs</code> plus the log. There is no per-stage progress
+  ("stuck on OCR", "structuring 2/3", etc.). "Structured JSON saved to DB"
+  appears as the <em>last</em> log line with no indication of what's next (title
+  chain / verification), which is exactly the confusion seen in the UI.</li>
+<li><strong>Fix direction:</strong> include the current stage (or doc status) per document in
+  the status payload (<code>statusData</code>), and derive a stage-aware label/progress.
+  After persist, emit an explicit log like "All documents structured — running
+  title analysis" so the user knows the pipeline isn't idle.</li>
+</ul>
+<h3 id="125-retry-replays-the-entire-6-stage-chain-from-scratch">12.5 Retry replays the entire 6-stage chain from scratch</h3>
+<ul>
+<li><code>start_retry_pipeline</code> re-runs preprocess → OCR → … for the failed doc even
+  when only the LLM stage failed. Idempotency makes it <em>correct</em>, but it
+  wastes Sarvam credits and time.</li>
+<li><strong>Fix direction:</strong> let retry resume from the failed stage (persist a
+  <code>last_completed_stage</code> and start the chain there), or at least skip
+  re-uploading/re-merging when <code>merged_ocr</code> exists.</li>
+</ul>
+<h3 id="126-misleading-all-groq-models-failed-for-gemini-primary-docs">12.6 Misleading "All Groq models failed" for Gemini-primary docs</h3>
+<ul>
+<li>For a doc whose primary is Gemini (SD/EC), the log first says
+  "Structuring with gemini" (from <code>resolve_model</code> in <code>stages.py:271</code>), but if
+  Gemini fails and Groq is hit as fallback, the surfaced error becomes
+  "All Groq models failed." — which reads as if Groq was the intended
+  provider. Confusing to debug.</li>
+</ul>
+<h3 id="127-dead-config-stale-docs">12.7 Dead config / stale docs</h3>
+<ul>
+<li><code>.env</code> sets <code>PRIMARY_STRUCTURER=groq</code> but <strong>no code reads it</strong> (dead config).</li>
+<li><code>README.md</code> still describes the pre-refactor structure (old <code>ai/</code>,
+  <code>infrastructure/</code>, <code>routers/documents.py</code>, <code>routers/verification.py</code>, etc.)
+  that no longer exists — it will mislead newcomers.</li>
+</ul>
+<h3 id="128-context-cache-edge-case">12.8 Context-cache edge case</h3>
+<ul>
+<li><code>gemini_client._ensure_context_cache</code> logs "Cached content is too small …
+  min_total_token_count=1024" for short static prompts; harmless (caching just
+  disables) but noisy and confusing next to real errors.</li>
+</ul>
+<h3 id="129-cost-estimation-is-approximate">12.9 Cost estimation is approximate</h3>
+<ul>
+<li>Cost formulas are hard-coded (Gemini $0.15/$0.60 per 1M, Groq $0.59/$0.79)
+  in three places. They drift from actual billing and aren't centralized.</li>
+</ul>
+<h3 id="1210-no-checkpointing-no-per-stage-observability">12.10 No checkpointing / no per-stage observability</h3>
+<ul>
+<li>Only <code>documents.stage_started_at / stage_completed_at</code> and a monotonic
+  status string exist. There's no structured per-stage timing log, no
+  <code>finish_reason</code> capture, no global request-id correlation beyond
+  <code>trace_id</code> (which is never populated).</li>
+</ul>
+<hr />
+<h2 id="13-retry-fallback-error-handling-how-to-build-it-correctly">13. Retry / Fallback / Error Handling — how to build it correctly</h2>
+<p>The current system already has a decent skeleton: idempotent stages, Celery
+autoretry with backoff, a provider fallback chain, and MySQL as truth. The
+problems are that <strong>error classification is coarse</strong> and <strong>recovery is
+all-or-nothing</strong>. Here is the model to move to.</p>
+<h3 id="131-classify-every-error-first-then-decide-retry-vs-fallback-vs-give-up">13.1 Classify every error first — then decide retry vs fallback vs give up</h3>
+<p>Make one <code>PipelineError</code> taxonomy and route everything through it:</p>
+<table>
+<thead>
+<tr>
+<th>Class</th>
+<th>Examples</th>
+<th>Policy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Transient provider error</strong></td>
+<td>429, 503, 500, socket timeout, <code>RESOURCE_EXHAUSTED</code></td>
+<td>Retry same provider with backoff (up to N); then fallback provider</td>
+</tr>
+<tr>
+<td><strong>Rate-limit/quota (request-level)</strong></td>
+<td>413 <code>rate_limit_exceeded</code>, "insufficient credits"</td>
+<td><strong>Do NOT burn retries.</strong> Classify per-provider: for Groq 413, shrink the request (lower max_tokens / truncate text) or skip provider; for Sarvam credits, fail the stage with a clear user-facing message</td>
+</tr>
+<tr>
+<td><strong>Model output error</strong></td>
+<td>empty response, unparseable JSON, schema mismatch</td>
+<td>Re-prompt once (maybe with stricter instructions), then fallback provider. Log <code>finish_reason</code>/<code>block_reason</code> to learn why</td>
+</tr>
+<tr>
+<td><strong>Deterministic/business error</strong></td>
+<td>UNKNOWN document, missing SD/EC</td>
+<td>No retry — terminal state, require user action (already the pattern with <code>classification_failed</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>Concretely:
+- <strong>Sarvam:</strong> catch credit/quota errors and raise a distinct
+  <code>InsufficientCreditsError</code> that is <strong>excluded from autoretry</strong> — retrying
+  can't conjure credits. Show it in the UI errors list immediately.
+- <strong>Groq:</strong> before calling, compute <code>estimated_prompt_tokens</code> (chars/1.5, or a
+  tokenizer) and compare against <code>max_tokens + prompt_tokens</code> vs the model's
+  real TPM; if it can't fit, <strong>skip Groq and go straight to Gemini</strong> instead
+  of failing. Keep <code>max_tokens</code> small and per-model.
+- <strong>Gemini:</strong> on empty <code>response.text</code>, read <code>finish_reason</code> and
+  <code>prompt_feedback.block_reason</code>; if it's a safety block, don't retry the same
+  content 3× — trim/rewrite the offending chunk or mark the doc for human
+  review.</p>
+<h3 id="132-centralize-the-retry-policy-stop-scattering-it">13.2 Centralize the retry policy (stop scattering it)</h3>
+<p>Today retries live in several places with different numbers: Celery task
+<code>max_retries=5</code> + backoff; <code>extract.py</code> <code>STRUCTURE_MAX_RETRIES=3</code>; Sarvam
+<code>MAX_RETRIES=3</code> twice (inner + outer); title/verify tasks <code>max_retries=2</code>.
+Unify into one config object (per stage/provider: <code>max_retries</code>,
+<code>backoff_base</code>, <code>backoff_max</code>, <code>jitter</code>, <code>exclude_classes</code>, <code>fallback_chain</code>).
+One knob to tune = one place to edit.</p>
+<h3 id="133-make-retry-resumable-skip-completed-work">13.3 Make retry resumable (skip completed work)</h3>
+<p>Store <code>last_completed_stage</code> on the document (we already persist
+<code>stage_completed_at</code> and status). On retry, rebuild the chain starting at the
+stage <em>after</em> the last completed one. Combined with idempotency this gives
+checkpointing for free, saves Sarvam credits, and speeds recovery.</p>
+<h3 id="134-never-mask-the-real-provider">13.4 Never mask the real provider</h3>
+<p>When a Gemini-primary doc falls back to Groq and fails, the surfaced error
+should be: <code>Gemini failed (&lt;reason&gt;); Groq fallback failed (&lt;reason&gt;)</code> — not
+just the last model's error. Collect <code>errors[]</code> across the whole chain and
+raise one combined message (the Groq executor already accumulates per-model
+errors; <code>structure_document</code> should do the same across providers).</p>
+<h3 id="135-fail-fast-on-permanent-errors-retry-only-on-transient-ones">13.5 Fail fast on permanent errors, retry only on transient ones</h3>
+<p>Use a whitelist/blacklist:
+- Transient set: <code>429, 5xx, timeout, connection errors, rate_limit,
+  RESOURCE_EXHAUSTED, unparseable JSON (retry once)</code>.
+- Permanent set (fail immediately, mark doc <code>failed</code>, log clearly):
+  <code>4xx not in {429}</code>, <code>insufficient credits</code>, <code>invalid API key</code>,
+  <code>safety block</code>, <code>UNKNOWN document</code>, <code>missing file</code>.</p>
+<h3 id="136-log-the-reason-for-every-fallbackretry">13.6 Log the reason for every fallback/retry</h3>
+<p>Every retry/fallback should emit a structured line: <code>doc_id, stage, provider,
+model, attempt, error_class, decision(backoff|fallback|terminal), next_action</code>.
+This turns the opaque "Structuring with gemini … All Groq models failed" flow
+into a readable trail and gives you the data to tune limits.</p>
+<h3 id="137-surface-status-honestly-in-the-ui">13.7 Surface status honestly in the UI</h3>
+<p>Add the current doc stage to the status payload and derive:
+- progress label: "OCR 1/2 · Structuring Sale Deed · 2/3 docs done"
+- explicit post-persist message: "All documents structured — running title
+  analysis"
+- a per-doc stage chip (preprocessing / ocr / merging / classifying /
+  structuring / persisting / failed-with-reason) so a stuck stage is visible
+  instead of a silent 90% bar.</p>
+<hr />
+<h2 id="appendix-a-quick-file-map-read-these-first">Appendix A — Quick file map (read these first)</h2>
+<table>
+<thead>
+<tr>
+<th>If you want to understand…</th>
+<th>Read</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The whole pipeline entry point</td>
+<td><code>backend/services/orchestrator.py</code></td>
+</tr>
+<tr>
+<td>Stage logic</td>
+<td><code>backend/workers/stages.py</code></td>
+</tr>
+<tr>
+<td>Task wrappers + retry config</td>
+<td><code>backend/workers/tasks.py</code>, <code>workers/idempotency.py</code></td>
+</tr>
+<tr>
+<td>LLM fallback chain</td>
+<td><code>backend/services/extract.py</code>, <code>integrations/llm/model_router.py</code></td>
+</tr>
+<tr>
+<td>Gemini / Groq call sites</td>
+<td><code>integrations/llm/gemini_executor.py</code>, <code>groq_executor.py</code></td>
+</tr>
+<tr>
+<td>Rate limiting across workers</td>
+<td><code>integrations/llm/rate_limiter.py</code></td>
+</tr>
+<tr>
+<td>Redis as cache + truth rule</td>
+<td><code>integrations/redis/state_store.py</code></td>
+</tr>
+<tr>
+<td>Redis locks</td>
+<td><code>integrations/redis/lock.py</code></td>
+</tr>
+<tr>
+<td>OCR + merge</td>
+<td><code>integrations/ocr/sarvam_client.py</code>, <code>ocr_merger.py</code></td>
+</tr>
+<tr>
+<td>Preprocessing</td>
+<td><code>integrations/ocr/preprocessor.py</code></td>
+</tr>
+<tr>
+<td>Title chain + verify</td>
+<td><code>services/title_chain.py</code>, <code>services/verify.py</code></td>
+</tr>
+<tr>
+<td>DB schema + truth repos</td>
+<td><code>database/migrations.py</code>, <code>database/repositories/*</code></td>
+</tr>
+<tr>
+<td>API endpoints</td>
+<td><code>routers/cases.py</code>, <code>routers/results.py</code></td>
+</tr>
+<tr>
+<td>Frontend flow</td>
+<td><code>frontend/src/dashboard/VerificationDashboard.tsx</code>, <code>api/backend.ts</code></td>
+</tr>
+<tr>
+<td>Live evidence for issues §12.1–12.3</td>
+<td><code>docs/PIPELINE_ISSUES_ANALYSIS.md</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<p><em>Generated from the current source tree. Where this doc and the README
+disagree, this doc reflects the actual code.</em></p></article>
+</main>
+<script>
+const article=document.querySelector('article');
+const toc=document.getElementById('toc');
+const headings=[...article.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter(h=>h.id||h.textContent);
+let lastLevel=0;let html='';
+headings.forEach(h=>{
+  if(!h.id){h.id=h.textContent.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');}
+  const level=parseInt(h.tagName[1]);
+  if(level>lastLevel)html+='<ul>'.repeat(level-lastLevel);
+  else if(level<lastLevel)html+='</ul>'.repeat(lastLevel-level);
+  lastLevel=level;html+=<li><a href="#"></a></li>;
+});
+html+='</ul>'.repeat(lastLevel);
+toc.innerHTML=html||'<li><span style="color:var(--muted)">No headings</span></li>';
+const links=toc.querySelectorAll('a');
+const obs=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{if(e.isIntersecting){links.forEach(l=>l.classList.toggle('active',l.getAttribute('href')==='#'+e.target.id));}});
+},{rootMargin:'-20% 0px -60% 0px',threshold:.1});
+headings.forEach(h=>obs.observe(h));
+</script>
+</body>
+</html>

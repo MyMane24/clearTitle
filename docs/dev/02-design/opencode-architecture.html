@@ -1,0 +1,366 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>opencode architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+<style>
+:root{--bg:#0f172a;--bg2:#0b1226;--panel:#0f172a;--text:#e5e7eb;--muted:#94a3b8;--primary:#f97316;--border:rgba(148,163,184,.25);--codebg:#0b1226}
+*{box-sizing:border-box;margin:0;padding:0;font-family:Inter,system-ui,-apple-system,sans-serif}
+body{background:radial-gradient(circle at top,rgba(249,115,22,.08),transparent 60%),var(--bg2);color:var(--text);line-height:1.8}
+header{padding:clamp(1.2rem,3vw,2rem) clamp(1rem,5vw,2.5rem);border-bottom:1px solid var(--border);background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(15,23,42,.92));position:sticky;top:0;backdrop-filter:blur(8px);z-index:10;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:1rem}
+header h1{font-family:'Plus Jakarta Sans',Inter,sans-serif;font-size:clamp(1.1rem,2.2vw,1.6rem);letter-spacing:-.01em}
+nav{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center}
+nav a{color:var(--muted);text-decoration:none;padding:.4rem .7rem;border-radius:.6rem;border:1px solid transparent;font-weight:500;transition:.15s ease}
+nav a:hover,nav a.active{color:var(--text);border-color:var(--border);background:rgba(15,23,42,.5)}
+main{display:flex;gap:clamp(1rem,3vw,2rem);padding:clamp(1rem,3vw,2rem) clamp(1rem,5vw,2.5rem);max-width:1600px;margin:0 auto}
+aside{width:min(320px,28vw);flex-shrink:0;position:sticky;top:clamp(4.5rem,8vw,5.5rem);align-self:flex-start;max-height:calc(100vh - clamp(5rem,9vw,6rem));overflow:auto;padding-right:.25rem}
+.toc{background:linear-gradient(160deg,rgba(15,23,42,.96),rgba(15,23,42,.92));border:1px solid var(--border);border-radius:.9rem;padding:clamp(1rem,2vw,1.25rem);display:flex;flex-direction:column;gap:1rem;box-shadow:0 40px 70px -40px rgba(15,23,42,.9)}
+.toc h2{font-size:.98rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.toc ul{list-style:none;display:flex;flex-direction:column;gap:.45rem}
+.toc li a{color:var(--muted);text-decoration:none;font-size:.98rem;display:block;padding:.35rem .5rem;border-radius:.5rem;transition:.15s ease}
+.toc li a:hover{color:var(--text);background:rgba(148,163,184,.12)}
+.toc li a.active{color:#fff;background:rgba(249,115,22,.22);border:1px solid rgba(249,115,22,.45)}
+article{flex:1;min-width:0;background:linear-gradient(160deg,rgba(15,23,42,.98),rgba(15,23,42,.94));border:1px solid var(--border);border-radius:1rem;padding:clamp(1.25rem,4vw,2.75rem);box-shadow:0 60px 90px -40px rgba(15,23,42,.95);overflow:auto}
+article h1,article h2,article h3,article h4,article h5,article h6{font-family:'Plus Jakarta Sans',Inter,sans-serif;line-height:1.15;margin-top:clamp(1.5rem,4vw,2.5rem);margin-bottom:clamp(.8rem,2vw,1rem);scroll-margin-top:clamp(5rem,9vw,6rem)}
+article h1:first-child{margin-top:0}
+article h1{font-size:clamp(1.8rem,4.5vw,3rem);letter-spacing:-.03em}
+article h2{font-size:clamp(1.35rem,3.2vw,2rem)}
+article h3{font-size:clamp(1.15rem,2.6vw,1.4rem)}
+article p{margin-bottom:1.1rem;color:#e2e8f0}
+article a{color:var(--primary);text-decoration:none}
+article a:hover{text-decoration:underline}
+article ul,article ol{padding-left:1.5rem;margin-bottom:1.2rem;display:flex;flex-direction:column;gap:.6rem}
+article li{color:#e2e8f0}
+article code{font-family:'JetBrains Mono',monospace;background:var(--codebg);padding:.05rem .4rem;border-radius:.4rem;border:1px solid var(--border);font-size:.96rem}
+article pre{margin:1.25rem 0;background:var(--codebg);border:1px solid var(--border);border-radius:.8rem;padding:clamp(1rem,2vw,1.25rem);overflow:auto}
+article pre code{background:transparent;border:none;padding:0;font-size:.98rem;line-height:1.9}
+article table{width:100%;border-collapse:collapse;margin:1.5rem 0;border:1px solid var(--border);border-radius:.6rem;overflow:hidden}
+article th,article td{padding:.8rem 1rem;border-bottom:1px solid var(--border);text-align:left}
+article th{background:rgba(148,163,184,.12);font-weight:600}
+article tr:nth-child(even){background:rgba(15,23,42,.4)}
+article blockquote{margin:1.25rem 0;padding:1rem 1.25rem;border-left:3px solid var(--primary);background:rgba(249,115,22,.12);border-radius:0 .6rem .6rem 0;color:#fef3c7}
+hr{border:none;border-top:1px solid var(--border);margin:2rem 0}
+@media(max-width:980px){aside{display:none}main{flex-direction:column}}
+</style>
+</head>
+<body>
+<header>
+<h1>opencode architecture</h1>
+<nav>
+<a href="../index.html">Docs Home</a>
+<a href="./index.html" class="active">Developer Guide</a>
+<a href="../artifacts/">Artifacts</a>
+<a href="../docs-dev/">Raw Markdown</a>
+</nav>
+</header>
+<main>
+<aside>
+<div class="toc">
+<h2>On this page</h2>
+<ul id="toc"></ul>
+</div>
+</aside>
+<article><h1 id="opencode-architecture-simplified">opencode Architecture (Simplified)</h1>
+<p>OpenCode is an open-source AI coding agent. It is <strong>not</strong> a single LLM call — it is a
+collection of <strong>agents</strong> and <strong>tools</strong> arranged in a loop. This document explains the
+whole thing in simple terms with diagrams.</p>
+<p>Source: <code>github.com/anomalyco/opencode</code> (branch <code>dev</code>), the core package is
+<code>packages/opencode/src/</code>.</p>
+<hr />
+<h2 id="1-the-big-picture">1. The Big Picture</h2>
+<div class="codehilite"><pre><span></span><code><span class="err">┌──────────────────────────────────────────────────────────────────────┐</span>
+<span class="err">│</span><span class="w">                         </span><span class="n">USER</span><span class="w"> </span><span class="p">(</span><span class="n">you</span><span class="p">,</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">TUI</span><span class="p">)</span><span class="w">                       </span><span class="err">│</span>
+<span class="err">└────────────────────────────────┬─────────────────────────────────────┘</span>
+<span class="w">                                 </span><span class="err">│</span><span class="w"> </span><span class="n">you</span><span class="w"> </span><span class="n">type</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="n">message</span>
+<span class="w">                                 </span><span class="err">▼</span>
+<span class="err">┌──────────────────────────────────────────────────────────────────────┐</span>
+<span class="err">│</span><span class="w">                      </span><span class="n">SESSION</span><span class="w"> </span><span class="p">(</span><span class="n">src</span><span class="o">/</span><span class="n">session</span><span class="o">/</span><span class="p">)</span><span class="w">                          </span><span class="err">│</span>
+<span class="err">│</span><span class="w">   </span><span class="o">-</span><span class="w"> </span><span class="n">holds</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">conversation</span><span class="w"> </span><span class="n">history</span><span class="w"> </span><span class="p">(</span><span class="n">messages</span><span class="p">)</span><span class="w">                        </span><span class="err">│</span>
+<span class="err">│</span><span class="w">   </span><span class="o">-</span><span class="w"> </span><span class="n">compacts</span><span class="w"> </span><span class="n">history</span><span class="w"> </span><span class="n">when</span><span class="w"> </span><span class="n">it</span><span class="w"> </span><span class="n">gets</span><span class="w"> </span><span class="n">too</span><span class="w"> </span><span class="n">long</span><span class="w"> </span><span class="p">(</span><span class="s2">"memory"</span><span class="p">)</span><span class="w">                </span><span class="err">│</span>
+<span class="err">│</span><span class="w">   </span><span class="o">-</span><span class="w"> </span><span class="n">runs</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="n">loop</span><span class="w"> </span><span class="p">(</span><span class="n">processor</span><span class="o">.</span><span class="n">ts</span><span class="p">)</span><span class="w">                               </span><span class="err">│</span>
+<span class="err">└────────────────────────────────┬─────────────────────────────────────┘</span>
+<span class="w">                                 </span><span class="err">│</span><span class="w"> </span><span class="n">feeds</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">prompt</span>
+<span class="w">                                 </span><span class="err">▼</span>
+<span class="err">┌──────────────────────────────────────────────────────────────────────┐</span>
+<span class="err">│</span><span class="w">                   </span><span class="n">AGENT</span><span class="w">  </span><span class="p">(</span><span class="n">src</span><span class="o">/</span><span class="n">agent</span><span class="o">/</span><span class="n">agent</span><span class="o">.</span><span class="n">ts</span><span class="p">)</span><span class="w">                        </span><span class="err">│</span>
+<span class="err">│</span><span class="w">   </span><span class="n">Build</span><span class="w">  </span><span class="p">(</span><span class="n">primary</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">all</span><span class="w"> </span><span class="n">tools</span><span class="p">,</span><span class="w"> </span><span class="n">does</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">work</span><span class="p">)</span><span class="w">                        </span><span class="err">│</span>
+<span class="err">│</span><span class="w">   </span><span class="n">Plan</span><span class="w">   </span><span class="p">(</span><span class="n">primary</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">read</span><span class="o">-</span><span class="n">only</span><span class="p">,</span><span class="w"> </span><span class="n">plans</span><span class="w"> </span><span class="n">only</span><span class="p">)</span><span class="w">                           </span><span class="err">│</span>
+<span class="err">│</span><span class="w">   </span><span class="o">+</span><span class="w"> </span><span class="n">hidden</span><span class="w"> </span><span class="n">agents</span><span class="p">:</span><span class="w"> </span><span class="n">compaction</span><span class="p">,</span><span class="w"> </span><span class="n">summary</span><span class="p">,</span><span class="w"> </span><span class="n">title</span><span class="w">                        </span><span class="err">│</span>
+<span class="err">└────────────────────────────────┬─────────────────────────────────────┘</span>
+<span class="w">                                 </span><span class="err">│</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="n">returns</span><span class="p">:</span><span class="w"> </span><span class="n">text</span><span class="w"> </span><span class="n">OR</span><span class="w"> </span><span class="k">tool</span><span class="w"> </span><span class="n">calls</span>
+<span class="w">                                 </span><span class="err">▼</span>
+<span class="err">┌──────────────────────────────────────────────────────────────────────┐</span>
+<span class="err">│</span><span class="w">                        </span><span class="n">TOOLS</span><span class="w">  </span><span class="p">(</span><span class="n">src</span><span class="o">/</span><span class="k">tool</span><span class="o">/</span><span class="p">)</span><span class="w">                            </span><span class="err">│</span>
+<span class="err">│</span><span class="w">   </span><span class="n">read</span><span class="p">,</span><span class="w"> </span><span class="n">write</span><span class="p">,</span><span class="w"> </span><span class="n">edit</span><span class="p">,</span><span class="w"> </span><span class="n">bash</span><span class="o">/</span><span class="n">shell</span><span class="p">,</span><span class="w"> </span><span class="n">grep</span><span class="p">,</span><span class="w"> </span><span class="n">glob</span><span class="p">,</span><span class="w"> </span><span class="n">webfetch</span><span class="p">,</span><span class="w"> </span><span class="n">websearch</span><span class="p">,</span><span class="w">    </span><span class="err">│</span>
+<span class="err">│</span><span class="w">   </span><span class="n">todo</span><span class="p">,</span><span class="w"> </span><span class="n">permission</span><span class="p">,</span><span class="w"> </span><span class="n">question</span><span class="p">,</span><span class="w"> </span><span class="n">lsp</span><span class="p">,</span><span class="w"> </span><span class="o">...</span><span class="w"> </span><span class="ow">and</span><span class="w">  </span><span class="n">TASK</span><span class="w"> </span><span class="p">(</span><span class="n">spawns</span><span class="w"> </span><span class="n">subagents</span><span class="p">)</span><span class="w">  </span><span class="err">│</span>
+<span class="err">└──────────────────────────────────────────────────────────────────────┘</span>
+</code></pre></div>
+
+<p>The <strong>agent loop</strong> repeats: <strong>prompt → model answers → tool runs → result goes
+back into the conversation → model answers again → …</strong> until the model sends a
+final text reply or hits the step limit.</p>
+<hr />
+<h2 id="2-the-agent-loop-the-heart-of-it">2. The Agent Loop (the heart of it)</h2>
+<p>Every "turn" is a loop, not one response. This is in <code>src/agent/agent.ts</code>
+and <code>src/session/processor.ts</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="n">flowchart</span><span class="w"> </span><span class="n">TD</span>
+<span class="w">    </span><span class="n">A</span><span class="p">[</span><span class="n">User</span><span class="w"> </span><span class="n">sends</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="n">message</span><span class="p">]</span><span class="w"> </span><span class="o">--&gt;</span><span class="w"> </span><span class="n">B</span><span class="p">[</span><span class="n">Build</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">conversation</span><span class="o">/</span><span class="n">prompt</span><span class="o">&lt;</span><span class="n">br</span><span class="o">&gt;</span><span class="n">system</span><span class="w"> </span><span class="n">prompt</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">history</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">new</span><span class="w"> </span><span class="n">msg</span><span class="p">]</span>
+<span class="w">    </span><span class="n">B</span><span class="w"> </span><span class="o">--&gt;</span><span class="w"> </span><span class="n">C</span><span class="p">[</span><span class="n">Call</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">LLM</span><span class="p">]</span>
+<span class="w">    </span><span class="n">C</span><span class="w"> </span><span class="o">--&gt;</span><span class="w"> </span><span class="n">D</span><span class="p">{</span><span class="n">What</span><span class="w"> </span><span class="n">did</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="k">return</span><span class="err">?</span><span class="p">}</span>
+<span class="w">    </span><span class="n">D</span><span class="w"> </span><span class="o">--&gt;|</span><span class="s2">"text"</span><span class="o">|</span><span class="w"> </span><span class="n">Z</span><span class="p">[</span><span class="n">Show</span><span class="w"> </span><span class="n">reply</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="n">user</span><span class="o">&lt;</span><span class="n">br</span><span class="o">&gt;</span><span class="n">turn</span><span class="w"> </span><span class="n">ends</span><span class="p">]</span>
+<span class="w">    </span><span class="n">D</span><span class="w"> </span><span class="o">--&gt;|</span><span class="s2">"tool call(s)"</span><span class="o">|</span><span class="w"> </span><span class="n">E</span><span class="p">[</span><span class="n">Run</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">requested</span><span class="w"> </span><span class="k">tool</span><span class="p">]</span>
+<span class="w">    </span><span class="n">E</span><span class="w"> </span><span class="o">--&gt;</span><span class="w"> </span><span class="n">F</span><span class="p">[</span><span class="n">Put</span><span class="w"> </span><span class="k">tool</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="n">back</span><span class="o">&lt;</span><span class="n">br</span><span class="o">&gt;</span><span class="k">as</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="n">new</span><span class="w"> </span><span class="n">message</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">history</span><span class="p">]</span>
+<span class="w">    </span><span class="n">F</span><span class="w"> </span><span class="o">--&gt;</span><span class="w"> </span><span class="n">C</span>
+<span class="w">    </span><span class="n">C</span><span class="w"> </span><span class="o">--&gt;|</span><span class="s2">"too long"</span><span class="o">|</span><span class="w"> </span><span class="n">G</span><span class="p">[</span><span class="n">COMPACT</span><span class="w"> </span><span class="n">history</span><span class="o">&lt;</span><span class="n">br</span><span class="o">&gt;</span><span class="err">→</span><span class="w"> </span><span class="n">shrink</span><span class="w"> </span><span class="n">old</span><span class="w"> </span><span class="n">turns</span><span class="w"> </span><span class="n">into</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="n">summary</span><span class="p">]</span>
+<span class="w">    </span><span class="n">G</span><span class="w"> </span><span class="o">--&gt;</span><span class="w"> </span><span class="n">C</span>
+</code></pre></div>
+
+<p>Key insight: the <strong>tools</strong> are how the agent touches your computer. The model
+doesn't run anything itself — it <em>asks</em> for a tool, opencode runs it, and the
+result is fed back so the model can decide the next step.</p>
+<hr />
+<h2 id="3-agents-vs-subagents-coordination">3. Agents vs Subagents (coordination)</h2>
+<p>There are two kinds: <strong>primary agents</strong> (what you talk to) and <strong>subagents</strong>
+(specialized helpers spawned on demand). This lives in <code>src/agent/</code> and the
+<code>task</code> tool in <code>src/tool/task.ts</code>.</p>
+<h3 id="built-in-agents">Built-in agents</h3>
+<table>
+<thead>
+<tr>
+<th>Agent</th>
+<th>Type</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>build</strong></td>
+<td>primary</td>
+<td>Default. Full tool access. Does the actual work.</td>
+</tr>
+<tr>
+<td><strong>plan</strong></td>
+<td>primary</td>
+<td>Read-only (mostly <code>ask</code>/<code>deny</code>). Plans without editing.</td>
+</tr>
+<tr>
+<td><strong>general</strong></td>
+<td>subagent</td>
+<td>General helper, full tools, used for units of work.</td>
+</tr>
+<tr>
+<td><strong>explore</strong></td>
+<td>subagent</td>
+<td>Fast, read-only. Searches/reads the codebase.</td>
+</tr>
+<tr>
+<td><strong>scout</strong></td>
+<td>subagent</td>
+<td>Read-only. Clones &amp; inspects external dependency source.</td>
+</tr>
+<tr>
+<td><strong>compaction</strong></td>
+<td>hidden</td>
+<td>Compresses long context into a summary ("memory").</td>
+</tr>
+<tr>
+<td><strong>summary</strong></td>
+<td>hidden</td>
+<td>Creates session summaries.</td>
+</tr>
+<tr>
+<td><strong>title</strong></td>
+<td>hidden</td>
+<td>Names the session.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="how-a-primary-agent-spawns-a-subagent">How a primary agent spawns a subagent</h3>
+<p>The primary agent uses the <strong><code>task</code> tool</strong> (the "Subagent" tool) to delegate.
+The subagent gets: its own <strong>system prompt</strong>, a subset of <strong>tools</strong>, and its
+own <strong>message history</strong>. When the subagent finishes, its final message is
+returned to the primary agent as a single tool result.</p>
+<div class="codehilite"><pre><span></span><code><span class="n">sequenceDiagram</span>
+<span class="w">    </span><span class="n">participant</span><span class="w"> </span><span class="n">U</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="n">User</span>
+<span class="w">    </span><span class="n">participant</span><span class="w"> </span><span class="n">B</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="n">Build</span><span class="w"> </span><span class="p">(</span><span class="n">primary</span><span class="w"> </span><span class="n">agent</span><span class="p">)</span>
+<span class="w">    </span><span class="n">participant</span><span class="w"> </span><span class="n">E</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="n">Explore</span><span class="w"> </span><span class="p">(</span><span class="n">subagent</span><span class="p">)</span>
+<span class="w">    </span><span class="n">participant</span><span class="w"> </span><span class="n">T</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="n">Tools</span><span class="w"> </span><span class="p">(</span><span class="n">read</span><span class="o">/</span><span class="n">grep</span><span class="o">/</span><span class="n">glob</span><span class="p">)</span>
+
+<span class="w">    </span><span class="n">U</span><span class="o">-&gt;&gt;</span><span class="n">B</span><span class="p">:</span><span class="w"> </span><span class="s2">"Find how auth works"</span>
+<span class="w">    </span><span class="n">B</span><span class="o">-&gt;&gt;</span><span class="n">B</span><span class="p">:</span><span class="w"> </span><span class="n">runs</span><span class="w"> </span><span class="n">loop</span><span class="p">,</span><span class="w"> </span><span class="n">decides</span><span class="w"> </span><span class="n">it</span><span class="w"> </span><span class="n">needs</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="n">search</span><span class="w"> </span><span class="n">code</span>
+<span class="w">    </span><span class="n">B</span><span class="o">-&gt;&gt;</span><span class="n">E</span><span class="p">:</span><span class="w"> </span><span class="n">task</span><span class="w"> </span><span class="k">tool</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">spawn</span><span class="w"> </span><span class="n">Explore</span><span class="w"> </span><span class="n">subagent</span>
+<span class="w">    </span><span class="n">Note</span><span class="w"> </span><span class="n">over</span><span class="w"> </span><span class="n">E</span><span class="p">:</span><span class="w"> </span><span class="n">Explore</span><span class="w"> </span><span class="n">gets</span><span class="w"> </span><span class="n">its</span><span class="w"> </span><span class="n">OWN</span><span class="w"> </span><span class="n">prompt</span><span class="p">,</span><span class="o">&lt;</span><span class="n">br</span><span class="o">/&gt;</span><span class="n">OWN</span><span class="w"> </span><span class="k">tool</span><span class="w"> </span><span class="n">list</span><span class="w"> </span><span class="p">(</span><span class="n">read</span><span class="o">-</span><span class="n">only</span><span class="p">),</span><span class="o">&lt;</span><span class="n">br</span><span class="o">/&gt;</span><span class="n">OWN</span><span class="w"> </span><span class="n">message</span><span class="w"> </span><span class="n">history</span>
+<span class="w">    </span><span class="n">E</span><span class="o">-&gt;&gt;</span><span class="n">T</span><span class="p">:</span><span class="w"> </span><span class="n">read</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">grep</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">glob</span>
+<span class="w">    </span><span class="n">T</span><span class="o">--&gt;&gt;</span><span class="n">E</span><span class="p">:</span><span class="w"> </span><span class="n">file</span><span class="w"> </span><span class="n">contents</span>
+<span class="w">    </span><span class="n">E</span><span class="o">--&gt;&gt;</span><span class="n">B</span><span class="p">:</span><span class="w"> </span><span class="n">returns</span><span class="w"> </span><span class="n">ONE</span><span class="w"> </span><span class="n">summary</span><span class="w"> </span><span class="n">message</span><span class="w"> </span><span class="p">(</span><span class="s2">"auth is in src/auth.ts"</span><span class="p">)</span>
+<span class="w">    </span><span class="n">B</span><span class="o">-&gt;&gt;</span><span class="n">B</span><span class="p">:</span><span class="w"> </span><span class="n">continues</span><span class="w"> </span><span class="n">its</span><span class="w"> </span><span class="n">own</span><span class="w"> </span><span class="n">loop</span><span class="w"> </span><span class="n">with</span><span class="w"> </span><span class="n">that</span><span class="w"> </span><span class="n">result</span>
+<span class="w">    </span><span class="n">B</span><span class="o">--&gt;&gt;</span><span class="n">U</span><span class="p">:</span><span class="w"> </span><span class="n">final</span><span class="w"> </span><span class="n">answer</span>
+</code></pre></div>
+
+<ul>
+<li>The <strong><code>subagent_permissions</code></strong> (<code>subagent-permissions.ts</code>) decides which tools
+  a subagent may use based on its <code>mode</code> / permissions — e.g. <code>explore</code> is
+  read-only because its config denies edit/bash.</li>
+<li>Subagents often get a <strong>smarter or cheaper model</strong> override (set per agent).</li>
+<li>Subagents <strong>do not share memory</strong> with the parent by default — they only
+  hand back their final result. That is how coordination stays clean: the
+  parent decides, the child executes and reports.</li>
+</ul>
+<hr />
+<h2 id="4-where-memory-comes-from-compaction-summary">4. Where "memory" comes from (compaction &amp; summary)</h2>
+<p>OpenCode does <strong>not</strong> use LangChain's <code>ConversationSummaryMemory</code>. Its memory is
+implemented with <strong>hidden LLM agents</strong> over the session. Files:
+<code>src/session/compaction.ts</code>, <code>src/session/summary.ts</code>, <code>src/session/overflow.ts</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="n">flowchart</span><span class="w"> </span><span class="n">TD</span>
+<span class="w">    </span><span class="n">H</span><span class="p">[</span><span class="n">Conversation</span><span class="w"> </span><span class="n">history</span><span class="w"> </span><span class="n">grows</span><span class="p">]</span><span class="w"> </span><span class="o">--&gt;</span><span class="w"> </span><span class="n">O</span><span class="p">{</span><span class="n">Context</span><span class="w"> </span><span class="n">about</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="n">overflow</span><span class="o">?</span><span class="p">}</span>
+<span class="w">    </span><span class="n">O</span><span class="w"> </span><span class="o">--&gt;|</span><span class="n">no</span><span class="o">|</span><span class="w"> </span><span class="n">A</span><span class="p">[</span><span class="kr">Keep</span><span class="w"> </span><span class="n">sending</span><span class="w"> </span><span class="kr">full</span><span class="w"> </span><span class="n">history</span><span class="p">]</span>
+<span class="w">    </span><span class="n">O</span><span class="w"> </span><span class="o">--&gt;|</span><span class="n">yes</span><span class="o">|</span><span class="w"> </span><span class="n">C</span><span class="p">[</span><span class="n">Run</span><span class="w"> </span><span class="n">COMPACTION</span><span class="w"> </span><span class="n">agent</span><span class="o">&lt;</span><span class="n">br</span><span class="o">&gt;</span><span class="n">reads</span><span class="w"> </span><span class="n">old</span><span class="w"> </span><span class="n">turns</span><span class="p">,</span><span class="w"> </span><span class="n">writes</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="n">compact</span><span class="w"> </span><span class="n">summary</span><span class="p">]</span>
+<span class="w">    </span><span class="n">C</span><span class="w"> </span><span class="o">--&gt;</span><span class="w"> </span><span class="n">R</span><span class="p">[</span><span class="n">Replace</span><span class="w"> </span><span class="n">oldest</span><span class="w"> </span><span class="n">turns</span><span class="w"> </span><span class="n">with</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">summary</span><span class="o">&lt;</span><span class="n">br</span><span class="o">&gt;</span><span class="kr">keep</span><span class="w"> </span><span class="n">recent</span><span class="w"> </span><span class="n">turns</span><span class="w"> </span><span class="n">verbatim</span><span class="p">]</span>
+<span class="w">    </span><span class="n">R</span><span class="w"> </span><span class="o">--&gt;</span><span class="w"> </span><span class="n">A</span>
+</code></pre></div>
+
+<ul>
+<li><strong>Compaction</strong> kicks in automatically right before the window fills. It
+  summarises the <em>old</em> messages and drops them, keeping the <em>recent</em> context
+  exact. This is conceptually like LangChain's <em>summary buffer</em>, but built
+  in-house with a hidden agent, not a library class.</li>
+<li><strong>Summary</strong> maintains a persistent, higher-level summary of the session.</li>
+<li><strong>Tool-truncation</strong> (<code>src/tool/truncate.ts</code>) trims oversized tool outputs
+  (e.g. a huge <code>read</code>) so they don't blow the window.</li>
+</ul>
+<hr />
+<h2 id="5-tools-permissions">5. Tools &amp; Permissions</h2>
+<p>Every capability the agent has is a <strong>tool</strong> registered in <code>src/tool/</code>:
+<code>task.ts</code> (subagents), <code>shell.ts</code>, <code>edit.ts</code>, <code>write.ts</code>, <code>read.ts</code>, <code>grep.ts</code>,
+<code>glob.ts</code>, <code>webfetch.ts</code>, <code>websearch.ts</code>, <code>todo.ts</code>, <code>question.ts</code>, <code>lsp.ts</code>,
+<code>registry.ts</code>, <code>truncate.ts</code>, plus the <code>task.*.txt</code> tool-usage prompts.</p>
+<p>The <strong>permission system</strong> (<code>src/permission/</code>, <code>src/agent/subagent-permissions.ts</code>)
+gates each tool. Values: <code>allow</code>, <code>ask</code>, <code>deny</code> — and can be a glob of paths
+(e.g. <code>bash: { "git push": "ask" }</code>).</p>
+<div class="codehilite"><pre><span></span><code><span class="n">flowchart</span><span class="w"> </span><span class="n">LR</span>
+<span class="w">    </span><span class="n">M</span><span class="p">[</span><span class="n">Model</span><span class="w"> </span><span class="n">requests</span><span class="w"> </span><span class="n">tool</span><span class="p">]</span><span class="w"> </span><span class="o">--&gt;</span><span class="w"> </span><span class="n">P</span><span class="p">{</span><span class="n">Permission</span><span class="w"> </span><span class="n">check</span><span class="p">}</span>
+<span class="w">    </span><span class="n">P</span><span class="w"> </span><span class="o">--&gt;|</span><span class="n">allow</span><span class="o">|</span><span class="w"> </span><span class="n">RUN</span><span class="p">[</span><span class="n">Run</span><span class="w"> </span><span class="n">tool</span><span class="p">]</span>
+<span class="w">    </span><span class="n">P</span><span class="w"> </span><span class="o">--&gt;|</span><span class="n">ask</span><span class="o">|</span><span class="w"> </span><span class="n">ASK</span><span class="p">[</span><span class="n">Prompt</span><span class="w"> </span><span class="n">user</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">TUI</span><span class="p">]</span>
+<span class="w">    </span><span class="n">ASK</span><span class="w"> </span><span class="o">--&gt;</span><span class="w"> </span><span class="n">RUN</span>
+<span class="w">    </span><span class="n">ASK</span><span class="w"> </span><span class="o">--&gt;|</span><span class="n">deny</span><span class="w"> </span><span class="n">by</span><span class="w"> </span><span class="n">user</span><span class="o">|</span><span class="w"> </span><span class="nb">NO</span><span class="p">[</span><span class="n">Don</span><span class="err">'</span><span class="n">t</span><span class="w"> </span><span class="n">run</span><span class="p">]</span>
+<span class="w">    </span><span class="n">P</span><span class="w"> </span><span class="o">--&gt;|</span><span class="n">deny</span><span class="o">|</span><span class="w"> </span><span class="nb">NO</span>
+<span class="w">    </span><span class="n">RUN</span><span class="w"> </span><span class="o">--&gt;</span><span class="w"> </span><span class="n">R</span><span class="p">[</span><span class="n">Result</span><span class="w"> </span><span class="n">back</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="n">model</span><span class="p">]</span>
+</code></pre></div>
+
+<hr />
+<h2 id="6-surrounding-pieces-brief">6. Surrounding Pieces (brief)</h2>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Source dir</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Session</strong></td>
+<td><code>session/</code></td>
+<td>History, compaction, the agent loop</td>
+</tr>
+<tr>
+<td><strong>Agent</strong></td>
+<td><code>agent/</code></td>
+<td>Agent runtime + agent generation prompt</td>
+</tr>
+<tr>
+<td><strong>Tools</strong></td>
+<td><code>tool/</code></td>
+<td>Everything the model can call</td>
+</tr>
+<tr>
+<td><strong>Providers / Models</strong></td>
+<td><code>provider/</code></td>
+<td>Plug in LLM providers (OpenAI, Anthropic, etc.)</td>
+</tr>
+<tr>
+<td><strong>MCP</strong></td>
+<td><code>mcp/</code></td>
+<td>External model-context-protocol servers (extra tools)</td>
+</tr>
+<tr>
+<td><strong>LSP</strong></td>
+<td><code>lsp/</code></td>
+<td>Language servers for code intelligence</td>
+</tr>
+<tr>
+<td><strong>Permissions</strong></td>
+<td><code>permission/</code></td>
+<td>allow/ask/deny rules per tool</td>
+</tr>
+<tr>
+<td><strong>Config</strong></td>
+<td><code>config/</code></td>
+<td><code>opencode.json</code> + agent definitions</td>
+</tr>
+<tr>
+<td><strong>Storage</strong></td>
+<td><code>storage/</code></td>
+<td>Persist sessions, messages, state (SQLite)</td>
+</tr>
+<tr>
+<td><strong>Project</strong></td>
+<td><code>project/</code></td>
+<td>Workspace/project resolution, AGENTS.md rules</td>
+</tr>
+<tr>
+<td><strong>Plugin</strong></td>
+<td><code>plugin/</code></td>
+<td>Extend opencode with plugins</td>
+</tr>
+<tr>
+<td><strong>Server / SDK</strong></td>
+<td><code>server/</code></td>
+<td>The REST server / client SDK</td>
+</tr>
+<tr>
+<td><strong>CLI / TUI / IDE</strong></td>
+<td><code>cli/</code>, <code>tui</code>, <code>ide</code></td>
+<td>User interfaces</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="7-one-sentence-summary">7. One-sentence summary</h2>
+<p>OpenCode = <strong>an agent loop</strong> (model ⇄ tools) where a <strong>primary agent</strong> can
+spawn <strong>subagents</strong> via the <code>task</code> tool to do focused work and report back, and
+where <strong>context length is managed by a hidden "compaction" agent</strong> that
+summarises old turns when the window fills — plus a <strong>permission system</strong> that
+gates every tool call.</p>
+<hr />
+<p><em>Based on <code>anomalyco/opencode</code> <code>dev</code> branch, <code>packages/opencode/src/</code>. Sep 2026.</em></p></article>
+</main>
+<script>
+const article=document.querySelector('article');
+const toc=document.getElementById('toc');
+const headings=[...article.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter(h=>h.id||h.textContent);
+let lastLevel=0;let html='';
+headings.forEach(h=>{
+  if(!h.id){h.id=h.textContent.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');}
+  const level=parseInt(h.tagName[1]);
+  if(level>lastLevel)html+='<ul>'.repeat(level-lastLevel);
+  else if(level<lastLevel)html+='</ul>'.repeat(lastLevel-level);
+  lastLevel=level;html+=<li><a href="#"></a></li>;
+});
+html+='</ul>'.repeat(lastLevel);
+toc.innerHTML=html||'<li><span style="color:var(--muted)">No headings</span></li>';
+const links=toc.querySelectorAll('a');
+const obs=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{if(e.isIntersecting){links.forEach(l=>l.classList.toggle('active',l.getAttribute('href')==='#'+e.target.id));}});
+},{rootMargin:'-20% 0px -60% 0px',threshold:.1});
+headings.forEach(h=>obs.observe(h));
+</script>
+</body>
+</html>

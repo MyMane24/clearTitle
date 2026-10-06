@@ -1,0 +1,747 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ARCHITECTURE_AUDIT</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+<style>
+:root{--bg:#0f172a;--bg2:#0b1226;--panel:#0f172a;--text:#e5e7eb;--muted:#94a3b8;--primary:#f97316;--border:rgba(148,163,184,.25);--codebg:#0b1226}
+*{box-sizing:border-box;margin:0;padding:0;font-family:Inter,system-ui,-apple-system,sans-serif}
+body{background:radial-gradient(circle at top,rgba(249,115,22,.08),transparent 60%),var(--bg2);color:var(--text);line-height:1.8}
+header{padding:clamp(1.2rem,3vw,2rem) clamp(1rem,5vw,2.5rem);border-bottom:1px solid var(--border);background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(15,23,42,.92));position:sticky;top:0;backdrop-filter:blur(8px);z-index:10;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:1rem}
+header h1{font-family:'Plus Jakarta Sans',Inter,sans-serif;font-size:clamp(1.1rem,2.2vw,1.6rem);letter-spacing:-.01em}
+nav{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center}
+nav a{color:var(--muted);text-decoration:none;padding:.4rem .7rem;border-radius:.6rem;border:1px solid transparent;font-weight:500;transition:.15s ease}
+nav a:hover,nav a.active{color:var(--text);border-color:var(--border);background:rgba(15,23,42,.5)}
+main{display:flex;gap:clamp(1rem,3vw,2rem);padding:clamp(1rem,3vw,2rem) clamp(1rem,5vw,2.5rem);max-width:1600px;margin:0 auto}
+aside{width:min(320px,28vw);flex-shrink:0;position:sticky;top:clamp(4.5rem,8vw,5.5rem);align-self:flex-start;max-height:calc(100vh - clamp(5rem,9vw,6rem));overflow:auto;padding-right:.25rem}
+.toc{background:linear-gradient(160deg,rgba(15,23,42,.96),rgba(15,23,42,.92));border:1px solid var(--border);border-radius:.9rem;padding:clamp(1rem,2vw,1.25rem);display:flex;flex-direction:column;gap:1rem;box-shadow:0 40px 70px -40px rgba(15,23,42,.9)}
+.toc h2{font-size:.98rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.toc ul{list-style:none;display:flex;flex-direction:column;gap:.45rem}
+.toc li a{color:var(--muted);text-decoration:none;font-size:.98rem;display:block;padding:.35rem .5rem;border-radius:.5rem;transition:.15s ease}
+.toc li a:hover{color:var(--text);background:rgba(148,163,184,.12)}
+.toc li a.active{color:#fff;background:rgba(249,115,22,.22);border:1px solid rgba(249,115,22,.45)}
+article{flex:1;min-width:0;background:linear-gradient(160deg,rgba(15,23,42,.98),rgba(15,23,42,.94));border:1px solid var(--border);border-radius:1rem;padding:clamp(1.25rem,4vw,2.75rem);box-shadow:0 60px 90px -40px rgba(15,23,42,.95);overflow:auto}
+article h1,article h2,article h3,article h4,article h5,article h6{font-family:'Plus Jakarta Sans',Inter,sans-serif;line-height:1.15;margin-top:clamp(1.5rem,4vw,2.5rem);margin-bottom:clamp(.8rem,2vw,1rem);scroll-margin-top:clamp(5rem,9vw,6rem)}
+article h1:first-child{margin-top:0}
+article h1{font-size:clamp(1.8rem,4.5vw,3rem);letter-spacing:-.03em}
+article h2{font-size:clamp(1.35rem,3.2vw,2rem)}
+article h3{font-size:clamp(1.15rem,2.6vw,1.4rem)}
+article p{margin-bottom:1.1rem;color:#e2e8f0}
+article a{color:var(--primary);text-decoration:none}
+article a:hover{text-decoration:underline}
+article ul,article ol{padding-left:1.5rem;margin-bottom:1.2rem;display:flex;flex-direction:column;gap:.6rem}
+article li{color:#e2e8f0}
+article code{font-family:'JetBrains Mono',monospace;background:var(--codebg);padding:.05rem .4rem;border-radius:.4rem;border:1px solid var(--border);font-size:.96rem}
+article pre{margin:1.25rem 0;background:var(--codebg);border:1px solid var(--border);border-radius:.8rem;padding:clamp(1rem,2vw,1.25rem);overflow:auto}
+article pre code{background:transparent;border:none;padding:0;font-size:.98rem;line-height:1.9}
+article table{width:100%;border-collapse:collapse;margin:1.5rem 0;border:1px solid var(--border);border-radius:.6rem;overflow:hidden}
+article th,article td{padding:.8rem 1rem;border-bottom:1px solid var(--border);text-align:left}
+article th{background:rgba(148,163,184,.12);font-weight:600}
+article tr:nth-child(even){background:rgba(15,23,42,.4)}
+article blockquote{margin:1.25rem 0;padding:1rem 1.25rem;border-left:3px solid var(--primary);background:rgba(249,115,22,.12);border-radius:0 .6rem .6rem 0;color:#fef3c7}
+hr{border:none;border-top:1px solid var(--border);margin:2rem 0}
+@media(max-width:980px){aside{display:none}main{flex-direction:column}}
+</style>
+</head>
+<body>
+<header>
+<h1>ARCHITECTURE_AUDIT</h1>
+<nav>
+<a href="../index.html">Docs Home</a>
+<a href="./index.html" class="active">Developer Guide</a>
+<a href="../artifacts/">Artifacts</a>
+<a href="../docs-dev/">Raw Markdown</a>
+</nav>
+</header>
+<main>
+<aside>
+<div class="toc">
+<h2>On this page</h2>
+<ul id="toc"></ul>
+</div>
+</aside>
+<article><h1 id="cleartitle-architecture-working-flow-audit">clearTitle — Architecture &amp; Working-Flow Audit</h1>
+<p>One doc that explains the whole system in plain language, then goes deep on every
+mechanism (retries, fallbacks, idempotency, locks, rate limits, error handling).
+All file references are <code>repo/relative/path:line</code>.</p>
+<hr />
+<h2 id="1-what-it-does-30-seconds">1. What it does (30 seconds)</h2>
+<p>clearTitle turns two scanned Karnataka property PDFs — a <strong>Sale Deed (SD)</strong> and an
+<strong>Encumbrance Certificate (EC)</strong> — into a verified title report:</p>
+<ol>
+<li><strong>OCR</strong> the PDFs (Sarvam Vision, Kannada).</li>
+<li><strong>Classify</strong> each doc (SD / EC / 20+ other types).</li>
+<li><strong>Extract</strong> structured JSON from each (LLM).</li>
+<li><strong>Build a title chain</strong>: map every EC ledger entry onto the ownership timeline
+   of the SD's property.</li>
+<li><strong>Verify</strong>: cross-check SD fields against the EC ledger and produce a verdict
+   (<code>CLEAR_TITLE</code> / <code>ATTENTION_REQUIRED</code>).</li>
+<li>Render results + a PDF report in the dashboard.</li>
+</ol>
+<p>Everything after "upload" runs asynchronously in Celery. MySQL is the system of
+record; Redis is a broker + read cache; PDFs/JSON live on disk under <code>outputs/</code>.</p>
+<hr />
+<h2 id="2-architecture-diagram">2. Architecture diagram</h2>
+<div class="codehilite"><pre><span></span><code><span class="w">                         </span><span class="o">+-------------------------------+</span>
+<span class="w">                         </span><span class="o">|</span><span class="w">   </span><span class="n">FRONTEND</span><span class="w">  </span><span class="p">(</span><span class="n">React</span><span class="w"> </span><span class="mi">19</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">Vite</span><span class="p">)</span><span class="w"> </span><span class="o">|</span>
+<span class="w">                         </span><span class="o">|</span><span class="w">  </span><span class="n">VerificationDashboard</span><span class="w">        </span><span class="o">|</span>
+<span class="w">                         </span><span class="o">|</span><span class="w">  </span><span class="n">upload</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">process</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">poll</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="o">|</span>
+<span class="w">                         </span><span class="o">|</span><span class="w">  </span><span class="n">results</span><span class="w">                     </span><span class="o">|</span>
+<span class="w">                         </span><span class="o">+---------------+---------------+</span>
+<span class="w">                                         </span><span class="o">|</span>
+<span class="w">                                         </span><span class="o">|</span><span class="w">  </span><span class="n">HTTP</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">Bearer</span><span class="w"> </span><span class="n">JWT</span>
+<span class="w">                                         </span><span class="n">v</span>
+<span class="w">  </span><span class="o">+-------------------------------------------------------------------+</span>
+<span class="w">  </span><span class="o">|</span><span class="w">                    </span><span class="n">API</span><span class="w">  </span><span class="p">(</span><span class="n">FastAPI</span><span class="p">,</span><span class="w">  </span><span class="n">prefix</span><span class="w"> </span><span class="o">/</span><span class="n">api</span><span class="p">)</span><span class="w">                   </span><span class="o">|</span>
+<span class="w">  </span><span class="o">|</span><span class="w">   </span><span class="n">auth</span><span class="o">.</span><span class="n">py</span><span class="w">     </span><span class="n">register</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">login</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">me</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">link</span><span class="w">                        </span><span class="o">|</span>
+<span class="w">  </span><span class="o">|</span><span class="w">   </span><span class="n">cases</span><span class="o">.</span><span class="n">py</span><span class="w">    </span><span class="n">upload</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">process</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">status</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">retry</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">replace</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">skip</span><span class="w">  </span><span class="o">|</span>
+<span class="w">  </span><span class="o">|</span><span class="w">   </span><span class="n">results</span><span class="o">.</span><span class="n">py</span><span class="w">  </span><span class="n">GET</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">analyze</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">report</span><span class="o">.</span><span class="n">pdf</span><span class="w">                  </span><span class="o">|</span>
+<span class="w">  </span><span class="o">+--+----------------------------------------------------------------+</span>
+<span class="w">     </span><span class="o">|</span><span class="w">                                  </span><span class="o">|</span>
+<span class="w">     </span><span class="o">|</span><span class="w">  </span><span class="n">MySQL</span><span class="o">-</span><span class="n">first</span><span class="w"> </span><span class="n">writes</span><span class="w">              </span><span class="o">|</span><span class="w">  </span><span class="n">POST</span><span class="w"> </span><span class="o">/</span><span class="n">process</span>
+<span class="w">     </span><span class="o">|</span><span class="w">  </span><span class="n">Redis</span><span class="w"> </span><span class="n">read</span><span class="o">-</span><span class="n">cache</span><span class="w">                </span><span class="o">|</span><span class="w">  </span><span class="p">(</span><span class="n">RedisLock</span><span class="p">;</span><span class="w"> </span><span class="mi">409</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">running</span><span class="p">)</span>
+<span class="w">     </span><span class="n">v</span><span class="w">                                  </span><span class="n">v</span>
+<span class="w">  </span><span class="o">+------------------+</span><span class="w">    </span><span class="o">+------------------------------------------+</span>
+<span class="w">  </span><span class="o">|</span><span class="w">  </span><span class="n">MySQL</span><span class="w">           </span><span class="o">|</span><span class="w">    </span><span class="o">|</span><span class="w">  </span><span class="n">CELERY</span><span class="w">  </span><span class="p">(</span><span class="n">broker</span><span class="p">:</span><span class="w"> </span><span class="n">Redis</span><span class="p">)</span><span class="w">                 </span><span class="o">|</span>
+<span class="w">  </span><span class="o">|</span><span class="w">  </span><span class="n">cases</span><span class="w">           </span><span class="o">|</span><span class="w">    </span><span class="o">|</span><span class="w">  </span><span class="n">chord</span><span class="w"> </span><span class="n">of</span><span class="w"> </span><span class="mi">6</span><span class="o">-</span><span class="n">stage</span><span class="w"> </span><span class="n">chains</span><span class="p">,</span><span class="w">                </span><span class="o">|</span>
+<span class="w">  </span><span class="o">|</span><span class="w">  </span><span class="n">documents</span><span class="w">       </span><span class="o">|</span><span class="w">    </span><span class="o">|</span><span class="w">  </span><span class="n">one</span><span class="w"> </span><span class="n">chain</span><span class="w"> </span><span class="n">per</span><span class="w"> </span><span class="n">document</span><span class="p">:</span><span class="w">                 </span><span class="o">|</span>
+<span class="w">  </span><span class="o">|</span><span class="w">  </span><span class="n">title_chains</span><span class="w">    </span><span class="o">|</span><span class="w">    </span><span class="o">|</span><span class="w">                                          </span><span class="o">|</span>
+<span class="w">  </span><span class="o">|</span><span class="w">  </span><span class="n">verification_</span><span class="w">   </span><span class="o">|</span><span class="w">    </span><span class="o">|</span><span class="w">  </span><span class="n">preprocess</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">ocr</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">merge</span><span class="w"> </span><span class="o">-&gt;</span><span class="w">           </span><span class="o">|</span>
+<span class="w">  </span><span class="o">|</span><span class="w">   </span><span class="n">results</span><span class="w">        </span><span class="o">|</span><span class="w">    </span><span class="o">|</span><span class="w">  </span><span class="n">classify</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">structure</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">persist</span><span class="w">        </span><span class="o">|</span>
+<span class="w">  </span><span class="o">|</span><span class="w">  </span><span class="n">users</span><span class="w">           </span><span class="o">|</span><span class="w">    </span><span class="o">|</span><span class="w">  </span><span class="p">(</span><span class="n">Sarvam</span><span class="w"> </span><span class="n">OCR</span><span class="p">)</span><span class="w">  </span><span class="p">(</span><span class="n">Gemini</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">Groq</span><span class="w"> </span><span class="n">LLM</span><span class="p">)</span><span class="w">       </span><span class="o">|</span>
+<span class="w">  </span><span class="o">|</span><span class="w">                  </span><span class="o">|</span><span class="w">    </span><span class="o">|</span><span class="w">                                          </span><span class="o">|</span>
+<span class="w">  </span><span class="o">|</span><span class="w">                  </span><span class="o">|</span><span class="w">    </span><span class="o">|</span><span class="w">  </span><span class="n">chord</span><span class="w"> </span><span class="n">callback</span><span class="p">:</span><span class="w"> </span><span class="n">finalize_case_task</span><span class="w">       </span><span class="o">|</span>
+<span class="w">  </span><span class="o">|</span><span class="w">                  </span><span class="o">|</span><span class="w">    </span><span class="o">|</span><span class="w">    </span><span class="n">recompute</span><span class="w"> </span><span class="n">status</span><span class="p">,</span><span class="w"> </span><span class="n">release</span><span class="w"> </span><span class="n">lock</span><span class="p">,</span><span class="w">        </span><span class="o">|</span>
+<span class="w">  </span><span class="o">|</span><span class="w">                  </span><span class="o">|</span><span class="w">    </span><span class="o">|</span><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="n">complete</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">run_case_analysis_task</span><span class="w">  </span><span class="o">|</span>
+<span class="w">  </span><span class="o">+------------------+</span><span class="w">    </span><span class="o">+-------------------+----------------------+</span>
+<span class="w">  </span><span class="p">(</span><span class="n">source</span><span class="w"> </span><span class="n">of</span><span class="w"> </span><span class="n">truth</span><span class="p">)</span><span class="w">                           </span><span class="o">|</span>
+<span class="w">                                              </span><span class="o">|</span><span class="w">  </span><span class="n">two</span><span class="w"> </span><span class="n">independent</span><span class="w"> </span><span class="n">LLM</span><span class="w"> </span><span class="n">passes</span>
+<span class="w">                                              </span><span class="n">v</span>
+<span class="w">                                  </span><span class="o">+-----------+-----------+</span>
+<span class="w">                                  </span><span class="o">|</span><span class="w">                       </span><span class="o">|</span>
+<span class="w">                                  </span><span class="n">v</span><span class="w">                       </span><span class="n">v</span>
+<span class="w">                            </span><span class="o">+-------------+</span><span class="w">          </span><span class="o">+-------------+</span>
+<span class="w">                            </span><span class="o">|</span><span class="w"> </span><span class="n">build_title</span><span class="w"> </span><span class="o">|</span><span class="w">          </span><span class="o">|</span><span class="w">  </span><span class="n">verify_case</span><span class="w"> </span><span class="o">|</span>
+<span class="w">                            </span><span class="o">|</span><span class="w"> </span><span class="n">chain</span><span class="w">       </span><span class="o">|</span><span class="w">          </span><span class="o">|</span><span class="w">              </span><span class="o">|</span>
+<span class="w">                            </span><span class="o">+------+------+</span><span class="w">          </span><span class="o">+------+-------+</span>
+<span class="w">                                   </span><span class="o">|</span><span class="w">                       </span><span class="o">|</span>
+<span class="w">                                   </span><span class="o">|</span><span class="w">  </span><span class="n">Gemini</span><span class="w"> </span><span class="n">call</span><span class="w">          </span><span class="o">|</span><span class="w">  </span><span class="n">Gemini</span><span class="w"> </span><span class="n">call</span>
+<span class="w">                                   </span><span class="n">v</span><span class="w">                       </span><span class="n">v</span>
+<span class="w">  </span><span class="o">+-------------------------------------------------------------------+</span>
+<span class="w">  </span><span class="o">|</span><span class="w">                     </span><span class="n">PERSISTENCE</span><span class="w">  </span><span class="p">(</span><span class="n">results</span><span class="w"> </span><span class="n">tables</span><span class="p">)</span><span class="w">                 </span><span class="o">|</span>
+<span class="w">  </span><span class="o">|</span><span class="w">  </span><span class="n">MySQL</span><span class="w">  </span><span class="p">:</span><span class="w"> </span><span class="n">title_chains</span><span class="w"> </span><span class="p">(</span><span class="n">chain</span><span class="o">/</span><span class="n">source</span><span class="p">)</span><span class="w">                             </span><span class="o">|</span>
+<span class="w">  </span><span class="o">|</span><span class="w">           </span><span class="n">verification_results</span><span class="w"> </span><span class="p">(</span><span class="n">verdict</span><span class="o">/</span><span class="n">summary</span><span class="o">/</span><span class="n">items</span><span class="p">)</span><span class="w">            </span><span class="o">|</span>
+<span class="w">  </span><span class="o">|</span><span class="w">  </span><span class="n">Disk</span><span class="w">   </span><span class="p">:</span><span class="w"> </span><span class="n">outputs</span><span class="o">/</span><span class="p">{</span><span class="n">case_id</span><span class="p">}</span><span class="o">/</span><span class="w"> </span><span class="n">raw</span><span class="o">/</span><span class="w"> </span><span class="n">preprocessed</span><span class="o">/</span><span class="w"> </span><span class="n">ocr_raw</span><span class="o">/</span><span class="w">          </span><span class="o">|</span>
+<span class="w">  </span><span class="o">|</span><span class="w">           </span><span class="n">structured</span><span class="o">/</span><span class="w">                                             </span><span class="o">|</span>
+<span class="w">  </span><span class="o">|</span><span class="w">  </span><span class="n">Redis</span><span class="w">  </span><span class="p">:</span><span class="w"> </span><span class="n">case</span><span class="w"> </span><span class="n">state</span><span class="p">,</span><span class="w"> </span><span class="n">pipeline</span><span class="w"> </span><span class="nb">log</span><span class="p">,</span><span class="w"> </span><span class="n">job</span><span class="w"> </span><span class="n">meta</span><span class="w">                      </span><span class="o">|</span>
+<span class="w">  </span><span class="o">+-------------------------------------------------------------------+</span>
+</code></pre></div>
+
+<p>Legend: <code>-&gt;</code> = flow  · side labels on the line = the trigger/transport.</p>
+<p>Flow in words: <strong>upload</strong> (FastAPI) writes Redis + MySQL + disk → <strong>process</strong>
+acquires a Redis lock and fires a <em>chord</em> = one 6-stage <em>chain</em> per document →
+<strong>finalize</strong> (chord callback) recomputes case status, releases the lock, and — if
+all docs structured — queues <strong>analysis</strong> → <strong>title chain</strong> and <strong>verification</strong>
+each run an LLM pass and persist their own tables → dashboard polls until it can
+render results.</p>
+<hr />
+<h2 id="3-technology-stack">3. Technology stack</h2>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Tech</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Frontend</td>
+<td>React 19 + Vite + TypeScript (<code>frontend/</code>)</td>
+</tr>
+<tr>
+<td>API</td>
+<td>FastAPI + uvicorn (<code>backend/main.py</code>)</td>
+</tr>
+<tr>
+<td>Jobs</td>
+<td>Celery (Redis broker), <code>acks_late</code>, prefetch 1 (<code>backend/celery_app.py</code>)</td>
+</tr>
+<tr>
+<td>SQL</td>
+<td>MySQL 8 (<code>backend/database/</code>) — migrations auto-run at startup</td>
+</tr>
+<tr>
+<td>Cache/state</td>
+<td>Redis (<code>backend/integrations/redis/</code>)</td>
+</tr>
+<tr>
+<td>OCR</td>
+<td>Sarvam Vision (<code>document_intelligence</code>, Kannada)</td>
+</tr>
+<tr>
+<td>LLM</td>
+<td>Gemini (primary analysis/extraction) + Groq (fallback models)</td>
+</tr>
+<tr>
+<td>Storage</td>
+<td>Disk under <code>outputs/{case_id}/</code></td>
+</tr>
+<tr>
+<td>Auth</td>
+<td>JWT (HS256, bcrypt)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="4-the-document-pipeline-6-stages-per-pdf">4. The document pipeline (6 stages per PDF)</h2>
+<p>A chain of immutable tasks, no result passed between stages — each re-reads state
+from MySQL/disk (<code>services/orchestrator.py:21-30</code>).</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Stage</th>
+<th>What it does</th>
+<th>On failure</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>preprocess</code></td>
+<td>200-DPI render + deskew/denoise/CLAHE/unsharp</td>
+<td><strong>Non-fatal</strong> — falls back to original PDF (<code>workers/stages.py:91-98</code>)</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>ocr</code></td>
+<td>Sarvam OCR (≤10 pages = single job; &gt;10 = chunks of 10 w/ 1 page overlap)</td>
+<td>Retry, then <code>increment_retry</code> → <code>failed</code> (<code>stages.py:143-147</code>)</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>merge</code></td>
+<td>dedupe overlap pages, stitch split tables, clean base64 images</td>
+<td><code>increment_retry</code> → <code>failed</code> (<code>stages.py:180-184</code>)</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>classify</code></td>
+<td>filename keywords → content keywords → declared upload slot (SD/EC)</td>
+<td><code>UNKNOWN</code> → <code>classification_failed</code> (permanent) (<code>stages.py:220-233</code>)</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>structure</code></td>
+<td>one LLM call per doc → typed JSON</td>
+<td>doc marked <code>failed</code> + Celery retry (<code>stages.py:287-291</code>)</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>persist</code></td>
+<td>write JSON to disk + structured_data, tokens, cost to MySQL</td>
+<td>propagates; wrapper marks <code>failed</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="retry-stack-around-each-document-3-nested-layers">Retry stack around each document — <strong>3 nested layers</strong></h3>
+<div class="codehilite"><pre><span></span><code><span class="n">Sarvam</span><span class="w"> </span><span class="n">chunk</span><span class="w"> </span><span class="n">retries</span><span class="w">          </span><span class="n">stage</span><span class="w"> </span><span class="n">wrappers</span><span class="w">            </span><span class="n">Celery</span><span class="w"> </span><span class="n">autoretry</span>
+<span class="n">per</span><span class="w"> </span><span class="n">chunk</span><span class="o">:</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="n">attempts</span><span class="w">          </span><span class="n">run_ocr_with_retry</span><span class="w">        </span><span class="n">TASK_RETRY_CONFIG</span>
+<span class="n">sleep</span><span class="w">  </span><span class="mi">5</span><span class="n">s</span><span class="p">,</span><span class="w"> </span><span class="mi">15</span><span class="n">s</span><span class="w"> </span><span class="p">(</span><span class="mi">30</span><span class="n">s</span><span class="w"> </span><span class="n">unused</span><span class="p">)</span><span class="w">    </span><span class="mi">3</span><span class="w"> </span><span class="n">attempts</span><span class="p">,</span><span class="w"> </span><span class="mi">5</span><span class="n">s</span><span class="w"> </span><span class="n">linear</span><span class="w">     </span><span class="n">autoretry_for</span><span class="o">=</span><span class="n">Exception</span>
+<span class="p">(</span><span class="n">sarvam_client</span><span class="p">.</span><span class="n">py</span><span class="o">:</span><span class="mi">24</span><span class="o">-</span><span class="mi">25</span><span class="p">)</span><span class="w">       </span><span class="p">(</span><span class="n">extract</span><span class="p">.</span><span class="n">py</span><span class="o">:</span><span class="mi">43</span><span class="o">-</span><span class="mi">55</span><span class="p">)</span><span class="w">        </span><span class="n">max_retries</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span><span class="w"> </span><span class="n">backoff</span>
+<span class="w">                                                          </span><span class="n">cap</span><span class="w"> </span><span class="mi">120</span><span class="n">s</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">jitter</span>
+<span class="o">&gt;---------------&gt;--------------&gt;--------------&gt;---------&gt;</span><span class="nf">MAX</span><span class="p">(</span><span class="mi">5</span><span class="w"> </span><span class="n">attempts</span><span class="p">)</span>
+</code></pre></div>
+
+<p><strong>Important gotcha:</strong> the Celery <code>max_retries=5</code> layer is effectively dead for the
+OCR/merge/classify/structure stages. Those stages call <code>increment_retry</code>
+(<code>document_repo.py:128-137</code>) or set <code>failed</code> (<code>stages.py:290</code>) <em>before</em> the
+decorator re-raises, so the next autoretry attempt sees <code>status=failed</code> and
+short-circuits to "skipped" without re-running (<code>workers/idempotency.py:35-40</code>).
+The <em>real</em> recovery path is the API-level <strong><code>POST /retry/{case}</code></strong> (<code>routers/cases.py:270</code>),
+which resets failed docs to <code>pending_retry</code> and re-fires a chord over just those files.</p>
+<h3 id="idempotency-per-document-only">Idempotency (per-document only)</h3>
+<p><code>@idempotent_stage(entry, complete)</code> (<code>workers/idempotency.py:22-108</code>) guards each
+of the 6 stage tasks (<code>workers/tasks.py:40-70</code>):</p>
+<ol>
+<li>Read doc <code>status</code> in MySQL. 2. <code>failed</code>/<code>classification_failed</code> → skip.</li>
+<li>Already past the current stage → skip. 4. Write the <em>entry</em> stage.</li>
+<li>Run. 6. Write the <em>complete</em> stage (or mark permanently failed).</li>
+</ol>
+<p>MySQL is the sole dedup authority — check-then-act is <strong>not atomic</strong>, so double
+invocation (worker redelivery, concurrent run) can double-run a stage.</p>
+<h3 id="pipeline-lock">Pipeline lock</h3>
+<p><code>RedisLock(case:{id}:pipeline_lock)</code> — <code>SET NX PX</code>, TTL 30 min, auto-refreshed
+every 5 min by a timer in the <strong>API</strong> process (<code>integrations/redis/lock.py</code>).
+Acquired by <code>POST /process</code> and <code>POST /retry</code> (409 when held), released by
+<code>finalize_case_task</code> via <strong>token-less</strong> <code>force_release</code> (<code>finalize.py:55-56</code>).</p>
+<hr />
+<h2 id="5-case-finalization">5. Case finalization</h2>
+<p><code>finalize_case_task</code> is the chord callback, runs once after <strong>all</strong> docs finish
+(<code>workers/finalize.py:17-67</code>):</p>
+<ol>
+<li><code>recompute_case_status</code> in MySQL: <code>partial</code> if any failed/classification_failed,
+   <code>complete</code> if structured == total_docs, else <code>processing</code> (<code>case_repo.py:26-46</code>).</li>
+<li>Re-derives status in Python (ignores skipped/total_docs) and writes Redis.</li>
+<li><code>force_release</code>s the lock.</li>
+<li>If <code>complete</code> → queues <code>run_case_analysis_task</code> (title chain + verification).</li>
+</ol>
+<hr />
+<h2 id="6-case-analysis-title-chain-verification">6. Case analysis (title chain + verification)</h2>
+<p>One task, two independent phases — failure in one never blocks the other
+(<code>workers/title_chain_tasks.py:25-45</code>). Both persist <code>error</code> rows instead of
+raising. <strong>No Celery retry and no idempotency on this task.</strong></p>
+<h3 id="title-chain-servicestitle_chainpy">Title chain (<code>services/title_chain.py</code>)</h3>
+<ul>
+<li>Requires SD + EC with a non-empty <code>historical_ledger</code>, else persists
+  <code>no_transactions</code>.</li>
+<li>One Gemini call (<code>analysis_executor.run_analysis</code>, <code>max_output_tokens=32768</code>)
+  classifies each ledger entry (role, edge type, graph_from, portion…).</li>
+<li><strong>Deterministic fallbacks</strong> fill anything the LLM missed:</li>
+<li><code>_fallback_role</code> (<code>:103-113</code>): entry == SD registration/date → <code>THE_SD</code>;
+    encumbrance keywords → <code>ENCUMBRANCE</code>; date after SD → <code>SUBSEQUENT_TRANSFER</code>;
+    else <code>PREDECESSOR_TITLE</code>.</li>
+<li><code>_fallback_edge_type</code> (<code>:132-140</code>), <code>_normalize_graph_from</code> (<code>:143-156</code>),
+    <code>_default_portion/_identity/_explanation</code> (<code>:159-198</code>).</li>
+<li><code>UNRELATED</code> entries dropped; no matches → persists <code>complete</code> with empty chain</li>
+<li>a "no matching property" message (<code>:311-328</code>).</li>
+<li>LLM call fails → persists <code>status='error'</code>, <code>chain=NULL</code> (<code>:262-270</code>).</li>
+</ul>
+<h3 id="verification-servicesverifypy">Verification (<code>services/verify.py</code>)</h3>
+<ul>
+<li>Requires SD + EC, else persists <code>skipped</code>.</li>
+<li>One Gemini call returns per-field items + a case verdict.</li>
+<li>Item <code>status</code> coerced to <code>N/A</code> when invalid (<code>:100-102</code>); <strong>invalid verdict →
+  the whole verification is persisted <code>status='error'</code></strong> (<code>:111-117</code>) — no
+  re-call, no deterministic verdict.</li>
+</ul>
+<h3 id="the-db-row-you-hit-earlier-why-chain-was-live-null-but-verification-worked">The DB row you hit earlier (why <code>chain</code> was live-NULL but verification worked)</h3>
+<p>Case <code>BE3A0C14</code>, rerun log: the title-chain Gemini call hit a transient <strong>503
+"model experiencing high demand"</strong> (<code>analysis_executor.py:40-53</code> raises, no retry);
+<code>build_title_chain</code> caught it and persisted <code>status='error'</code> with <code>chain</code> unset →
+<code>title_chain_repo.save_title_chain</code> writes <strong>NULL</strong> (<code>title_chain_repo.py:24</code>).
+24 s later the verification call succeeded (200). Then <code>results.py:34-35</code> masks
+the NULL chain to <code>[]</code>, so the UI showed "no title chain" with no error surfaced.</p>
+<hr />
+<h2 id="7-llm-subsystem">7. LLM subsystem</h2>
+<h3 id="model-routing-integrationsllmmodel_routerpy">Model routing (<code>integrations/llm/model_router.py</code>)</h3>
+<ul>
+<li><code>ROUTING_MAP</code> built from <code>MODEL_ROUTING_MAP</code> env (JSON) or defaults — per
+  doc-type: cheap Groq for receipts/registers/khata, Gemini for SD/EC/gift/
+  partition/court/license, Groq-120b for KHATA/LEGAL_HEIR.</li>
+<li><code>resolve_analysis_task()</code> → <strong>Gemini only</strong> for title chain + verification.</li>
+<li>Fallback chain: primary → <code>groq/gpt-oss-20b</code> → <code>gemini/gemini-3.6-flash</code>
+  (<code>:58-62</code>).</li>
+<li><code>model_router.py</code> hardcodes <code>gemini-3.6-flash</code> while actual calls use the
+  <code>GEMINI_MODEL</code> env — logs and reality can disagree.</li>
+</ul>
+<h3 id="extraction-retryfallback-servicesextractpy58-110">Extraction retry/fallback (<code>services/extract.py:58-110</code>)</h3>
+<div class="codehilite"><pre><span></span><code><span class="nt">for</span><span class="w"> </span><span class="nt">model</span><span class="w"> </span><span class="nt">in</span><span class="w"> </span><span class="nt">provider</span><span class="o">+</span><span class="nt">fallback-chain</span><span class="w"> </span><span class="o">(</span><span class="err">≤</span><span class="nt">4</span><span class="o">):</span><span class="w">        </span><span class="err">#</span><span class="w"> </span><span class="nt">structure_document</span>
+<span class="w">  </span><span class="nt">for</span><span class="w"> </span><span class="nt">attempt</span><span class="w"> </span><span class="nt">in</span><span class="w"> </span><span class="nt">1</span><span class="o">.</span><span class="p">.</span><span class="nc">3</span><span class="o">:</span>
+<span class="w">    </span><span class="nt">wait</span><span class="w"> </span><span class="nt">rate</span><span class="w"> </span><span class="nt">limiter</span><span class="w"> </span><span class="o">(</span><span class="nt">tokens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nt">max</span><span class="o">(</span><span class="nt">1</span><span class="o">,</span><span class="w"> </span><span class="nt">chars</span><span class="o">/</span><span class="nt">100k</span><span class="o">))</span>
+<span class="w">    </span><span class="nt">call</span><span class="w"> </span><span class="nt">executor</span>
+<span class="w">    </span><span class="nt">on</span><span class="w"> </span><span class="nt">exception</span><span class="o">:</span>
+<span class="w">      </span><span class="nt">transient</span><span class="w"> </span><span class="o">&amp;</span><span class="w"> </span><span class="nt">attempt</span><span class="o">&lt;</span><span class="nt">3</span><span class="w">  </span><span class="nt">-</span><span class="o">&gt;</span><span class="w"> </span><span class="nt">sleep</span><span class="w"> </span><span class="nt">5</span><span class="p">.</span><span class="nc">5s</span><span class="o">/</span><span class="nt">11s</span><span class="o">,</span><span class="w"> </span><span class="nt">retry</span><span class="w"> </span><span class="nt">SAME</span><span class="w"> </span><span class="nt">model</span>
+<span class="w">      </span><span class="nt">rate-limit</span><span class="w"> </span><span class="nt">token</span><span class="w"> </span><span class="nt">miss</span><span class="w">  </span><span class="nt">-</span><span class="o">&gt;</span><span class="w"> </span><span class="nt">break</span><span class="w"> </span><span class="nt">to</span><span class="w"> </span><span class="nt">NEXT</span><span class="w"> </span><span class="nt">model</span><span class="w"> </span><span class="nt">immediately</span>
+<span class="w">      </span><span class="nt">429</span><span class="o">/</span><span class="nt">413</span><span class="o">/</span><span class="nt">503</span><span class="o">/</span><span class="nt">500</span><span class="w">        </span><span class="nt">-</span><span class="o">&gt;</span><span class="w"> </span><span class="nt">transient</span><span class="w"> </span><span class="nt">branch</span><span class="w"> </span><span class="nt">first</span><span class="o">,</span><span class="w"> </span><span class="nt">else</span><span class="w"> </span><span class="nt">break</span>
+<span class="w">      </span><span class="nt">quota</span><span class="o">/</span><span class="nt">billing</span><span class="w">          </span><span class="nt">-</span><span class="o">&gt;</span><span class="w"> </span><span class="nt">break</span><span class="w"> </span><span class="o">(</span><span class="nt">never</span><span class="w"> </span><span class="nt">retried</span><span class="o">)</span>
+<span class="w">    </span><span class="nt">exhausted</span><span class="w">                </span><span class="nt">-</span><span class="o">&gt;</span><span class="w"> </span><span class="nt">raise</span><span class="o">;</span><span class="w"> </span><span class="nt">doc</span><span class="w"> </span><span class="nt">marked</span><span class="w"> </span><span class="nt">failed</span>
+</code></pre></div>
+
+<p><code>is_transient_error</code> (<code>:29-35</code>) counts JSON-decode errors as transient too, so a
+consistently malformed response burns up to 3 retries × 4 models = 12 calls.</p>
+<h3 id="executors">Executors</h3>
+<ul>
+<li><strong>Gemini</strong> (<code>gemini_executor.py</code>): no own retry; JSON parse → fenced-code-block
+  re-parse → raise; context caching per doc-type (md5 of static prompt, silent
+  degradation on cache failure).</li>
+<li><strong>Groq</strong> (<code>groq_executor.py</code>): tries <code>gpt-oss-120b</code> then <code>gpt-oss-20b</code> (no
+  backoff), aggregates failures into one <code>RuntimeError</code>.</li>
+<li><strong>Analysis</strong> (<code>analysis_executor.py</code>): single call, parse → <code>RuntimeError</code> on
+  unparseable/non-object JSON. <strong>No retry — this is why an overload 503 persisted
+  an error row.</strong></li>
+</ul>
+<h3 id="rate-limiting-integrationsllmrate_limiterpy">Rate limiting (<code>integrations/llm/rate_limiter.py</code>)</h3>
+<p>Redis token bucket + 60 s request window in one atomic Lua script. Limits:
+Gemini 30 RPM / 4M TPM / burst 5; Groq 60 RPM / <strong>6,000 TPM</strong> (very tight) / burst 10.
+- <code>wait_and_acquire</code> backs off exponentially (cap 15 s, default 10 tries).
+- <strong>Advisory only</strong>: executors log-and-proceed on missing tokens; only
+  <code>extract.structure_document</code> hard-breaks to the next model.
+- Extraction is <strong>double-charged</strong>: it acquires a 1-token slot then the executor
+  acquires another for the same call.
+- Redis outage in the limiter surfaces as a model failure → may trigger fallback.</p>
+<h3 id="schema-validation">Schema validation</h3>
+<p><code>response_schema</code> is only serialized into the prompt ("EXPECTED OUTPUT SHAPE") —
+never validated programmatically. Services do their own coercions
+(title_chain is the most robust; verify fails closed on bad verdicts). Prompt/schema
+files are loaded at import → missing files fail fast at boot (<code>prompts/loader.py</code>).</p>
+<hr />
+<h2 id="8-ocr-subsystem-integrationsocr">8. OCR subsystem (<code>integrations/ocr/</code>)</h2>
+<ul>
+<li><strong>≤10 pages</strong>: one Sarvam job on the PDF directly. <strong>&gt;10 pages</strong>: every page
+  rendered to 200-DPI PNG, zipped in chunks of 10 with 1-page overlap, submitted
+  in parallel (≤8 workers) (<code>sarvam_client.py:82-187</code>).</li>
+<li>Per-chunk retries: 3 attempts, sleeps 5 s/15 s (the 30 s slot is dead code),
+  each retry = a fresh job (<code>:110-136</code>, <code>:197-223</code>).</li>
+<li><code>PartiallyCompleted</code> counts as success; failed chunks are dropped silently —
+  their pages just vanish, so pages 6-10 might be missing but <code>total_pages</code> still
+  reads high (<code>ocr_merger.py:27</code>, <code>:215</code>).</li>
+<li>Preprocessing is always non-fatal; OCR around a missing API key is the only
+  hard failure — caught by <code>run_ocr_with_retry</code>.</li>
+</ul>
+<hr />
+<h2 id="9-storage-database">9. Storage &amp; database</h2>
+<p><strong>Disk</strong> <code>outputs/{case_id}/</code>: raw uploads, <code>preprocessed/{doc}_prep.pdf</code>,
+<code>ocr_raw/{doc}/</code> (chunk + response zips), <code>ocr_raw/{doc}_chunks.json</code>,
+<code>ocr_raw/{doc}_merged.json</code>, <code>structured/DOC_1_SALE_DEED.json</code>.</p>
+<p><strong>MySQL</strong> (5 tables, no FK constraints): <code>cases</code> (status, verification_status,
+verdict, pipeline_logs), <code>documents</code> (status, structured_data, file_paths, costs),
+<code>title_chains</code> (chain JSON, source JSON), <code>verification_results</code> (summary, items),
+<code>users</code>.</p>
+<p>Write discipline: <strong>MySQL first, Redis best-effort</strong> everywhere; reads are
+Redis-first with MySQL fallback. <code>documents.file_paths</code> is merged atomically via
+<code>JSON_SET</code> (no read-modify-write race). <code>save_title_chain</code> / <code>save_verification_results</code>
+are full row-replace upserts — omitting a payload column writes NULL.</p>
+<hr />
+<h2 id="10-api-auth-surface-summary">10. API &amp; auth (surface summary)</h2>
+<ul>
+<li><strong>Auth</strong>: optional (<code>get_optional_user</code>) on all case CRUD → anonymous "guest"
+  cases are open to anyone with the case ID; required (<code>get_current_user</code>) on
+  login/register/me/cases list/link. JWT 7-day expiry, bcrypt.</li>
+<li><strong>Anonymity → account</strong>: <code>/api/case/{id}/link</code> (rowcount-guarded against
+  TOCTOU) + dashboard auto-link on login.</li>
+<li><strong>Endpoints</strong>: upload, process, status (polls), retry, replace, skip, add-docs,
+  delete, serve-pdf, link; results GET, report PDF, analyze POST; health.</li>
+<li><strong>Error statuses</strong>: 400 (bad upload/no-failed), 401/403 (auth/ownership), 404
+  (missing case/doc), 409 (lock held / duplicate email / active pipeline), 500
+  (pipeline start / report render).</li>
+<li><strong>Deliberate soft failures</strong>: DB write during upload, Redis blips, status-payload
+  JSON corruption — all log-and-continue. Report PDF <strong>hard 500s</strong> when
+  verification is <code>error</code> (report.py:303-306 → masked by the UI + "Please retry").</li>
+</ul>
+<hr />
+<h2 id="11-frontend-flow-60-seconds">11. Frontend flow (60 seconds)</h2>
+<ol>
+<li><strong>Upload step</strong> (dashboard): SD + EC are mandatory slots, extras optional
+   (<code>VerificationDashboard.tsx:269-273</code>). Gates on ≥1 SD + ≥1 EC → <code>/upload</code> →
+   <code>/process</code> → poll.</li>
+<li><strong>Processing step</strong>: polls <code>/status</code> every 2 s (<code>:1264-1304</code>); 6 per-doc stage
+   bars, then "Building title chain / Verifying title" phases from
+   <code>title_chain_status</code> + <code>verification_status</code>. If status is <code>complete</code> but
+   verification hasn't landed yet, it keeps pollin up to <strong>8 minutes</strong> (<code>:1287-1294</code>).</li>
+<li><strong>Results step</strong>: guest sees a locked preview ("Sign in to Unlock"); authed
+   user sees verdict banner, per-field verification checklist, title-chain
+   timeline, doc extractions, replace/skip actions for failed docs.</li>
+<li><strong>Re-run analysis</strong>: <code>POST /analyze</code> (fire-and-forget) then polls results
+   every 3 s until <code>verification.updated_at</code> changes or 8 min elapse (<code>:1357-1406</code>).</li>
+<li>Missing title chain rendered as <code>title_story</code> else the placeholder
+   "No title chain entries yet…" (<code>:397</code>, <code>:1484</code>).</li>
+</ol>
+<p>The three API helpers <code>API.health / status / listCases</code> never throw (degrade to
+placeholders); everything else throws and callers log it (<code>frontend/src/api/backend.ts:162-245</code>).</p>
+<hr />
+<h2 id="12-retry-fallback-matrix-everything-in-one-table">12. Retry &amp; fallback matrix (everything in one table)</h2>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Mechanism</th>
+<th>Attempts</th>
+<th>Backoff</th>
+<th>Exhausted behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sarvam OCR chunk</td>
+<td>fresh job per retry</td>
+<td>3</td>
+<td>5s, 15s</td>
+<td>chunk stored <code>failed</code>, dropped from merge</td>
+</tr>
+<tr>
+<td>OCR stage wrapper</td>
+<td><code>run_ocr_with_retry</code></td>
+<td>3</td>
+<td>5s linear</td>
+<td>re-raise → doc <code>failed</code></td>
+</tr>
+<tr>
+<td>LLM extraction/model</td>
+<td>per-model loop → fallback chain</td>
+<td>3 × ≤4 models</td>
+<td>5.5s/11s</td>
+<td>raise → doc <code>failed</code></td>
+</tr>
+<tr>
+<td>Celery stages</td>
+<td>autoretry (dead for 4/6)</td>
+<td>5</td>
+<td>exp ≤120s + jitter</td>
+<td>marked <code>failed</code>/<code>classification_failed</code></td>
+</tr>
+<tr>
+<td>API retry</td>
+<td><code>POST /retry</code> resets → rerun failed docs</td>
+<td>manual</td>
+<td>—</td>
+<td>returns 400 if none</td>
+</tr>
+<tr>
+<td>Title chain / verify</td>
+<td><strong>none</strong></td>
+<td>1</td>
+<td>—</td>
+<td>persists <code>status='error'</code> row (chain → NULL)</td>
+</tr>
+<tr>
+<td>Schema/model</td>
+<td><code>title_chain</code> deterministic fallbacks</td>
+<td>every run</td>
+<td>—</td>
+<td>missing LLM fields filled from ledger</td>
+</tr>
+<tr>
+<td>Model chain</td>
+<td>primary → groq-20b → gemini</td>
+<td>per doc type</td>
+<td>—</td>
+<td>raise after all</td>
+</tr>
+<tr>
+<td>Classification</td>
+<td>keywords → declared slot → fail</td>
+<td>1</td>
+<td>—</td>
+<td><code>classification_failed</code> (user replaces/skips)</td>
+</tr>
+<tr>
+<td>Preprocess</td>
+<td>return original PDF</td>
+<td>1</td>
+<td>—</td>
+<td>non-fatal, continue</td>
+</tr>
+<tr>
+<td>Rate limiter</td>
+<td>token bucket + RPM window</td>
+<td>waits (≤10 tries)</td>
+<td>exp ≤15s</td>
+<td>advisory → call anyway (extraction: hard break)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="13-known-gaps-footguns-worth-fixing">13. Known gaps &amp; footguns (worth fixing)</h2>
+<ol>
+<li><strong>Analysis has no retry</strong> (the bug you hit): one transient Gemini 503 → permanent
+   <code>error</code>/NULL row that nothing re-drives. Fix: retry with backoff in
+   <code>run_analysis</code> for 5xx.</li>
+<li><strong>Celery autoretry is dead for 4 of 6 stages</strong> — <code>increment_retry</code> marks <code>failed</code>
+   before re-raise; make the wrapper's burnout path the only <code>failed</code> writer.</li>
+<li><strong>Token-less <code>force_release</code></strong> can delete a newer run's lock after a crash.</li>
+<li><strong>Lock refresher lives in the API process</strong>, not workers — web restart mid-run
+   forfeits the lock at 30 min while tasks run up to 2 h.</li>
+<li><strong>Finalize overwrites the SQL status</strong> with Python logic that ignores
+   skipped/total docs; an all-skipped case reports <code>complete</code> and triggers analysis.</li>
+<li><strong><code>chain</code> NULL on error</strong> + results-masking hides failures from the UI.</li>
+<li><code>analysis_executor</code>, <code>gemini_client</code>, routing map disagree on the Gemini model
+   name (env vs hardcoded).</li>
+<li>Groq TPM default (6,000) is an order of magnitude tighter than RPM — likely a
+   config bug.</li>
+<li>Duplicate <code>headline</code> key in <code>verification_schema.json</code>; <code>verification_schema</code>
+   is a shape description, not a schema.</li>
+<li>Dead code: <code>_require_owner</code> (cases.py:74), <code>DETERMINISTIC_DOC_TYPES</code> +
+    <code>is_deterministic_doc</code> (model_router.py:107), Redis keys <code>:results</code>/<code>:errors</code>/
+    <code>:docs</code>/<code>:done_count</code> never populated, <code>RETRY_DELAYS[2]=30</code> never used.</li>
+<li>Default JWT secret in <code>config.py:64</code> must be changed for any deployment.</li>
+<li>Idempotency check is non-atomic (double-run possible on redelivery), and
+    <code>retry_count</code> isn't reset by the retry endpoint (compounds across cycles).</li>
+</ol>
+<hr />
+<h2 id="14-dead-code-unused-inventory-full-repo-sweep">14. Dead code &amp; unused inventory (full-repo sweep)</h2>
+<p>Method: <code>ruff check backend --select F</code> (clean — no unused imports/locals), AST
+cross-reference scan, import greps on every module, and a MySQL
+<code>information_schema.columns</code> pass compared against every read/write in the code.
+"Dead" = defined/created but nothing consumes it.</p>
+<h3 id="141-backend-entirely-dead-module">14.1 Backend — entirely dead module</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Why dead</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>backend/integrations/storage/file_service.py</code> (whole module: <code>list_output_cases</code>:32, <code>get_case_bundle_from_filesystem</code>:73, …)</td>
+<td>never imported anywhere; only self-references</td>
+</tr>
+</tbody>
+</table>
+<h3 id="142-backend-dead-symbols">14.2 Backend — dead symbols</h3>
+<table>
+<thead>
+<tr>
+<th>Symbol</th>
+<th>Location</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>_ensure_tables</code></td>
+<td><code>database/migrations.py:184</code></td>
+<td>dead alias of live <code>ensure_tables</code></td>
+</tr>
+<tr>
+<td><code>get_recent</code></td>
+<td><code>integrations/llm/rate_limiter.py:220</code></td>
+<td>no callers</td>
+</tr>
+<tr>
+<td><code>is_deterministic_doc</code> + <code>DETERMINISTIC_DOC_TYPES</code></td>
+<td><code>integrations/llm/model_router.py:15-25</code>, <code>:107</code></td>
+<td>no callers; <code>REASONING_DOC_TYPES</code>/<code>resolve_model</code> are the live path</td>
+</tr>
+<tr>
+<td><code>EMAIL_RE</code></td>
+<td><code>routers/auth.py:21</code></td>
+<td>unused — Pydantic <code>EmailStr</code> does validation</td>
+</tr>
+<tr>
+<td><code>RETRY_DELAYS[2] = 30</code></td>
+<td><code>integrations/ocr/sarvam_client.py:25</code></td>
+<td>3rd sleep never reached (see §13.10)</td>
+</tr>
+<tr>
+<td>Redis keys <code>:results</code> / <code>:errors</code> / <code>:docs</code> / <code>:done_count</code></td>
+<td><code>integrations/redis/state_store.py</code></td>
+<td>never populated (see §13.10)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="143-backend-dead-constants-sharedconstantspy">14.3 Backend — dead constants (<code>shared/constants.py</code>)</h3>
+<p>Defined but referenced nowhere:</p>
+<ul>
+<li><code>STATUS_PREPROCESSING</code>, <code>STATUS_OCR_IN_PROGRESS</code>, <code>STATUS_MERGING</code>,
+  <code>STATUS_COMPLETE</code>, <code>STATUS_PARTIAL</code></li>
+<li>Entire <code>STEP_*</code> family: <code>STEP_PIPELINE</code>, <code>STEP_PREPROCESSING</code>, <code>STEP_OCR</code>,
+  <code>STEP_MERGE</code>, <code>STEP_CLASSIFY</code>, <code>STEP_STRUCTURE</code>, <code>STEP_DONE</code> (no callers)</li>
+</ul>
+<p>Still used (keep): <code>STATUS_PROCESSING</code>, <code>STATUS_PENDING_RETRY</code>,
+<code>STATUS_NO_TRANSACTIONS</code> (title_chain.py), <code>STATUS_PREPROCESSED</code>,
+<code>STATUS_OCR_DONE</code>, <code>STATUS_MERGED</code>, <code>STATUS_CLASSIFYING</code>,
+<code>STATUS_CLASSIFICATION_FAILED</code>, <code>STATUS_STRUCTURING</code>, <code>STATUS_STRUCTURED</code>,
+<code>STATUS_FAILED</code>. All <code>DOC_TYPE_*</code> constants are used by <code>services/classifier.py</code>.
+All <code>Stage</code> members in <code>domain/state_machine.py</code> are used for valid-state
+comparisons — none dead.</p>
+<h3 id="144-database-dead-vestigial-columns">14.4 Database — dead / vestigial columns</h3>
+<p>Checked all 5 tables (<code>cases</code>, <code>documents</code>, <code>title_chains</code>, <code>users</code>,
+<code>verification_results</code>) against every SQL statement and repo call:</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Verdict</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>documents.raw_ocr_path</code></td>
+<td><strong>never written</strong> — <code>update_document_status</code> accepts it (<code>document_repo.py:45</code>) but no stage passes it; <code>get_case_documents</code>:94 selects it → always NULL. Either drop or start persisting the raw-OCR PDF path here.</td>
+</tr>
+<tr>
+<td><code>users.full_name</code></td>
+<td>written on register, read by repos, returned by <code>/auth/register|login</code> — but never displayed in the frontend dashboard. Used, not dead; note for cleanup decision.</td>
+</tr>
+</tbody>
+</table>
+<p>No dead tables; every other column is written and/or read by a live path.</p>
+<h3 id="145-frontend-dead-orphan-files">14.5 Frontend — dead / orphan files</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Verdict</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>src/types.ts</code></td>
+<td><strong>orphan</strong> — no imports anywhere (6 interfaces)</td>
+</tr>
+<tr>
+<td><code>src/metadata.json</code></td>
+<td><strong>orphan</strong> — Chrome-extension-style manifest; not referenced by <code>index.html</code>, vite, or build</td>
+</tr>
+<tr>
+<td><code>src/dashboard/utils.tsx</code></td>
+<td><code>flattenObj</code>, <code>buildSummaryGroups</code>, <code>SummaryTable</code>, <code>FlatRow</code> are exported but only chain to each other internally; only <code>DocSummary</code> is imported by <code>VerificationDashboard</code>. Make them module-private or delete.</td>
+</tr>
+</tbody>
+</table>
+<p>NOT dead (verified used): <code>three</code>/<code>DuneFieldBackground</code>, all <code>components/*</code>,
+<code>server.ts</code> (+ express/dotenv), <code>@google/genai</code> (used by <code>server.ts:5</code>),
+<code>landingData.ts</code>, <code>AuthScreen</code>. Note: <code>vite</code> is listed in both <code>dependencies</code>
+and <code>devDependencies</code> in <code>frontend/package.json</code> (cosmetic duplicate).</p>
+<h3 id="146-dependencies">14.6 Dependencies</h3>
+<ul>
+<li><code>requirements.txt</code> — all 22 direct packages are imported/used (incl. <code>aiofiles</code>,
+  pymupdf, reportlab, <code>email-validator</code> via <code>EmailStr</code>). No unused deps.</li>
+<li><code>frontend/package.json</code> — no unused deps (duplicate <code>vite</code> entry above is the
+  only blemish).</li>
+</ul>
+<h3 id="147-config-env">14.7 Config / env</h3>
+<ul>
+<li>Every <code>backend/config.py</code> var has a consumer (incl. the <code>MODEL_ROUTING_MAP</code>
+  env → <code>model_router._load_routing_map</code>, <code>MAX_UPLOAD_SIZE_MB</code> →
+  <code>file_utils</code>). No dead config.</li>
+</ul>
+<h3 id="148-stale-planning-docs-informational-not-code">14.8 Stale planning docs (informational, not code)</h3>
+<p><code>docs/*.md</code> includes older planning/scratch docs that may contradict current
+behavior — review before relying on or deleting them: <code>BACKEND_AUDIT.md</code>,
+<code>PIPELINE_ISSUES_ANALYSIS.md</code>, <code>REFACTOR_PLAN.md</code>, <code>TITLE_CHAIN_GRAPH_PLAN.md</code>,
+<code>PRODUCTION_READINESS_PLAN.md</code>, <code>LLM_PROMPTS.md</code>, <code>LEGAL_OPINION_REPORT_FORMAT.md</code>,
+<code>langfuse-observability-plan.md</code>, <code>opencode-architecture.md</code>.</p>
+<h3 id="149-suggested-first-pass-cleanup-lowest-risk-highest">14.9 Suggested first-pass cleanup (lowest risk → highest)</h3>
+<ol>
+<li>Delete <code>frontend/src/types.ts</code>, <code>frontend/src/metadata.json</code>.</li>
+<li>Delete <code>_ensure_tables</code>, <code>get_recent</code>, <code>input EMAIL_RE</code>, <code>is_deterministic_doc</code></li>
+<li><code>DETERMINISTIC_DOC_TYPES</code>.</li>
+<li>Delete dead <code>STATUS_*</code>/<code>STEP_*</code> constants.</li>
+<li>Delete <code>backend/integrations/storage/file_service.py</code> (after confirming no
+   import remains — it is self-contained).</li>
+<li>Drop <code>documents.raw_ocr_path</code> (or wire OCR stage to populate it).</li>
+<li>Strip <code>flattenObj</code>/<code>buildSummaryGroups</code>/<code>SummaryTable</code>/<code>FlatRow</code> to module-private.</li>
+</ol></article>
+</main>
+<script>
+const article=document.querySelector('article');
+const toc=document.getElementById('toc');
+const headings=[...article.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter(h=>h.id||h.textContent);
+let lastLevel=0;let html='';
+headings.forEach(h=>{
+  if(!h.id){h.id=h.textContent.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');}
+  const level=parseInt(h.tagName[1]);
+  if(level>lastLevel)html+='<ul>'.repeat(level-lastLevel);
+  else if(level<lastLevel)html+='</ul>'.repeat(lastLevel-level);
+  lastLevel=level;html+=<li><a href="#"></a></li>;
+});
+html+='</ul>'.repeat(lastLevel);
+toc.innerHTML=html||'<li><span style="color:var(--muted)">No headings</span></li>';
+const links=toc.querySelectorAll('a');
+const obs=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{if(e.isIntersecting){links.forEach(l=>l.classList.toggle('active',l.getAttribute('href')==='#'+e.target.id));}});
+},{rootMargin:'-20% 0px -60% 0px',threshold:.1});
+headings.forEach(h=>obs.observe(h));
+</script>
+</body>
+</html>

@@ -1,0 +1,354 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PRODUCTION_READINESS_PLAN</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+<style>
+:root{--bg:#0f172a;--bg2:#0b1226;--panel:#0f172a;--text:#e5e7eb;--muted:#94a3b8;--primary:#f97316;--border:rgba(148,163,184,.25);--codebg:#0b1226}
+*{box-sizing:border-box;margin:0;padding:0;font-family:Inter,system-ui,-apple-system,sans-serif}
+body{background:radial-gradient(circle at top,rgba(249,115,22,.08),transparent 60%),var(--bg2);color:var(--text);line-height:1.8}
+header{padding:clamp(1.2rem,3vw,2rem) clamp(1rem,5vw,2.5rem);border-bottom:1px solid var(--border);background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(15,23,42,.92));position:sticky;top:0;backdrop-filter:blur(8px);z-index:10;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:1rem}
+header h1{font-family:'Plus Jakarta Sans',Inter,sans-serif;font-size:clamp(1.1rem,2.2vw,1.6rem);letter-spacing:-.01em}
+nav{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center}
+nav a{color:var(--muted);text-decoration:none;padding:.4rem .7rem;border-radius:.6rem;border:1px solid transparent;font-weight:500;transition:.15s ease}
+nav a:hover,nav a.active{color:var(--text);border-color:var(--border);background:rgba(15,23,42,.5)}
+main{display:flex;gap:clamp(1rem,3vw,2rem);padding:clamp(1rem,3vw,2rem) clamp(1rem,5vw,2.5rem);max-width:1600px;margin:0 auto}
+aside{width:min(320px,28vw);flex-shrink:0;position:sticky;top:clamp(4.5rem,8vw,5.5rem);align-self:flex-start;max-height:calc(100vh - clamp(5rem,9vw,6rem));overflow:auto;padding-right:.25rem}
+.toc{background:linear-gradient(160deg,rgba(15,23,42,.96),rgba(15,23,42,.92));border:1px solid var(--border);border-radius:.9rem;padding:clamp(1rem,2vw,1.25rem);display:flex;flex-direction:column;gap:1rem;box-shadow:0 40px 70px -40px rgba(15,23,42,.9)}
+.toc h2{font-size:.98rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.toc ul{list-style:none;display:flex;flex-direction:column;gap:.45rem}
+.toc li a{color:var(--muted);text-decoration:none;font-size:.98rem;display:block;padding:.35rem .5rem;border-radius:.5rem;transition:.15s ease}
+.toc li a:hover{color:var(--text);background:rgba(148,163,184,.12)}
+.toc li a.active{color:#fff;background:rgba(249,115,22,.22);border:1px solid rgba(249,115,22,.45)}
+article{flex:1;min-width:0;background:linear-gradient(160deg,rgba(15,23,42,.98),rgba(15,23,42,.94));border:1px solid var(--border);border-radius:1rem;padding:clamp(1.25rem,4vw,2.75rem);box-shadow:0 60px 90px -40px rgba(15,23,42,.95);overflow:auto}
+article h1,article h2,article h3,article h4,article h5,article h6{font-family:'Plus Jakarta Sans',Inter,sans-serif;line-height:1.15;margin-top:clamp(1.5rem,4vw,2.5rem);margin-bottom:clamp(.8rem,2vw,1rem);scroll-margin-top:clamp(5rem,9vw,6rem)}
+article h1:first-child{margin-top:0}
+article h1{font-size:clamp(1.8rem,4.5vw,3rem);letter-spacing:-.03em}
+article h2{font-size:clamp(1.35rem,3.2vw,2rem)}
+article h3{font-size:clamp(1.15rem,2.6vw,1.4rem)}
+article p{margin-bottom:1.1rem;color:#e2e8f0}
+article a{color:var(--primary);text-decoration:none}
+article a:hover{text-decoration:underline}
+article ul,article ol{padding-left:1.5rem;margin-bottom:1.2rem;display:flex;flex-direction:column;gap:.6rem}
+article li{color:#e2e8f0}
+article code{font-family:'JetBrains Mono',monospace;background:var(--codebg);padding:.05rem .4rem;border-radius:.4rem;border:1px solid var(--border);font-size:.96rem}
+article pre{margin:1.25rem 0;background:var(--codebg);border:1px solid var(--border);border-radius:.8rem;padding:clamp(1rem,2vw,1.25rem);overflow:auto}
+article pre code{background:transparent;border:none;padding:0;font-size:.98rem;line-height:1.9}
+article table{width:100%;border-collapse:collapse;margin:1.5rem 0;border:1px solid var(--border);border-radius:.6rem;overflow:hidden}
+article th,article td{padding:.8rem 1rem;border-bottom:1px solid var(--border);text-align:left}
+article th{background:rgba(148,163,184,.12);font-weight:600}
+article tr:nth-child(even){background:rgba(15,23,42,.4)}
+article blockquote{margin:1.25rem 0;padding:1rem 1.25rem;border-left:3px solid var(--primary);background:rgba(249,115,22,.12);border-radius:0 .6rem .6rem 0;color:#fef3c7}
+hr{border:none;border-top:1px solid var(--border);margin:2rem 0}
+@media(max-width:980px){aside{display:none}main{flex-direction:column}}
+</style>
+</head>
+<body>
+<header>
+<h1>PRODUCTION_READINESS_PLAN</h1>
+<nav>
+<a href="../index.html">Docs Home</a>
+<a href="./index.html" class="active">Developer Guide</a>
+<a href="../artifacts/">Artifacts</a>
+<a href="../docs-dev/">Raw Markdown</a>
+</nav>
+</header>
+<main>
+<aside>
+<div class="toc">
+<h2>On this page</h2>
+<ul id="toc"></ul>
+</div>
+</aside>
+<article><h1 id="backend-production-readiness-plan">Backend Production-Readiness Plan</h1>
+<p>Ordered steps to take the backend from "working prototype" to production-safe.
+Each step is an issue found in <code>docs/ARCHITECTURE_OVERVIEW.md</code> (§11–§13) or
+verified in the current source, with a concrete fix and an acceptance check.</p>
+<p>Dependency rule: do steps <strong>1–3 first</strong> (error taxonomy + fail-fast) before
+<strong>4–8</strong> (retry/fallback correctness) before <strong>9–13</strong> (cleanup). Steps 1–3
+change how errors are raised/classified; everything downstream consumes them.</p>
+<hr />
+<h2 id="step-1-one-pipelineerror-taxonomy-foundation">Step 1 — One <code>PipelineError</code> taxonomy (foundation)</h2>
+<p><strong>Issue (ARCHITECTURE §13.1):</strong> Error classification is coarse. Retry-vs-
+fallback-vs-give-up is decided by string matching and <code>except Exception</code>,
+scattered across files. There is no single place that says "this is transient,
+this is terminal."</p>
+<p><strong>Evidence:</strong>
+- <code>backend/services/extract.py:29</code> <code>is_transient_error(e)</code> and <code>:38</code>
+  <code>is_rate_limit_error(e)</code> match on <code>str(e)</code> substrings — fragile, provider-agnostic.
+- <code>backend/workers/tasks.py:28-36</code> <code>TASK_RETRY_CONFIG</code> autoretrys on
+  <code>(Exception,)</code> — every exception class retried 5× unless excluded.
+- Retry numbers live in 4 places: <code>tasks.py</code> (5/120s), <code>extract.py</code>
+  (<code>OCR_MAX_RETRIES=3</code>, <code>STRUCTURE_MAX_RETRIES=3</code>, <code>MAX_RATE_LIMIT_RETRIES=5</code>),
+  Sarvam inner+outer retries, title/verify tasks (<code>max_retries=2</code>).</p>
+<p><strong>Fix:</strong>
+1. Add <code>backend/domain/pipeline_errors.py</code> with a base <code>PipelineError</code> and
+   subclasses:
+   - <code>TransientProviderError</code> (429/5xx/timeout/RESOURCE_EXHAUSTED → retry, then fallback)
+   - <code>RateLimitError</code> (per-provider, with <code>shrinkable: bool</code>)
+   - <code>InsufficientCreditsError</code> (terminal, excluded from retry)
+   - <code>ModelOutputError</code> (empty response / unparseable JSON / schema mismatch → re-prompt once, then fallback)
+   - <code>SafetyBlockError</code> (terminal for that content — no retry of same input)
+   - <code>ClassificationFailedError</code> (terminal, already exists as <code>ClassificationFailed</code>)
+2. Replace the string matching in <code>extract.py</code> with <code>isinstance</code> checks on
+   these classes.
+3. Remove the two string-matchers from <code>extract.py</code> (<code>is_transient_error</code>,
+   <code>is_rate_limit_error</code>).
+4. Keep <code>max_retries</code>/backoff knobs in <code>config.py</code> as one
+   <code>RETRY_POLICY</code> dict (see Step 4), not in 4 modules.</p>
+<p><strong>Accept:</strong> <code>grep -rn "str(e)" backend/services backend/workers</code> shows no
+classification logic left; <code>ClassificationFailed</code> and
+<code>InsufficientCreditsError</code> are excluded from autoretry.</p>
+<hr />
+<h2 id="step-2-sarvam-credits-detect-and-fail-fast-bulk-of-production-failures">Step 2 — Sarvam credits: detect and fail fast (bulk of production failures)</h2>
+<p><strong>Issue (ARCHITECTURE §12.2):</strong> 9/10 production failures were Sarvam
+<code>Insufficient credits for N pages</code> — a permanent condition. <code>run_ocr_with_retry</code>
+retried 3×+3× anyway, burning time and masking the real cause.</p>
+<p><strong>Evidence:</strong> <code>backend/integrations/ocr/sarvam_client.py</code> <code>run_ocr_with_retry</code>
+inner+outer <code>OCR_MAX_RETRIES</code> loops (referenced from <code>extract.py:14,46-55</code>).</p>
+<p><strong>Fix:</strong>
+1. In <code>sarvam_client.py</code>, detect the credit/quota error from the Sarvam error
+   body (match on "insufficient credits", Sarvam's quota error codes) and
+   raise <code>InsufficientCreditsError</code> (Step 1).
+2. Add <code>InsufficientCreditsError</code> to <code>exclude_from_autoretry</code> in
+   <code>backend/workers/tasks.py</code> (alongside <code>ClassificationFailed</code>).
+3. On <code>InsufficientCreditsError</code>, write a user-facing error in the case
+   errors list immediately (via <code>document_repo.update_document_status</code> +
+   Redis <code>append_log</code>) instead of waiting for retries to exhaust.
+4. Pre-check: when a case is created, estimate total pages × Sarvam price and
+   surface a "not enough credits" warning before kicking off OCR.</p>
+<p><strong>Accept:</strong> With credits exhausted, one OCR attempt runs, the doc is marked
+<code>failed</code> with the credit message, no 3×/3× retry storm, UI shows the reason.</p>
+<hr />
+<h2 id="step-3-groq-request-size-guard-finish-121">Step 3 — Groq request-size guard (finish §12.1)</h2>
+<p><strong>Issue (ARCHITECTURE §12.1 remaining risk):</strong> 5k <code>max_tokens</code> + a
+Kannada-heavy prompt can still exceed Groq free-tier TPM (6k llama-3.1-8b,
+12k llama-3.3-70b). Groq's 413 counts <code>prompt_tokens + max_tokens</code>, so an
+oversized prompt is rejected before a token is generated.</p>
+<p><strong>Evidence:</strong> <code>backend/integrations/llm/groq_executor.py</code> hard-codes
+<code>max_tokens</code>; <code>backend/config.py:54</code> <code>GROQ_TPM = 6000</code>.</p>
+<p><strong>Fix:</strong>
+1. Make <code>max_tokens</code> per-model configurable in <code>config.py</code>
+   (<code>GROQ_MAX_TOKENS</code> map keyed by model).
+2. In <code>groq_executor.py</code>, before calling: estimate prompt tokens
+   (<code>len(text)/1.5</code>, or a tokenizer) and compute <code>estimated_prompt +
+   max_tokens</code> vs the model's real TPM.
+3. If it cannot fit, <strong>skip Groq and go straight to Gemini</strong> (raise a
+   <code>RateLimitError</code> with <code>shrinkable=True</code> so the caller falls through the
+   chain) instead of attempting and failing.
+4. Keep <code>GROQ_TPM=6000</code> default (already fixed from 15M).</p>
+<p><strong>Accept:</strong> An oversized Groq-bound doc never issues a doomed 413 call — it
+routes to Gemini with a logged reason.</p>
+<hr />
+<h2 id="step-4-centralize-retry-policy-stop-scattering-it">Step 4 — Centralize retry policy (stop scattering it)</h2>
+<p><strong>Issue (ARCHITECTURE §13.2):</strong> Retry behavior lives in 4 places with
+different numbers and no single tuning point.</p>
+<p><strong>Fix:</strong>
+1. Add one <code>RETRY_POLICY</code> dict in <code>backend/config.py</code>:
+   <code>{stage: {max_retries, backoff_base, backoff_max, jitter, exclude_classes, fallback_chain}}</code>
+   (e.g. <code>ocr</code>, <code>structure</code>, <code>title</code>, <code>verify</code>, <code>groq</code>, <code>sarvam</code>).
+2. <code>backend/workers/tasks.py</code> builds <code>TASK_RETRY_CONFIG</code> from it per task.
+3. <code>extract.py</code> and <code>sarvam_client.py</code> read their retry counts from it.</p>
+<p><strong>Accept:</strong> <code>grep -rn "MAX_RETRIES\|max_retries" backend</code> shows the only
+definitions in <code>config.py</code> and <code>tasks.py</code> (derived).</p>
+<hr />
+<h2 id="step-5-gemini-empty-response-log-finishblock-reason-architecture-123">Step 5 — Gemini empty-response: log finish/block reason (ARCHITECTURE §12.3)</h2>
+<p><strong>Issue:</strong> The 998A8755 Sale Deed returned HTTP 200 with empty text 3×,
+likely a safety block, but <code>finish_reason</code>/<code>block_reason</code> are never read or
+logged, so it's unconfirmable.</p>
+<p><strong>Evidence:</strong> <code>backend/integrations/llm/gemini_executor.py</code> parses
+<code>response.text</code> without inspecting candidates.</p>
+<p><strong>Fix:</strong>
+1. In <code>gemini_executor.py</code>, before parsing, read
+   <code>response.candidates[0].finish_reason</code>, <code>response.prompt_feedback.block_reason</code>,
+   and <code>safety_ratings</code>; log them as a structured line (<code>doc_id, stage, provider,
+   finish_reason, block_reason</code>).
+2. Empty text → raise <code>ModelOutputError</code> (Step 1) carrying the reasons.
+3. <code>SafetyBlockError</code> (block_reason set) → do <strong>not</strong> retry the same content;
+   trim/rewrite the offending chunk or mark the doc for human review.</p>
+<p><strong>Accept:</strong> Every empty/blocked Gemini response produces a log line showing
+<code>finish_reason</code> and <code>block_reason</code>; a safety block fails without pointless retries.</p>
+<hr />
+<h2 id="step-6-combined-error-surfacing-across-the-provider-chain-architecture-126-134">Step 6 — Combined error surfacing across the provider chain (ARCHITECTURE §12.6, §13.4)</h2>
+<p><strong>Issue:</strong> For a Gemini-primary doc, the surfaced error is "All Groq models
+failed" — as if Groq was the intended provider. The real provider is masked.</p>
+<p><strong>Fix:</strong>
+1. In the structure stage (<code>backend/workers/stages.py</code> <code>StructureStage</code> /
+   <code>backend/services/extract.py</code>), collect <code>errors[]</code> across the full chain:
+   <code>Gemini failed (&lt;reason&gt;); Groq fallback failed (&lt;reason&gt;)</code>.
+2. Raise one combined <code>PipelineError</code> listing every provider/model attempted.
+3. Log a structured decision line per fallback (see Step 8).</p>
+<p><strong>Accept:</strong> For a Gemini-primary doc, the error message names both providers
+and the reason per provider, in order.</p>
+<hr />
+<h2 id="step-7-resumable-retry-skip-completed-work-architecture-125-133">Step 7 — Resumable retry (skip completed work) (ARCHITECTURE §12.5, §13.3)</h2>
+<p><strong>Issue:</strong> <code>start_retry_pipeline</code> replays preprocess → OCR → … from scratch
+even when only the LLM stage failed. Correct but wasteful (burns Sarvam
+credits and time).</p>
+<p><strong>Evidence:</strong> <code>backend/integrations/redis/state_store.py:462</code>
+<code>reset_for_retry</code>; chain built in <code>backend/services/orchestrator.py</code>.</p>
+<p><strong>Fix:</strong>
+1. Persist <code>last_completed_stage</code> on the document row (new column, or reuse
+   the status string which is already monotonic).
+2. On retry, rebuild the chain starting at the stage <em>after</em> the last
+   completed one (skip re-uploading/re-merging when <code>merged_ocr</code> exists).
+3. Update <code>reset_for_retry</code> to honor it instead of resetting to stage 1.</p>
+<p><strong>Accept:</strong> A doc that failed at structuring retries from the structuring
+stage; OCR credits are not re-consumed.</p>
+<hr />
+<h2 id="step-8-structured-per-stage-observability-architecture-1210">Step 8 — Structured per-stage observability (ARCHITECTURE §12.10)</h2>
+<p><strong>Issue:</strong> No per-stage timing log, no global request-id correlation
+(<code>trace_id</code> column + <code>set_trace_id</code> exist but are never populated), no
+decision log for retries/fallbacks.</p>
+<p><strong>Fix:</strong>
+1. Populate <code>documents.trace_id</code> with a request id at case creation and
+   thread it through every log line (or adopt <code>celery</code> task id as the
+   correlation id — lowest effort).
+2. Emit one structured line per retry/fallback (ARCHITECTURE §13.6):
+   <code>doc_id, stage, provider, model, attempt, error_class,
+   decision(backoff|fallback|terminal), next_action</code>.
+3. Persist per-stage timing (<code>stage_started_at</code> → <code>stage_completed_at</code>) into
+   a per-stage field (or a JSON column) so a stuck stage is visible in data,
+   not just logs.</p>
+<p><strong>Accept:</strong> Every log line carries a correlation id; every retry/fallback has
+a decision record with attempt + error class.</p>
+<hr />
+<h2 id="step-9-stage-aware-progress-in-the-status-payload-architecture-124-137">Step 9 — Stage-aware progress in the status payload (ARCHITECTURE §12.4, §13.7)</h2>
+<p><strong>Issue:</strong> Progress caps at 90%, doc-count only. "Structured JSON saved to DB"
+is the last log line with no "title analysis running" indicator — the UI looks
+idle/stuck.</p>
+<p><strong>Fix:</strong>
+1. Add the current stage per document to the <code>statusData</code> payload
+   (<code>backend/integrations/redis/state_store.py:483</code> <code>get_case_job</code> reads
+   <code>get_document_status</code> from MySQL — include it).
+2. Derive a stage-aware label: <code>OCR 1/2 · Structuring Sale Deed · 2/3 docs</code>.
+3. After persist, emit an explicit log: "All documents structured — running
+   title analysis".</p>
+<p><strong>Accept:</strong> UI shows a per-doc stage chip (preprocessing/ocr/merging/
+classifying/structuring/persisting/failed-with-reason) and a label instead of
+a silent 90% bar.</p>
+<hr />
+<h2 id="step-10-fix-pipeline-log-write-contention-extra-found-in-review">Step 10 — Fix pipeline-log write contention (extra, found in review)</h2>
+<p><strong>Issue:</strong> <code>append_pipeline_log</code> (called per stage, per log line) does a
+<code>SELECT … FOR UPDATE</code> on <code>cases.pipeline_logs</code>, re-reads, re-appends, and
+re-writes the full 200-line JSON <strong>per call</strong>. Under concurrent doc stages
+this serializes all workers on one row and can lose updates.</p>
+<p><strong>Evidence:</strong> <code>backend/database/repositories/verification_repo.py:16-35</code>.</p>
+<p><strong>Fix:</strong>
+1. Append to Redis <code>case:{id}:log</code> (already the fast path) and flush to MySQL
+   periodically/on completion, <strong>or</strong>
+2. Batch: replace per-line writes with one final flush of the 200-cap list, <strong>or</strong>
+3. If per-line MySQL must stay, use <code>JSON_SET</code>/<code>JSON_ARRAY_APPEND</code> instead of
+   read-modify-write under <code>FOR UPDATE</code>.</p>
+<p><strong>Accept:</strong> N concurrent stages append logs without blocking each other;
+stress test with 5 parallel docs shows no lost log lines.</p>
+<hr />
+<h2 id="step-11-remove-dead-db-columns-repo-functions-config-architecture-11-127">Step 11 — Remove dead DB columns, repo functions, config (ARCHITECTURE §11, §12.7)</h2>
+<p><strong>Verified dead (no callers in <code>backend/</code>):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Location</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cases.pipeline_status</code></td>
+<td><code>migrations.py:40</code></td>
+<td>never written</td>
+</tr>
+<tr>
+<td><code>documents.raw_ocr_path</code></td>
+<td><code>migrations.py:69</code>, <code>document_repo.py:45,68-69,94</code></td>
+<td>no stage writes it; OCR path is in <code>file_paths.ocr_chunks</code></td>
+</tr>
+<tr>
+<td><code>documents.trace_id</code> + <code>set_trace_id</code></td>
+<td><code>migrations.py:74,162</code>, <code>document_repo.py:275</code></td>
+<td>nothing calls <code>set_trace_id</code></td>
+</tr>
+<tr>
+<td><code>state_store</code> dead helpers</td>
+<td><code>add_result:323, add_error:331, remove_error_for_doc:339, increment_done_count:356, set_doc_status:407</code></td>
+<td>only defined, never called (MySQL is truth)</td>
+</tr>
+<tr>
+<td><code>PRIMARY_STRUCTURER</code></td>
+<td><code>.env</code></td>
+<td>zero references in <code>backend/</code></td>
+</tr>
+<tr>
+<td>stale docstrings</td>
+<td><code>groq_executor.py</code> "primary LLM"</td>
+<td>contradicts <code>model_router</code> (Gemini primary for SD/EC)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Fix (in this order):</strong>
+1. Delete the dead <code>state_store</code> helper functions first (pure dead code).
+2. Drop the 3 DB columns via one migration.
+3. Remove <code>raw_ocr_path</code> from <code>document_repo.py</code> (param, field-set, SELECT).
+4. Remove <code>set_trace_id</code> from <code>document_repo.py</code>.
+5. Remove <code>PRIMARY_STRUCTURER</code> from <code>.env</code>/docs.
+6. Fix the <code>groq_executor.py</code> docstring to reflect the routing reality.</p>
+<p><strong>Accept:</strong> <code>grep -rn "pipeline_status\|raw_ocr_path\|set_trace_id\|PRIMARY_STRUCTURER" backend</code> → 0 hits (after migration); app boots and a case passes end-to-end.</p>
+<hr />
+<h2 id="step-12-centralize-cost-formulas-architecture-129">Step 12 — Centralize cost formulas (ARCHITECTURE §12.9)</h2>
+<p><strong>Issue:</strong> Gemini ($0.15/$0.60 per 1M) and Groq ($0.59/$0.79) prices are
+hard-coded in 3 places and drift from billing.</p>
+<p><strong>Fix:</strong>
+1. One <code>MODEL_PRICING</code> map in <code>backend/config.py</code> (per model:
+   input/output per-1M-token price).
+2. All cost computations import from it.</p>
+<p><strong>Accept:</strong> <code>grep -rn "0.15\|0.59\|0.60\|0.79" backend</code> shows prices only in
+<code>config.py</code>.</p>
+<hr />
+<h2 id="step-13-quiet-the-context-cache-noise-architecture-128">Step 13 — Quiet the context-cache noise (ARCHITECTURE §12.8)</h2>
+<p><strong>Issue:</strong> <code>gemini_client._ensure_context_cache</code> logs
+"Cached content is too small … min_total_token_count=1024" for short static
+prompts — noisy, confusing next to real errors.</p>
+<p><strong>Fix:</strong> Log at <code>debug</code> level (or skip logging entirely) when caching
+disables for small content; keep a real error log only for actual cache
+failures.</p>
+<p><strong>Accept:</strong> A short-prompt case produces no "cache too small" lines at
+default log level.</p>
+<hr />
+<h2 id="step-14-docs-reconciliation-architecture-127">Step 14 — Docs reconciliation (ARCHITECTURE §12.7)</h2>
+<p><strong>Issue:</strong> <code>README.md</code> describes the pre-refactor structure (<code>ai/</code>,
+<code>infrastructure/</code>, <code>routers/documents.py</code>, <code>routers/verification.py</code>) that no
+longer exists.</p>
+<p><strong>Fix:</strong> Rewrite README's structure map to match the current tree (see
+ARCHITECTURE Appendix A for the accurate file map).</p>
+<p><strong>Accept:</strong> README paths all exist in the repo.</p></article>
+</main>
+<script>
+const article=document.querySelector('article');
+const toc=document.getElementById('toc');
+const headings=[...article.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter(h=>h.id||h.textContent);
+let lastLevel=0;let html='';
+headings.forEach(h=>{
+  if(!h.id){h.id=h.textContent.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');}
+  const level=parseInt(h.tagName[1]);
+  if(level>lastLevel)html+='<ul>'.repeat(level-lastLevel);
+  else if(level<lastLevel)html+='</ul>'.repeat(lastLevel-level);
+  lastLevel=level;html+=<li><a href="#"></a></li>;
+});
+html+='</ul>'.repeat(lastLevel);
+toc.innerHTML=html||'<li><span style="color:var(--muted)">No headings</span></li>';
+const links=toc.querySelectorAll('a');
+const obs=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{if(e.isIntersecting){links.forEach(l=>l.classList.toggle('active',l.getAttribute('href')==='#'+e.target.id));}});
+},{rootMargin:'-20% 0px -60% 0px',threshold:.1});
+headings.forEach(h=>obs.observe(h));
+</script>
+</body>
+</html>

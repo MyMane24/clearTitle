@@ -1,0 +1,542 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>REFACTOR_PLAN</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+<style>
+:root{--bg:#0f172a;--bg2:#0b1226;--panel:#0f172a;--text:#e5e7eb;--muted:#94a3b8;--primary:#f97316;--border:rgba(148,163,184,.25);--codebg:#0b1226}
+*{box-sizing:border-box;margin:0;padding:0;font-family:Inter,system-ui,-apple-system,sans-serif}
+body{background:radial-gradient(circle at top,rgba(249,115,22,.08),transparent 60%),var(--bg2);color:var(--text);line-height:1.8}
+header{padding:clamp(1.2rem,3vw,2rem) clamp(1rem,5vw,2.5rem);border-bottom:1px solid var(--border);background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(15,23,42,.92));position:sticky;top:0;backdrop-filter:blur(8px);z-index:10;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:1rem}
+header h1{font-family:'Plus Jakarta Sans',Inter,sans-serif;font-size:clamp(1.1rem,2.2vw,1.6rem);letter-spacing:-.01em}
+nav{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center}
+nav a{color:var(--muted);text-decoration:none;padding:.4rem .7rem;border-radius:.6rem;border:1px solid transparent;font-weight:500;transition:.15s ease}
+nav a:hover,nav a.active{color:var(--text);border-color:var(--border);background:rgba(15,23,42,.5)}
+main{display:flex;gap:clamp(1rem,3vw,2rem);padding:clamp(1rem,3vw,2rem) clamp(1rem,5vw,2.5rem);max-width:1600px;margin:0 auto}
+aside{width:min(320px,28vw);flex-shrink:0;position:sticky;top:clamp(4.5rem,8vw,5.5rem);align-self:flex-start;max-height:calc(100vh - clamp(5rem,9vw,6rem));overflow:auto;padding-right:.25rem}
+.toc{background:linear-gradient(160deg,rgba(15,23,42,.96),rgba(15,23,42,.92));border:1px solid var(--border);border-radius:.9rem;padding:clamp(1rem,2vw,1.25rem);display:flex;flex-direction:column;gap:1rem;box-shadow:0 40px 70px -40px rgba(15,23,42,.9)}
+.toc h2{font-size:.98rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.toc ul{list-style:none;display:flex;flex-direction:column;gap:.45rem}
+.toc li a{color:var(--muted);text-decoration:none;font-size:.98rem;display:block;padding:.35rem .5rem;border-radius:.5rem;transition:.15s ease}
+.toc li a:hover{color:var(--text);background:rgba(148,163,184,.12)}
+.toc li a.active{color:#fff;background:rgba(249,115,22,.22);border:1px solid rgba(249,115,22,.45)}
+article{flex:1;min-width:0;background:linear-gradient(160deg,rgba(15,23,42,.98),rgba(15,23,42,.94));border:1px solid var(--border);border-radius:1rem;padding:clamp(1.25rem,4vw,2.75rem);box-shadow:0 60px 90px -40px rgba(15,23,42,.95);overflow:auto}
+article h1,article h2,article h3,article h4,article h5,article h6{font-family:'Plus Jakarta Sans',Inter,sans-serif;line-height:1.15;margin-top:clamp(1.5rem,4vw,2.5rem);margin-bottom:clamp(.8rem,2vw,1rem);scroll-margin-top:clamp(5rem,9vw,6rem)}
+article h1:first-child{margin-top:0}
+article h1{font-size:clamp(1.8rem,4.5vw,3rem);letter-spacing:-.03em}
+article h2{font-size:clamp(1.35rem,3.2vw,2rem)}
+article h3{font-size:clamp(1.15rem,2.6vw,1.4rem)}
+article p{margin-bottom:1.1rem;color:#e2e8f0}
+article a{color:var(--primary);text-decoration:none}
+article a:hover{text-decoration:underline}
+article ul,article ol{padding-left:1.5rem;margin-bottom:1.2rem;display:flex;flex-direction:column;gap:.6rem}
+article li{color:#e2e8f0}
+article code{font-family:'JetBrains Mono',monospace;background:var(--codebg);padding:.05rem .4rem;border-radius:.4rem;border:1px solid var(--border);font-size:.96rem}
+article pre{margin:1.25rem 0;background:var(--codebg);border:1px solid var(--border);border-radius:.8rem;padding:clamp(1rem,2vw,1.25rem);overflow:auto}
+article pre code{background:transparent;border:none;padding:0;font-size:.98rem;line-height:1.9}
+article table{width:100%;border-collapse:collapse;margin:1.5rem 0;border:1px solid var(--border);border-radius:.6rem;overflow:hidden}
+article th,article td{padding:.8rem 1rem;border-bottom:1px solid var(--border);text-align:left}
+article th{background:rgba(148,163,184,.12);font-weight:600}
+article tr:nth-child(even){background:rgba(15,23,42,.4)}
+article blockquote{margin:1.25rem 0;padding:1rem 1.25rem;border-left:3px solid var(--primary);background:rgba(249,115,22,.12);border-radius:0 .6rem .6rem 0;color:#fef3c7}
+hr{border:none;border-top:1px solid var(--border);margin:2rem 0}
+@media(max-width:980px){aside{display:none}main{flex-direction:column}}
+</style>
+</head>
+<body>
+<header>
+<h1>REFACTOR_PLAN</h1>
+<nav>
+<a href="../index.html">Docs Home</a>
+<a href="./index.html" class="active">Developer Guide</a>
+<a href="../artifacts/">Artifacts</a>
+<a href="../docs-dev/">Raw Markdown</a>
+</nav>
+</header>
+<main>
+<aside>
+<div class="toc">
+<h2>On this page</h2>
+<ul id="toc"></ul>
+</div>
+</aside>
+<article><h1 id="cleartitle-pipeline-simplification-refactor-plan">clearTitle — Pipeline Simplification &amp; Refactor Plan</h1>
+<blockquote>
+<p>Status: Approved plan (v1)
+Scope: Extraction-only pipeline, Title Chain, Cross-Document Verification, User Auth
+Target: Simpler backend, leaner DB, minimal UI. No pipeline-logic regression.</p>
+</blockquote>
+<hr />
+<h2 id="0-executive-summary">0. Executive Summary</h2>
+<p>The current system is feature-heavy: it runs a 6-stage per-document extraction chain,
+then per-document verification, a RAG/statute store, human-feedback learning, a
+self-critique pass, risk scoring, and an LLM "legal opinion" report. Most of this is
+no longer wanted.</p>
+<p>After this refactor the product does exactly four things:</p>
+<ol>
+<li><strong>Data Extraction</strong> — structured JSON from each uploaded document (no per-doc verification).</li>
+<li><strong>Title Chain Establishment</strong> — LLM matches the Sale Deed property schedule to the right EC ledger entries; entries are sorted chronologically into a title chain.</li>
+<li><strong>Cross-Document Verification</strong> — LLM verifies each Sale Deed field (source of truth) against the EC (primary); field-by-field VERIFIED / NOT_VERIFIED / N/A.</li>
+<li><strong>User Authentication</strong> — Email + Password (hashed), scan history, gated full report.</li>
+</ol>
+<p>Both title-chain matching and cross-document verification are <strong>LLM-driven</strong> (single
+semantic pass each), because the hard part — comparing property schedules and verifying
+fields across Kannada/English documents — needs semantic understanding, not string
+matching. The LLM returns only structured, minimal output (matched EC entry numbers /
+field-level statuses) and deterministic code does the rest (sorting, chain construction,
+persistence). This keeps LLM usage small, focused, and easy to make correct.</p>
+<hr />
+<h2 id="1-what-is-being-removed">1. What Is Being Removed</h2>
+<h3 id="11-backend-modules-delete-entirely">1.1 Backend modules (delete entirely)</h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Files / symbols</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RAG / statute store</td>
+<td><code>backend/ai/rag/</code> (statute_rag.py, vector_store.py), <code>initialize_statute_store()</code> in <code>main.py</code>, <code>vs.search</code> usage, <code>retrieve_corrections()</code> / <code>format_few_shot_examples()</code> in <code>classifier.py</code>, <code>qdrant-client</code> dep</td>
+</tr>
+<tr>
+<td>Per-document verification</td>
+<td><code>VERIFICATION_NOTES_SCHEMA</code> + <code>verification_notes</code> in every schema in <code>ai/prompts/schemas/static.py</code>, <code>ai/prompts/verification.py</code>, "PART 2 — VERIFY" in <code>ai/prompts/extraction.py</code>, <code>verification_notes</code> handling in <code>workers/stages.py</code></td>
+</tr>
+<tr>
+<td>Human feedback module</td>
+<td><code>application/verification/feedback.py</code>, <code>store_feedback()</code>, <code>POST /api/verify/{id}/feedback</code>, <code>GET /api/verify/learnings/stats</code>, <code>human_feedback</code> table</td>
+</tr>
+<tr>
+<td>Deterministic rule-based checks</td>
+<td><code>ai/verification/deterministic/</code>, <code>ai/verification/base.py</code>, <code>ai/scoring/risk_scorer.py</code>, <code>ai/critique/self_critique.py</code>, the deterministic + legal-opinion logic in <code>ai/verification/cross_doc.py</code></td>
+</tr>
+<tr>
+<td>Observability extras</td>
+<td><code>observability/</code> (tracing/metrics/traced_stage/logging) → collapsed to <code>logger.py</code>; remove <code>traced_stage</code> decorators; drop prometheus/otel</td>
+</tr>
+<tr>
+<td>Duplicate / dead code</td>
+<td><code>backend/locking/</code> (dup of <code>infrastructure/locking/</code>), <code>backend/shared/</code>, <code>backend/utils/file_utils.py</code> (dup), <code>ai/prompts/schemas/cross_doc.py</code>, <code>analytics_repo.py</code>, <code>application/verification/reporting.py</code> + <code>runner.py</code> (replaced)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="12-database-objects-to-drop">1.2 Database objects to drop</h3>
+<ul>
+<li>Tables: <code>human_feedback</code>, <code>llm_calls</code>, <code>cross_doc_verifications</code> (replaced by <code>verification_results</code>), view <code>daily_cost_summary</code>.</li>
+<li>Columns: <code>cases.pipeline_logs</code>, <code>cases.verdict</code>, <code>cases.verification_status</code>; <code>documents.verification_notes</code>, <code>documents.raw_ocr_path</code>, <code>documents.input_tokens/output_tokens/cost_usd/latency_ms/model_used</code>, <code>documents.trace_id</code>, <code>documents.stage_started_at/stage_completed_at</code>.</li>
+</ul>
+<h3 id="13-ui-outputs-removed">1.3 UI outputs removed</h3>
+<p>The user should only ever see: <strong>Uploaded Documents (extracted details), Title Chain, Verification Results, Case History.</strong></p>
+<p>Removed from UI:
+- OCR Raw Output (History "OCR" tab)
+- Files View (History "Files" tab)
+- Processing Logs (dashboard log box + History "Logs" tab)
+- Bundles (History "Bundle" tab, API <code>bundle</code>)
+- Human Feedback Data (report "Human Review" tab, learnings counter)
+- Old report tabs: Per Document, Missing Documents, Final Report (legal opinion), risk score, findings drawer
+- Token/cost metrics on the results page
+- <code>pdfReport.ts</code> + <code>jspdf</code>/<code>jspdf-autotable</code> (old-format PDF)</p>
+<hr />
+<h2 id="2-new-end-to-end-flow">2. New End-to-End Flow</h2>
+<div class="codehilite"><pre><span></span><code><span class="n">Home</span><span class="w"> </span><span class="n">Page</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">Run</span><span class="w"> </span><span class="n">Scan</span>
+<span class="w">  </span><span class="err">→</span><span class="w"> </span><span class="n">Upload</span><span class="w"> </span><span class="n">PDFs</span><span class="w"> </span><span class="p">(</span><span class="n">anonymous</span><span class="w"> </span><span class="n">allowed</span><span class="p">)</span>
+<span class="w">  </span><span class="err">→</span><span class="w"> </span><span class="n">Pipeline</span><span class="w"> </span><span class="p">(</span><span class="n">Celery</span><span class="p">):</span>
+<span class="w">       </span><span class="n">per</span><span class="w"> </span><span class="n">doc</span><span class="p">:</span><span class="w"> </span><span class="n">preprocess</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">OCR</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">merge</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">classify</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">structure</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">persist</span>
+<span class="w">                </span><span class="p">(</span><span class="n">NO</span><span class="w"> </span><span class="n">per</span><span class="o">-</span><span class="n">doc</span><span class="w"> </span><span class="n">verification</span><span class="p">)</span>
+<span class="w">       </span><span class="n">chord</span><span class="w"> </span><span class="n">callback</span><span class="w"> </span><span class="p">(</span><span class="n">finalize</span><span class="p">):</span>
+<span class="w">          </span><span class="n">recompute</span><span class="w"> </span><span class="n">case</span><span class="w"> </span><span class="n">status</span>
+<span class="w">          </span><span class="n">build_title_chain</span><span class="p">(</span><span class="n">case_id</span><span class="p">)</span><span class="w">   </span><span class="err">←</span><span class="w"> </span><span class="n">LLM</span><span class="w"> </span><span class="n">matches</span><span class="w"> </span><span class="n">SD</span><span class="w"> </span><span class="n">schedule</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">EC</span><span class="w"> </span><span class="n">entry</span><span class="w"> </span><span class="n">numbers</span>
+<span class="w">          </span><span class="n">run_verification</span><span class="p">(</span><span class="n">case_id</span><span class="p">)</span><span class="w">    </span><span class="err">←</span><span class="w"> </span><span class="n">LLM</span><span class="p">:</span><span class="w"> </span><span class="n">SD</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">source</span><span class="w"> </span><span class="n">of</span><span class="w"> </span><span class="n">truth</span><span class="p">,</span><span class="w"> </span><span class="n">EC</span><span class="w"> </span><span class="n">primary</span>
+<span class="w">  </span><span class="err">→</span><span class="w"> </span><span class="n">Result</span><span class="w"> </span><span class="n">Generation</span>
+<span class="w">  </span><span class="err">→</span><span class="w"> </span><span class="n">Results</span><span class="w"> </span><span class="n">page</span><span class="p">:</span>
+<span class="w">       </span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="w"> </span><span class="n">Uploaded</span><span class="w"> </span><span class="n">Documents</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">Extracted</span><span class="w"> </span><span class="n">Details</span>
+<span class="w">       </span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="w"> </span><span class="n">Title</span><span class="w"> </span><span class="n">Chain</span>
+<span class="w">       </span><span class="p">[</span><span class="mi">3</span><span class="p">]</span><span class="w"> </span><span class="n">Verification</span><span class="w"> </span><span class="n">Results</span>
+<span class="w">  </span><span class="err">→</span><span class="w"> </span><span class="n">Not</span><span class="w"> </span><span class="n">logged</span><span class="w"> </span><span class="ow">in</span><span class="w">  </span><span class="p">:</span><span class="w"> </span><span class="n">gated</span><span class="w"> </span><span class="n">preview</span><span class="w"> </span><span class="p">(</span><span class="n">limited</span><span class="w"> </span><span class="n">SD</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">EC</span><span class="w"> </span><span class="n">details</span><span class="p">,</span><span class="w"> </span><span class="n">verification</span><span class="w"> </span><span class="n">status</span><span class="w"> </span><span class="n">summary</span><span class="p">)</span>
+<span class="w">  </span><span class="err">→</span><span class="w"> </span><span class="n">Sign</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">up</span><span class="w">   </span><span class="p">:</span><span class="w"> </span><span class="n">case</span><span class="w"> </span><span class="n">linked</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="n">account</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">full</span><span class="w"> </span><span class="n">report</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">case</span><span class="w"> </span><span class="n">history</span><span class="w"> </span><span class="n">unlock</span>
+</code></pre></div>
+
+<p>Title-chain + verification now run <strong>automatically</strong> on finalize. The manual "Agentic
+Verification" button is removed; the verify endpoint becomes an optional re-run.</p>
+<hr />
+<h2 id="3-new-backend-structure-45-files-23">3. New Backend Structure (~45 files → ~23)</h2>
+<div class="codehilite"><pre><span></span><code><span class="n">backend</span><span class="o">/</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">main</span><span class="o">.</span><span class="n">py</span><span class="w">                </span><span class="c1"># FastAPI app, lifespan (init DB only), routers, SPA mount</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">config</span><span class="o">.</span><span class="n">py</span><span class="w">              </span><span class="c1"># all env config (moved from app/config.py)</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">constants</span><span class="o">.</span><span class="n">py</span><span class="w">           </span><span class="c1"># statuses + doc-type constants</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">logger</span><span class="o">.</span><span class="n">py</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">celery_app</span><span class="o">.</span><span class="n">py</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">database</span><span class="o">/</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">connection</span><span class="o">.</span><span class="n">py</span><span class="w">      </span><span class="c1"># MySQL pool (unchanged)</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">migrations</span><span class="o">.</span><span class="n">py</span><span class="w">      </span><span class="c1"># new DDL (users, cases, documents, title_chains, verification_results)</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">repos</span><span class="o">.</span><span class="n">py</span><span class="w">           </span><span class="c1"># merged: cases / documents / users / title_chain / verification</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">routers</span><span class="o">/</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">__init__</span><span class="o">.</span><span class="n">py</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">auth</span><span class="o">.</span><span class="n">py</span><span class="w">            </span><span class="c1"># register / login / me / link-case</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">cases</span><span class="o">.</span><span class="n">py</span><span class="w">           </span><span class="c1"># upload / process / status / history / upload-more / delete / replace-skip</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">results</span><span class="o">.</span><span class="n">py</span><span class="w">         </span><span class="c1"># documents / preview / title-chain / verification (gated)</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">services</span><span class="o">/</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">auth</span><span class="o">.</span><span class="n">py</span><span class="w">            </span><span class="c1"># bcrypt hashing + JWT issue/verify + ownership guard</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">extract</span><span class="o">.</span><span class="n">py</span><span class="w">         </span><span class="c1"># 6-stage logic moved from workers/stages.py + pipeline/helpers.py</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">classifier</span><span class="o">.</span><span class="n">py</span><span class="w">      </span><span class="c1"># classify_document only (few-shot/RAG removed)</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">schemas</span><span class="o">.</span><span class="n">py</span><span class="w">         </span><span class="c1"># lazy schema registry (§7)</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">title_chain</span><span class="o">.</span><span class="n">py</span><span class="w">     </span><span class="c1"># LLM: SD schedule vs EC entries → matched entry numbers → chain (§5)</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">verify</span><span class="o">.</span><span class="n">py</span><span class="w">          </span><span class="c1"># LLM: field-level cross-doc verification (§6)</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">results</span><span class="o">.</span><span class="n">py</span><span class="w">         </span><span class="c1"># preview + full-result payload builders</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">integrations</span><span class="o">/</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">sarvam_ocr</span><span class="o">.</span><span class="n">py</span><span class="w">      </span><span class="c1"># OCR client + chunking + retry</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">ocr_merger</span><span class="o">.</span><span class="n">py</span><span class="w">      </span><span class="c1"># merge_chunked_outputs</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">preprocessor</span><span class="o">.</span><span class="n">py</span><span class="w">    </span><span class="c1"># preprocess_pdf</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">llm</span><span class="o">.</span><span class="n">py</span><span class="w">             </span><span class="c1"># gemini + groq executors, model_router, rate limiter (no DB writes)</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">redis_lock</span><span class="o">.</span><span class="n">py</span><span class="w">      </span><span class="c1"># RedisLock + state-store helpers (file registry, status)</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">workers</span><span class="o">/</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">stages</span><span class="o">.</span><span class="n">py</span><span class="w">          </span><span class="c1"># 6 stage classes (verification_notes removed)</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">tasks</span><span class="o">.</span><span class="n">py</span><span class="w">           </span><span class="c1"># celery task wrappers (retry/idempotency folded in)</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">finalize</span><span class="o">.</span><span class="n">py</span><span class="w">        </span><span class="c1"># recompute status → chain(title_chain_task → verify_case_task)</span>
+<span class="err">└──</span><span class="w"> </span><span class="n">__init__</span><span class="o">.</span><span class="n">py</span>
+</code></pre></div>
+
+<p>Removed folders: <code>ai/</code>, <code>application/</code>, <code>app/</code>, <code>domain/</code>, <code>infrastructure/</code>,
+<code>locking/</code>, <code>observability/</code>, <code>pipeline/</code>, <code>shared/</code>, <code>utils/</code>.</p>
+<p><strong>Kept identical (no pipeline-logic impact):</strong> 6-stage chain, model routing/fallback,
+retry/idempotency, OCR/integration clients, MySQL pool, storage helpers,
+upload/process/status endpoints, Celery/Redis infra.</p>
+<hr />
+<h2 id="4-database-redesign">4. Database Redesign</h2>
+<p>New DDL (added to <code>ensure_tables()</code>):</p>
+<div class="codehilite"><pre><span></span><code><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">users</span><span class="w"> </span><span class="p">(</span>
+<span class="w">  </span><span class="n">id</span><span class="w"> </span><span class="nb">BIGINT</span><span class="w"> </span><span class="n">UNSIGNED</span><span class="w"> </span><span class="n">AUTO_INCREMENT</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="p">,</span>
+<span class="w">  </span><span class="n">email</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">255</span><span class="p">)</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">UNIQUE</span><span class="p">,</span>
+<span class="w">  </span><span class="n">password_hash</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">255</span><span class="p">)</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">      </span><span class="c1">-- bcrypt</span>
+<span class="w">  </span><span class="n">full_name</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">128</span><span class="p">)</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="s1">''</span><span class="p">,</span>
+<span class="w">  </span><span class="n">created_at</span><span class="w"> </span><span class="k">TIMESTAMP</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="k">CURRENT_TIMESTAMP</span><span class="p">,</span>
+<span class="w">  </span><span class="n">updated_at</span><span class="w"> </span><span class="k">TIMESTAMP</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="k">CURRENT_TIMESTAMP</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">UPDATE</span><span class="w"> </span><span class="k">CURRENT_TIMESTAMP</span>
+<span class="p">);</span>
+
+<span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">cases</span><span class="w"> </span><span class="p">(</span>
+<span class="w">  </span><span class="n">id</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="p">,</span>
+<span class="w">  </span><span class="n">user_id</span><span class="w"> </span><span class="nb">BIGINT</span><span class="w"> </span><span class="n">UNSIGNED</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">             </span><span class="c1">-- NULL = anonymous pre-login scan</span>
+<span class="w">  </span><span class="n">status</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="s1">'uploaded'</span><span class="p">,</span>
+<span class="w">  </span><span class="n">total_docs</span><span class="w"> </span><span class="nb">INT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">  </span><span class="n">completed_docs</span><span class="w"> </span><span class="nb">INT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">  </span><span class="n">failed_docs</span><span class="w"> </span><span class="nb">INT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">  </span><span class="n">title_chain_status</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">    </span><span class="c1">-- pending/running/complete/skipped</span>
+<span class="w">  </span><span class="n">verification_status</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">   </span><span class="c1">-- pending/running/complete</span>
+<span class="w">  </span><span class="n">created_at</span><span class="w"> </span><span class="k">TIMESTAMP</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="k">CURRENT_TIMESTAMP</span><span class="p">,</span>
+<span class="w">  </span><span class="n">updated_at</span><span class="w"> </span><span class="k">TIMESTAMP</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="k">CURRENT_TIMESTAMP</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">UPDATE</span><span class="w"> </span><span class="k">CURRENT_TIMESTAMP</span><span class="p">,</span>
+<span class="w">  </span><span class="k">KEY</span><span class="w"> </span><span class="n">idx_user</span><span class="w"> </span><span class="p">(</span><span class="n">user_id</span><span class="p">),</span>
+<span class="w">  </span><span class="k">CONSTRAINT</span><span class="w"> </span><span class="n">fk_cases_user</span><span class="w"> </span><span class="k">FOREIGN</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="p">(</span><span class="n">user_id</span><span class="p">)</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">users</span><span class="p">(</span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">DELETE</span><span class="w"> </span><span class="k">SET</span><span class="w"> </span><span class="k">NULL</span>
+<span class="p">);</span>
+
+<span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">documents</span><span class="w"> </span><span class="p">(</span><span class="w">    </span><span class="c1">-- Uploaded Documents + Extracted Structured JSON</span>
+<span class="w">  </span><span class="n">id</span><span class="w"> </span><span class="nb">BIGINT</span><span class="w"> </span><span class="n">UNSIGNED</span><span class="w"> </span><span class="n">AUTO_INCREMENT</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="p">,</span>
+<span class="w">  </span><span class="n">case_id</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">doc_id</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">doc_index</span><span class="w"> </span><span class="nb">INT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">  </span><span class="n">filename</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">512</span><span class="p">)</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">document_type</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">128</span><span class="p">)</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="s1">''</span><span class="p">,</span>
+<span class="w">  </span><span class="n">page_count</span><span class="w"> </span><span class="nb">INT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">  </span><span class="n">status</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="s1">'uploaded'</span><span class="p">,</span>
+<span class="w">  </span><span class="n">structured_data</span><span class="w"> </span><span class="n">JSON</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">                </span><span class="c1">-- ← the core extraction output</span>
+<span class="w">  </span><span class="n">file_paths</span><span class="w"> </span><span class="n">JSON</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">                     </span><span class="c1">-- raw PDF path (re-processing only)</span>
+<span class="w">  </span><span class="n">error</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">created_at</span><span class="w"> </span><span class="k">TIMESTAMP</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="k">CURRENT_TIMESTAMP</span><span class="p">,</span>
+<span class="w">  </span><span class="n">updated_at</span><span class="w"> </span><span class="k">TIMESTAMP</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="k">CURRENT_TIMESTAMP</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">UPDATE</span><span class="w"> </span><span class="k">CURRENT_TIMESTAMP</span><span class="p">,</span>
+<span class="w">  </span><span class="k">UNIQUE</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">uq_case_doc</span><span class="w"> </span><span class="p">(</span><span class="n">case_id</span><span class="p">,</span><span class="w"> </span><span class="n">doc_id</span><span class="p">)</span>
+<span class="p">);</span>
+
+<span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">title_chains</span><span class="w"> </span><span class="p">(</span>
+<span class="w">  </span><span class="n">id</span><span class="w"> </span><span class="nb">BIGINT</span><span class="w"> </span><span class="n">UNSIGNED</span><span class="w"> </span><span class="n">AUTO_INCREMENT</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="p">,</span>
+<span class="w">  </span><span class="n">case_id</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">sale_deed_doc_id</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">ec_doc_id</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">source_schedule</span><span class="w"> </span><span class="n">JSON</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">                </span><span class="c1">-- SD property schedule used for matching</span>
+<span class="w">  </span><span class="n">matched_transactions</span><span class="w"> </span><span class="n">JSON</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">           </span><span class="c1">-- EC entries matched by LLM, chronologically sorted</span>
+<span class="w">  </span><span class="n">created_at</span><span class="w"> </span><span class="k">TIMESTAMP</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="k">CURRENT_TIMESTAMP</span><span class="p">,</span>
+<span class="w">  </span><span class="k">UNIQUE</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">uq_case</span><span class="w"> </span><span class="p">(</span><span class="n">case_id</span><span class="p">)</span>
+<span class="p">);</span>
+
+<span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">verification_results</span><span class="w"> </span><span class="p">(</span>
+<span class="w">  </span><span class="n">id</span><span class="w"> </span><span class="nb">BIGINT</span><span class="w"> </span><span class="n">UNSIGNED</span><span class="w"> </span><span class="n">AUTO_INCREMENT</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="p">,</span>
+<span class="w">  </span><span class="n">case_id</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">source_doc_id</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">           </span><span class="c1">-- Sale Deed doc</span>
+<span class="w">  </span><span class="n">fields</span><span class="w"> </span><span class="n">JSON</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">     </span><span class="c1">-- [{field,status,sd_value,primary_evidence,supporting_evidence[]}]</span>
+<span class="w">  </span><span class="n">summary</span><span class="w"> </span><span class="n">JSON</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">    </span><span class="c1">-- {verified_count, not_verified_count, na_count, overall}</span>
+<span class="w">  </span><span class="n">created_at</span><span class="w"> </span><span class="k">TIMESTAMP</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="k">CURRENT_TIMESTAMP</span><span class="p">,</span>
+<span class="w">  </span><span class="n">updated_at</span><span class="w"> </span><span class="k">TIMESTAMP</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="k">CURRENT_TIMESTAMP</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">UPDATE</span><span class="w"> </span><span class="k">CURRENT_TIMESTAMP</span><span class="p">,</span>
+<span class="w">  </span><span class="k">UNIQUE</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">uq_case</span><span class="w"> </span><span class="p">(</span><span class="n">case_id</span><span class="p">)</span>
+<span class="p">);</span>
+</code></pre></div>
+
+<p>Data mapping: <code>documents.structured_data</code> already holds the JSON; old
+<code>cross_doc_verifications.findings</code> → structured <code>verification_results.fields</code>.</p>
+<hr />
+<h2 id="5-title-chain-establishment-servicestitle_chainpy">5. Title Chain Establishment (<code>services/title_chain.py</code>)</h2>
+<p><strong>LLM does the semantic matching; deterministic code does sorting + chain construction.</strong></p>
+<ol>
+<li>Load structured docs (<code>documents</code> where <code>status='structured'</code>).</li>
+<li>Find <strong>Sale Deed</strong> and <strong>EC</strong>. If either is missing → <code>title_chain_status='skipped'</code>
+   with a neutral reason ("Sale Deed required" / "EC required"); no error noise in UI.</li>
+<li><strong>Inputs built from structured JSON (no raw OCR):</strong></li>
+<li><strong>SD property schedule</strong> (from Sale Deed <code>structured_data</code>): survey number,
+     CTS number, plot/site/apartment number, extent/measurements, village/hobli/taluk/
+     district, boundaries (N/E/W/S), full schedule description.</li>
+<li><strong>EC ledger entries</strong> (from EC <code>structured_data.historical_ledger</code>): each entry is
+     flattened into a compact record carrying its <strong>entry number (<code>transaction_index</code>)</strong>,
+     <code>transaction_type</code>, <code>execution_date</code>, <code>registration_reference</code>, and its
+     <code>property_details</code> (survey/CTS/plot numbers, description, measurements, boundaries,
+     location).</li>
+<li><strong>LLM call — entry selection:</strong></li>
+<li>Prompt: <em>"Here is the correct property schedule from the Sale Deed. Here are all EC
+     ledger entries with their entry numbers and property details. Semantically compare
+     each entry's property details against the Sale Deed property schedule."</em></li>
+<li>Rules given to the LLM: subdivision/Paiki/Hissa/CTS relationships are <strong>not</strong>
+     automatically mismatches; allow Kannada↔English transliteration and spelling/
+     formatting variation; treat missing data as unknown, not as a conflict.</li>
+<li>LLM returns <strong>ONLY the entry numbers</strong> whose property matches the Sale Deed
+     schedule (JSON array, e.g. <code>{"matched_entry_numbers": [3, 7, 12]}</code>). No prose.</li>
+<li><strong>Deterministic chain construction (code):</strong></li>
+<li>Take the matched entry numbers → pull the full records from the EC <code>historical_ledger</code>.</li>
+<li>Sort them <strong>chronologically</strong> by <code>execution_date</code> / registration date.</li>
+<li>Build the chain records from those entries (transaction type, parties, consideration,
+     registration reference) with the Sale Deed appended as the terminal node.</li>
+<li>Persist to <code>title_chains</code> (<code>matched_transactions</code> = sorted matched ledger entries);
+   return a timeline for the UI.</li>
+</ol>
+<p>Why this design: the LLM solves the only hard part (semantic identity across
+transliteration/subdivision variation) with a tiny structured output, and the code keeps
+sorting/construction deterministic and correct.</p>
+<hr />
+<h2 id="6-cross-document-verification-servicesverifypy">6. Cross-Document Verification (<code>services/verify.py</code>)</h2>
+<p><strong>Sale Deed = source of truth. EC = primary verification document. LLM does the
+verification reasoning; code shapes + persists the result.</strong></p>
+<ol>
+<li>Load structured docs; identify the Sale Deed and every other uploaded doc.</li>
+<li><strong>Inputs built from structured JSON:</strong> compact field projection per doc (Sale Deed
+   fields, EC ledger + search criteria, and the matching fields from RTC / Mutation /
+   PRC / Conversion / Allotment when present).</li>
+<li><strong>LLM call — field verification:</strong></li>
+<li>Prompt: <em>"Sale Deed is the source of truth. Compare each Sale Deed field against the
+     EC (primary). If a supporting document also matches, list it as supporting evidence."</em></li>
+<li>Rules given to the LLM (exact spec):<ul>
+<li>SD field matches EC → <strong>VERIFIED</strong> (primary evidence = EC).</li>
+<li>EC available and contradicts SD → <strong>NOT_VERIFIED</strong> (only then is it a failure).</li>
+<li>EC missing / field not present in SD → <strong>N/A</strong> (neutral, no failure).</li>
+<li>A supporting doc that matches → <code>supporting_evidence</code>. A supporting doc that does
+   <strong>not</strong> match → ignore (no failure, no warning).</li>
+<li>Missing values in secondary documents → no warnings.</li>
+<li>Tolerate name prefixes (Shri./Smt./M.), Kannada↔English transliteration, and
+   formatting variations; a subdivision/Paiki relationship is not a mismatch.</li>
+</ul>
+</li>
+<li>LLM returns ONLY a JSON array of field results (no prose):
+     <code>json
+     [
+       {"field":"seller_name","status":"VERIFIED","sd_value":"...","primary_evidence":"EC","supporting_evidence":["RTC_PAHANI"]},
+       {"field":"survey_number","status":"NOT_VERIFIED","sd_value":"663/1","ec_value":"663/2"},
+       {"field":"extent","status":"N/A","reason":"EC does not record extent"}
+     ]</code></li>
+<li><strong>Deterministic code</strong> validates the statuses, computes the summary
+   (<code>{verified_count, not_verified_count, na_count, overall}</code>), and persists to
+   <code>verification_results.fields</code> + <code>summary</code>.</li>
+</ol>
+<p>Field table (each field is projected into the LLM prompt per doc type):</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Sale Deed (source)</th>
+<th>EC (primary)</th>
+<th>Supporting docs (evidence only, no failure)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Seller Name</td>
+<td><code>parties.vendors[].entity_name</code></td>
+<td>ledger <code>parties.vendors</code></td>
+<td>RTC owners_col9, Mutation</td>
+</tr>
+<tr>
+<td>Buyer Name</td>
+<td><code>parties.purchasers[].entity_name</code></td>
+<td>ledger <code>parties.purchasers</code></td>
+<td>RTC owners_col9, Mutation</td>
+</tr>
+<tr>
+<td>Property Schedule</td>
+<td><code>property_schedule</code></td>
+<td>ledger <code>property_details</code></td>
+<td>PRC, RTC land_details</td>
+</tr>
+<tr>
+<td>Survey Number</td>
+<td><code>property_schedule.survey_number</code></td>
+<td>ledger <code>survey_no</code></td>
+<td>RTC, Mutation, Conversion, Building License</td>
+</tr>
+<tr>
+<td>Site Number</td>
+<td>apartment/shop/plot no</td>
+<td>ledger <code>plot_no</code></td>
+<td>Allotment, RERA, PRC</td>
+</tr>
+<tr>
+<td>Extent / Area</td>
+<td><code>measurements.*</code></td>
+<td>ledger <code>measurements</code></td>
+<td>RTC extent_details, Conversion</td>
+</tr>
+<tr>
+<td>Village / Hobli / Taluk / District</td>
+<td><code>property_schedule.village</code> + schedule text</td>
+<td><code>search_criteria.target_*</code></td>
+<td>RTC <code>land_details</code>, Mutation</td>
+</tr>
+<tr>
+<td>Registration Details</td>
+<td><code>file_metadata.registration_number/date/office</code></td>
+<td>ledger <code>registration_reference</code> + search period</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="7-schema-loading-optimization-servicesschemaspy">7. Schema Loading Optimization (<code>services/schemas.py</code>)</h2>
+<p>Since title-chain and verification now <strong>use the LLM</strong>, only the schemas/fields for the
+actually-uploaded document types must be loaded — never the full set.</p>
+<ul>
+<li>Static per-type schema dicts live in one place (moved from <code>ai/prompts/schemas/static.py</code>),
+  with <code>verification_notes</code> blocks <strong>stripped</strong> → smaller schemas → fewer output tokens.</li>
+<li>Expose <strong>lazy loaders</strong>: <code>load_schema(doc_type)</code> (used per-document during structuring)
+  and <code>load_schemas_for(doc_types)</code>.</li>
+<li>Detect uploaded types once from <code>documents.document_type</code>
+  (<code>detect_doc_types(case_id)</code>), then load <strong>only</strong> those schemas.</li>
+<li>Title-chain and verification prompts are built from <strong>compact field projections</strong> of the
+  uploaded docs only (never the full schema set, never every supported doc type).</li>
+<li>Extraction prompts embed only the single schema for the document being structured
+  (already the case today; keep + formalize).</li>
+</ul>
+<hr />
+<h2 id="8-user-authentication-servicesauthpy-routersauthpy">8. User Authentication (<code>services/auth.py</code>, <code>routers/auth.py</code>)</h2>
+<ul>
+<li>New deps: <code>bcrypt</code>, <code>PyJWT</code> (two additions to <code>requirements.txt</code>).</li>
+<li><code>POST /api/auth/register</code> <code>{email, password, full_name}</code> → creates user (bcrypt hash),
+  returns <code>{token, user}</code>.</li>
+<li><code>POST /api/auth/login</code> → verifies, returns JWT (exp ~7d).</li>
+<li><code>GET /api/auth/me</code> → current user.</li>
+<li><code>POST /api/case/{case_id}/link</code> → attaches an anonymous case to the logged-in user
+  (only if <code>case.user_id IS NULL</code>); full report unlocks.</li>
+<li>Ownership guard on all full-result endpoints: <code>case.user_id == current_user.id</code> else 403.</li>
+<li>Frontend stores token in <code>localStorage</code>; <code>AuthContext</code> provides login/register/logout/me.</li>
+</ul>
+<hr />
+<h2 id="9-result-display-frontend">9. Result Display (Frontend)</h2>
+<p>New dashboard results page = <strong>exactly 3 sections, in this order</strong> (user-confirmed):</p>
+<ol>
+<li><strong>Section 1 — Uploaded Documents &amp; Extracted Details</strong></li>
+<li>Card per uploaded doc: filename, doc type badge, page count.</li>
+<li>Extracted details table (doc-type-aware): parties, property schedule, survey/CTS
+     numbers, area, registration details, dates — rendered from <code>structured_data</code> via the
+     per-type schema key order.</li>
+<li>
+<p><em>Pre-login:</em> only selected Sale Deed + EC cards (limited fields).</p>
+</li>
+<li>
+<p><strong>Section 2 — Title Chain</strong></p>
+</li>
+<li>Chronological timeline of the EC entries the LLM matched to the Sale Deed schedule:
+     entry number, date, transaction type (Sale/Gift/Partition/Mortgage/Release…),
+     parties, consideration, registration reference.</li>
+<li>
+<p>Sale Deed is highlighted as the terminal node.</p>
+</li>
+<li>
+<p><strong>Section 3 — Verification Results</strong></p>
+</li>
+<li>Field-by-field status table: <code>Seller Name ✅ Verified</code>, <code>Buyer Name ✅ Verified</code>,
+     <code>Property Schedule ✅ Verified</code>, <code>Survey Number ✅ Verified</code>, <code>Extent ✅ Verified</code>,
+     <code>Registration Details ✅ Verified</code> (or <code>⚠ Not Verified</code> / <code>N/A (EC required)</code>).</li>
+<li>Supporting-evidence chips per verified field.</li>
+<li>
+<p><em>Pre-login:</em> only a status summary (e.g., <code>9/11 fields verified</code>); the full table is
+     locked behind login with a CTA.</p>
+</li>
+<li>
+<p><strong>Case History:</strong> sidebar lists the user's cases (or session cases when anonymous);
+  clicking opens the same 3-section view. Upload-more-PDFs is kept.</p>
+</li>
+</ol>
+<p>Frontend file changes:
+- New: <code>auth/AuthContext.tsx</code>, <code>auth/AuthPage.tsx</code>, <code>dashboard/ResultsView.tsx</code>,
+  <code>TitleChainView.tsx</code>, <code>VerificationResultsView.tsx</code>, <code>DocExtractView.tsx</code>.
+- Delete: <code>VerificationReportView.tsx</code>, <code>pdfReport.ts</code> (+ jspdf deps) unless a simple
+  3-section PDF export is requested.
+- Slim: <code>VerificationDashboard.tsx</code> (remove log box, token/cost metrics, needs-action
+  flow, verify button), <code>HistoryDetail.tsx</code> (remove bundle/ocr/files/logs tabs),
+  <code>api/backend.ts</code> (remove <code>ocrRaw</code>, <code>bundle</code>, <code>caseFiles</code>, <code>verifyPerDoc</code>,
+  <code>submitFeedback</code>, <code>getLearningStats</code>, <code>tokenUsage</code>; add auth + <code>documents</code>, <code>preview</code>,
+  <code>titleChain</code>, <code>verification</code>, <code>link</code> calls).</p>
+<hr />
+<h2 id="10-phased-execution-order">10. Phased Execution Order</h2>
+<ol>
+<li><strong>Remove features</strong> — delete RAG, critique, scoring, deterministic checks, feedback,
+   verification_notes (schemas + prompts + stages + executor contracts), old verification
+   router endpoints, observability extras, duplicate folders; drop <code>qdrant-client</code>.</li>
+<li><strong>Database redesign</strong> — new migrations (users, cases.user_id, title_chains,
+   verification_results; drop obsolete tables/columns); update <code>repos.py</code>.</li>
+<li><strong>Backend restructure</strong> — move code into <code>database/</code>, <code>services/</code>, <code>integrations/</code>
+   layout; fix imports; keep pipeline logic identical; update <code>finalize.py</code> to chain
+   title-chain → verification.</li>
+<li><strong>Auth service + endpoints + frontend auth.</strong></li>
+<li><strong>Title chain (LLM) builder + endpoint + UI section.</strong></li>
+<li><strong>Cross-doc verification (LLM) engine + endpoint + UI section.</strong></li>
+<li><strong>Schema lazy loading</strong> + extraction output trimmed (no verification_notes).</li>
+<li><strong>Frontend rewrite</strong> — 3-section results, gating, slimmed history.</li>
+<li><strong>Cleanup + verify</strong> — <code>ruff check backend</code> + <code>npm run lint</code> (<code>tsc --noEmit</code>);
+   manual smoke: upload Sale Deed + EC → extraction → title chain → verification → login link.</li>
+</ol>
+<hr />
+<h2 id="11-open-points-defaults-assumed-flag-if-different">11. Open Points (defaults assumed — flag if different)</h2>
+<ul>
+<li>Title-chain and verification use <strong>two separate focused LLM calls</strong> (entry selection /
+  field verification), each with small structured output. Deterministic code only sorts,
+  validates, and persists. No LLM call runs per-field or per-entry.</li>
+<li>LLM prompts must be validated against real docs (Kannada/transliteration/subdivision
+  cases) before rollout — same model routing/fallback/rate-limiter as extraction.</li>
+<li>New Python deps added: <code>bcrypt</code>, <code>PyJWT</code>.</li>
+<li><code>observability/</code> (OpenTelemetry + Prometheus) is dropped to a single <code>logger.py</code>.
+  If <code>/metrics</code> is needed for ops, a thin Prometheus module can be kept.</li>
+</ul></article>
+</main>
+<script>
+const article=document.querySelector('article');
+const toc=document.getElementById('toc');
+const headings=[...article.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter(h=>h.id||h.textContent);
+let lastLevel=0;let html='';
+headings.forEach(h=>{
+  if(!h.id){h.id=h.textContent.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');}
+  const level=parseInt(h.tagName[1]);
+  if(level>lastLevel)html+='<ul>'.repeat(level-lastLevel);
+  else if(level<lastLevel)html+='</ul>'.repeat(lastLevel-level);
+  lastLevel=level;html+=<li><a href="#"></a></li>;
+});
+html+='</ul>'.repeat(lastLevel);
+toc.innerHTML=html||'<li><span style="color:var(--muted)">No headings</span></li>';
+const links=toc.querySelectorAll('a');
+const obs=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{if(e.isIntersecting){links.forEach(l=>l.classList.toggle('active',l.getAttribute('href')==='#'+e.target.id));}});
+},{rootMargin:'-20% 0px -60% 0px',threshold:.1});
+headings.forEach(h=>obs.observe(h));
+</script>
+</body>
+</html>
