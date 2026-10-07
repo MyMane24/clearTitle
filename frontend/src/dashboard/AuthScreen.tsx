@@ -7,6 +7,7 @@ import { API, setToken, AuthResponse } from '../api/backend';
 
 interface Props {
   onAuthed: (auth: AuthResponse) => void;
+  initialError?: string;
 }
 
 function GoogleIcon() {
@@ -20,13 +21,13 @@ function GoogleIcon() {
   );
 }
 
-export function AuthScreen({ onAuthed }: Props) {
+export function AuthScreen({ onAuthed, initialError = '' }: Props) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [showPw, setShowPw] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
@@ -61,7 +62,7 @@ export function AuthScreen({ onAuthed }: Props) {
   };
 
   const googleLogin = () => {
-    setError('Google Sign-In is not available yet. Please sign in with your email instead.');
+    window.location.href = '/auth/google/login';
   };
 
   return (

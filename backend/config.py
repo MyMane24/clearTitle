@@ -66,6 +66,12 @@ JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "cleartitle-secret-key-production-c
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "10080"))
 
+# ── Google OAuth ───────────────────────────────────────────────────────────────
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
+GOOGLE_FRONTEND_REDIRECT_URI = os.getenv("GOOGLE_FRONTEND_REDIRECT_URI", "http://localhost:8000/login")
+
 # ── API / app ──────────────────────────────────────────────────────────────────
 CORS_ORIGINS = os.getenv(
     "CORS_ORIGINS",

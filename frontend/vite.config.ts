@@ -25,6 +25,10 @@ export default defineConfig(() => {
           target: process.env.FASTAPI_URL || 'http://localhost:8000',
           changeOrigin: true,
         },
+        '/auth': {
+          target: process.env.FASTAPI_URL || 'http://localhost:8000',
+          changeOrigin: true,
+        },
         '/health': {
           target: process.env.FASTAPI_URL || 'http://localhost:8000',
           changeOrigin: true,

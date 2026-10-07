@@ -55,6 +55,9 @@ app.add_middleware(
 app.include_router(auth_router.router, prefix="/api")
 app.include_router(cases_router.router, prefix="/api")
 app.include_router(results_router.router, prefix="/api")
+# Google OAuth lives at the site root so its callback matches the redirect URI
+# registered with Google (http://localhost:8000/auth/google/callback).
+app.include_router(auth_router.google_router)
 
 
 @app.get("/health")
