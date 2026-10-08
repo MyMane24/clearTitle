@@ -3,6 +3,7 @@ import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
 import { PricingPage } from './pages/PricingPage';
 import { HowItWorksPage } from './pages/HowItWorksPage';
+import { OcrViewerPage } from './pages/OcrViewerPage';
 import { VerificationDashboard } from './dashboard/VerificationDashboard';
 
 export default function App() {
@@ -13,6 +14,8 @@ export default function App() {
       <Route path="/pricing" element={<PricingPage />} />
       <Route path="/how-it-works" element={<HowItWorksPage />} />
       <Route path="/app" element={<VerificationDashboard />} />
+      <Route path="/ocr" element={<OcrViewerPage />} />
+      <Route path="/ocr/:caseId" element={<OcrViewerPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

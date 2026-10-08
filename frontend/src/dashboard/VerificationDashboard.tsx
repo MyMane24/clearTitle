@@ -12,7 +12,7 @@ import {
   ChevronDown, ChevronUp, FileText, FileUp,
   GitMerge, Lock, LogIn, LogOut, MapPin, Menu, MinusCircle,
   Play, Plus, RefreshCw, ShieldCheck, Sparkles, Download,
-  Trash2, Upload, Users, X, XCircle,
+  Trash2, Upload, Users, X, XCircle, ScrollText,
 } from 'lucide-react';
 
 type View = 'upload' | 'processing' | 'results';
@@ -1535,10 +1535,16 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
 
         <div className="ct-actions">
           {auth && (
-            <button className="ct-btn-new-case" onClick={backToUpload} title="Start a new case">
-              <Plus size={16} />
-              <span>New Case</span>
-            </button>
+            <>
+              <button className="ct-btn-new-case" onClick={() => navigate('/ocr')} title="View raw OCR text for a case">
+                <ScrollText size={16} />
+                <span>OCR Text</span>
+              </button>
+              <button className="ct-btn-new-case" onClick={backToUpload} title="Start a new case">
+                <Plus size={16} />
+                <span>New Case</span>
+              </button>
+            </>
           )}
           {auth ? (
             <div className="ct-profile-wrap" ref={profileMenuRef}>

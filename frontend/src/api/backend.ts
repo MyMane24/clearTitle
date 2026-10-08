@@ -70,6 +70,22 @@ export interface CasesResponse {
   total: number;
 }
 
+export interface OcrDocText {
+  doc_id: string;
+  doc_index: number | null;
+  filename: string | null;
+  document_type: string | null;
+  status: string | null;
+  total_pages: number | null;
+  full_text: string;
+  available: boolean;
+}
+
+export interface OcrTextResponse {
+  case_id: string;
+  documents: OcrDocText[];
+}
+
 export interface TitleChainEntry {
   transaction_index?: number | null;
   execution_date?: string | null;
@@ -254,6 +270,10 @@ export const API = {
 
   async getResults(caseId: string): Promise<CaseResults> {
     return request<CaseResults>(`/api/results/${caseId}`);
+  },
+
+  async getOcr(caseId: string): Promise<OcrTextResponse> {
+    return request<OcrTextResponse>(`/api/results/${caseId}/ocr`);
   },
 
   async analyze(caseId: string): Promise<{ case_id: string; status: string }> {
