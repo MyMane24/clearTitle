@@ -5,8 +5,11 @@ Tables:
   users                 — auth accounts
   cases                 — pipeline cases (user-scoped)
   documents             — per-doc extraction state (no per-doc verification)
-  title_chains          — LLM-built title chain for a case
-  verification_results  — LLM field-verification results for a case
+  title_chains          — LLM-built title chain for a case (legacy)
+  verification_results  — LLM field-verification results for a case (legacy)
+  case_memory           — ClearTitle agent resume state (current task + pending work)
+  findings              — per-transaction agent findings + evidence
+  reports               — generated agent report versions
 
 Obsolete tables (cross_doc_verifications, human_feedback, llm_calls and the
 daily_cost_summary view) are dropped best-effort so an existing DB upgrades
@@ -62,6 +65,7 @@ CREATE TABLE IF NOT EXISTS documents (
     page_count INT NOT NULL DEFAULT 0,
     status VARCHAR(32) NOT NULL DEFAULT 'uploaded',
     structured_data JSON NULL,
+    merged_ocr_text LONGTEXT NULL,
     file_paths JSON NULL,
     input_tokens INT NOT NULL DEFAULT 0,
     output_tokens INT NOT NULL DEFAULT 0,
@@ -106,6 +110,52 @@ CREATE TABLE IF NOT EXISTS verification_results (
     PRIMARY KEY (id),
     UNIQUE KEY uq_case_id (case_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS case_memory (
+    case_id VARCHAR(32) NOT NULL,
+    memory JSON NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (case_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS findings (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    case_id VARCHAR(32) NOT NULL,
+    tx_id VARCHAR(64) DEFAULT NULL,
+    tx_index INT NOT NULL DEFAULT 0,
+    status VARCHAR(32) DEFAULT NULL,
+    finding TEXT NULL,
+    payload JSON NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_findings_case (case_id),
+    KEY idx_findings_tx (case_id, tx_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS agent_todos (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    case_id VARCHAR(32) NOT NULL,
+    tx_id VARCHAR(64) NOT NULL,
+    tx_index INT NOT NULL DEFAULT 0,
+    description TEXT NULL,
+    state VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+    required_evidence JSON NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_todo_case_tx (case_id, tx_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS reports (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    case_id VARCHAR(32) NOT NULL,
+    result JSON NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_case_id (case_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 """
 
 
@@ -144,6 +194,16 @@ def ensure_tables():
         for col_def in [
             ("cases", "user_id", "ALTER TABLE cases ADD COLUMN user_id VARCHAR(32) NULL DEFAULT NULL AFTER id"),
             ("documents", "expected_type", "ALTER TABLE documents ADD COLUMN expected_type VARCHAR(32) NULL DEFAULT NULL"),
+            ("documents", "merged_ocr_text", "ALTER TABLE documents ADD COLUMN merged_ocr_text LONGTEXT NULL AFTER structured_data"),
+            # ClearTitle single-agent workflow: one navigation summary per document,
+            # plus case-scoped agent status / memory / result (memory and result are
+            # deliberately separate columns — memory is for resuming, result is the
+            # final deliverable).
+            ("documents", "summary", "ALTER TABLE documents ADD COLUMN summary TEXT NULL"),
+            ("cases", "agent_status", "ALTER TABLE cases ADD COLUMN agent_status VARCHAR(32) NULL DEFAULT NULL"),
+            ("cases", "agent_memory", "ALTER TABLE cases ADD COLUMN agent_memory JSON NULL"),
+            ("cases", "agent_result", "ALTER TABLE cases ADD COLUMN agent_result JSON NULL"),
+            ("findings", "tx_id", "ALTER TABLE findings ADD COLUMN tx_id VARCHAR(64) NULL DEFAULT NULL"),
         ]:
             _, _, sql = col_def
             try:

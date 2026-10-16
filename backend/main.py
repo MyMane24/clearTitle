@@ -20,8 +20,7 @@ from backend.routers import results as results_router
 logger = get_logger(__name__)
 
 # ── Ensure required directories exist ─────────────────────────────────────────
-for d in ["uploads", "outputs/structured", "outputs/raw_ocr"]:
-    Path(d).mkdir(parents=True, exist_ok=True)
+Path("uploads").mkdir(parents=True, exist_ok=True)
 
 # ── Lifespan (replaces deprecated @app.on_event) ─────────────────────────────
 @asynccontextmanager

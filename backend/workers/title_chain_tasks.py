@@ -1,4 +1,9 @@
-"""Case-level analysis tasks: title-chain build + verification (chained after finalize)."""
+"""Case-level analysis task: the ClearTitle verification agent.
+
+The agent *is* the verification — it replaces the old separate title-chain build
+and verification LLM passes. It is idempotent and resumable: re-running it
+resumes from `case_memory` instead of rebuilding.
+"""
 
 from __future__ import annotations
 
@@ -10,76 +15,23 @@ logger = get_logger(__name__)
 
 @celery_app.task(ignore_result=True)
 def run_case_analysis_task(case_id: str):
-    """Title chain + verification as ONE orchestrator, always both.
-
-    The old pattern chained verify behind build via Celery `link`, which only
-    fires when the parent SUCCEEDS — so a title-chain failure silently killed
-    verification and vice versa. Each phase here logs its own outcome and runs
-    regardless of the other; both services already persist an 'error' row
-    (rather than raising) when the LLM call fails.
-    """
+    """Run or resume the ClearTitle verification agent for a case."""
     from backend.integrations.redis.state_store import append_log
-    from backend.services.title_chain import build_title_chain
-    from backend.services.verify import verify_case
+    from backend.services.cleartitle_agent import run_agent
 
-    logger.info("Running title chain + verification for case %s", case_id)
-
+    logger.info("Running ClearTitle agent for case %s", case_id)
     try:
-        tc = build_title_chain(case_id)
-        tc_status = tc.get("status")
-        if tc_status == "complete":
-            append_log(case_id, f"── Title chain built: {len(tc.get('chain', []))} entry(s) ──")
-        elif tc_status == "no_transactions":
-            append_log(case_id, "⚠ No transactions exist for this property in EC — please upload a valid EC.")
-        else:
-            append_log(case_id, f"── Title chain: {tc_status} ──")
-    except Exception as e:
-        logger.error("Title chain build failed for case %s: %s", case_id, e)
-        append_log(case_id, f"✗ Title chain build failed: {e}")
-
-    try:
-        vf = verify_case(case_id)
-        append_log(case_id, f"── Verification complete: {vf.get('verdict', 'N/A')} ──")
-    except Exception as e:
-        logger.error("Verification failed for case %s: %s", case_id, e)
+        outcome = run_agent(case_id)
+    except Exception as e:  # noqa: BLE001 - record failure, don't crash the worker
+        logger.error("ClearTitle agent failed for case %s: %s", case_id, e)
         append_log(case_id, f"✗ Verification failed: {e}")
+        return {"case_id": case_id, "status": "error", "error": str(e)}
 
-    return {"case_id": case_id}
-
-
-@celery_app.task(ignore_result=True)
-def run_verification_only_task(case_id: str):
-    """Re-run only the verification pass (independent LLM call)."""
-    from backend.integrations.redis.state_store import append_log
-    from backend.services.verify import verify_case
-
-    logger.info("Re-running verification only for case %s", case_id)
-    try:
-        vf = verify_case(case_id)
-        append_log(case_id, f"── Re-verification complete: {vf.get('verdict', 'N/A')} ──")
-    except Exception as e:
-        logger.error("Verification failed for case %s: %s", case_id, e)
-        append_log(case_id, f"✗ Verification failed: {e}")
-    return {"case_id": case_id}
-
-
-@celery_app.task(ignore_result=True)
-def run_title_chain_only_task(case_id: str):
-    """Re-run only the title-chain build (independent LLM call)."""
-    from backend.integrations.redis.state_store import append_log
-    from backend.services.title_chain import build_title_chain
-
-    logger.info("Re-running title chain only for case %s", case_id)
-    try:
-        tc = build_title_chain(case_id)
-        tc_status = tc.get("status")
-        if tc_status == "complete":
-            append_log(case_id, f"── Title chain rebuilt: {len(tc.get('chain', []))} entry(s) ──")
-        elif tc_status == "no_transactions":
-            append_log(case_id, "⚠ No transactions exist for this property in EC — please upload a valid EC.")
-        else:
-            append_log(case_id, f"── Title chain: {tc_status} ──")
-    except Exception as e:
-        logger.error("Title chain build failed for case %s: %s", case_id, e)
-        append_log(case_id, f"✗ Title chain build failed: {e}")
-    return {"case_id": case_id}
+    status = outcome.get("status")
+    if status == "done":
+        append_log(case_id, f"── Verification complete: {outcome.get('overall_status', 'N/A')} ──")
+    elif status == "paused":
+        append_log(case_id, "⚠ Verification paused — a document is required to continue.")
+    elif status == "error":
+        append_log(case_id, f"✗ Verification failed: {outcome.get('error') or outcome.get('reason') or 'unknown error'}")
+    return outcome

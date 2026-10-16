@@ -1,69 +1,13 @@
-"""Cross-document verification (SD source of truth vs EC ledger).
-
-One LLM verification pass returns field checks plus a case-level verdict.
-Code validates the enums and persists the same verdict to both case tables.
-"""
+"""Legacy verification normalization helpers retained for regression tests."""
 
 from __future__ import annotations
 
-import json
-
-from backend.database.repositories.case_repo import set_case_verification_status
-from backend.database.repositories.document_repo import get_case_bundle
-from backend.database.repositories.verification_results_repo import save_verification_results
-from backend.integrations.llm.analysis_executor import run_analysis
-from backend.logger import get_logger
-from backend.prompts.loader import load_prompt, load_schema
-from backend.shared.constants import (
-    ENCUMBRANCE_CERTIFICATE,
-    KHATA,
-    SALE_DEED,
-)
 from backend.shared.measurements import (
     boundaries_similar,
     compare_areas,
 )
 
-logger = get_logger(__name__)
-
 VERIFICATION_STATUSES = {"VERIFIED", "FLAG", "NEEDS_REVIEW", "N/A"}
-VERDICTS = {"CLEAR_TITLE", "ATTENTION_REQUIRED"}
-
-VERIFY_RESPONSE_SCHEMA = load_schema("verification_schema")
-_VERIFY_PROMPT_TEMPLATE = load_prompt("verification")
-
-
-def _normalize_llm_verdict(value) -> str | None:
-    normalized = str(value or "").strip().upper().replace(" ", "_").replace("-", "_")
-    return normalized if normalized in VERDICTS else None
-
-
-def _is_ec(doc: dict) -> bool:
-    return (doc.get("document_type") or "").upper() == ENCUMBRANCE_CERTIFICATE
-
-
-def _is_khata(doc: dict) -> bool:
-    return (doc.get("document_type") or "").upper() == KHATA
-
-
-def _is_sale_deed(doc: dict) -> bool:
-    return (doc.get("document_type") or "").upper() == SALE_DEED
-
-
-def _summarize(items: list[dict]) -> dict:
-    counts = {s: 0 for s in VERIFICATION_STATUSES}
-    for item in items:
-        status = item.get("status")
-        if status in counts:
-            counts[status] += 1
-    total = sum(counts.values())
-    verified_share = counts["VERIFIED"] / total if total else 0.0
-    return {
-        "counts": counts,
-        "total": total,
-        "verified_share": round(verified_share, 2),
-    }
-
 
 def _normalize_items(raw_items) -> list[dict]:
     items = []
@@ -82,7 +26,6 @@ def _normalize_items(raw_items) -> list[dict]:
             "notes": raw.get("notes"),
         })
     return items
-
 
 def _measurement_items(sd_data: dict, ec_data: dict, khata_data: dict | None) -> list[dict]:
     """Deterministic area + boundary checks, unit-aware (m, ft, gunta, etc.).
@@ -161,77 +104,3 @@ def _measurement_items(sd_data: dict, ec_data: dict, khata_data: dict | None) ->
         bnd_item("Boundaries (SD vs Khata)", sd_bnd, kh_bnd, "vs Khata")
 
     return items
-
-
-def verify_case(case_id: str) -> dict:
-    """Run the verification pass and persist results."""
-    bundle = get_case_bundle(case_id)
-    sale_deed = next((d for d in bundle if _is_sale_deed(d)), None)
-    ec = next((d for d in bundle if _is_ec(d)), None)
-    khata = next((d for d in bundle if _is_khata(d)), None)
-
-    if not sale_deed or not ec:
-        msg = "Verification skipped: need both SALE_DEED and ENCUMBRANCE_CERTIFICATE"
-        logger.warning("Verification for case %s: %s", case_id, msg)
-        save_verification_results(
-            case_id=case_id, status="skipped", verdict="N/A",
-            summary={"note": msg}, items=[],
-        )
-        return {"case_id": case_id, "status": "skipped", "verdict": "N/A"}
-
-    sd_data = sale_deed.get("structured_json") or {}
-    ec_data = ec.get("structured_json") or {}
-    khata_data = khata.get("structured_json") if khata else None
-    ledger = ec_data.get("historical_ledger") or []
-
-    prompt = (
-        _VERIFY_PROMPT_TEMPLATE + "\n\n"
-        "--- SALE DEED ---\n"
-        f"{json.dumps(sd_data, ensure_ascii=False, default=str)}\n\n"
-        "--- EC HISTORICAL LEDGER ---\n"
-        f"{json.dumps(ledger, ensure_ascii=False, default=str)}"
-    )
-    if khata_data:
-        prompt += (
-            "\n\n--- KHATA EXTRACT ---\n"
-            f"{json.dumps(khata_data, ensure_ascii=False, default=str)}"
-        )
-
-    try:
-        response = run_analysis(prompt, task="verification", response_schema=VERIFY_RESPONSE_SCHEMA)
-    except Exception as e:
-        logger.error("Verification LLM call failed for case %s: %s", case_id, e)
-        save_verification_results(
-            case_id=case_id, status="error", verdict="N/A",
-            summary={"error": str(e)}, items=[],
-        )
-        set_case_verification_status(case_id=case_id, verification_status="error", verdict="N/A")
-        return {"case_id": case_id, "status": "error", "verdict": "N/A", "error": str(e)}
-
-    result = response.get("result", {})
-    items = _normalize_items(result.get("items"))
-    items.extend(_measurement_items(sd_data, ec_data, khata_data))
-
-    verdict = _normalize_llm_verdict(result.get("verdict"))
-    if verdict is None:
-        msg = "Verification response did not contain a valid case-level verdict"
-        logger.error("Verification for case %s: %s", case_id, msg)
-        save_verification_results(case_id=case_id, status="error", verdict="N/A", summary={"error": msg}, items=items)
-        set_case_verification_status(case_id=case_id, verification_status="error", verdict="N/A")
-        return {"case_id": case_id, "status": "error", "verdict": "N/A", "error": msg}
-    summary = _summarize(items)
-    summary["verdict"] = verdict
-    summary["status_line"] = result.get("status_line")
-    summary["overall_comment"] = result.get("overall_comment")
-    summary["headline"] = result.get("headline")
-    summary["summary_text"] = result.get("summary")
-    save_verification_results(
-        case_id=case_id, status="complete", verdict=verdict,
-        summary=summary, items=items,
-    )
-
-    set_case_verification_status(case_id=case_id, verification_status="complete", verdict=verdict)
-
-    logger.info("Verification complete for case %s: verdict=%s (%d items)",
-                case_id, verdict, len(items))
-    return {"case_id": case_id, "status": "complete", "verdict": verdict, "items": items, "summary": summary}

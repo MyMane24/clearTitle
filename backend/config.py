@@ -41,6 +41,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "")
 BODHAN_API_KEY = os.getenv("BODHAN_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # ── Gemini ─────────────────────────────────────────────────────────────────────
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
@@ -71,6 +72,20 @@ GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
 GOOGLE_FRONTEND_REDIRECT_URI = os.getenv("GOOGLE_FRONTEND_REDIRECT_URI", "http://localhost:8000/login")
+
+# ── ClearTitle agent ───────────────────────────────────────────────────────────
+# The single ClearTitle agent is provider-agnostic. Production uses GPT-6 Luna via OpenAI.
+CLEARTITLE_AGENT_PROVIDER = os.getenv("CLEARTITLE_AGENT_PROVIDER", "openai")
+CLEARTITLE_AGENT_MODEL = os.getenv("CLEARTITLE_AGENT_MODEL", "GPT-6 Luna")
+CLEARTITLE_AGENT_MAX_RAW_CHARS = int(os.getenv("CLEARTITLE_AGENT_MAX_RAW_CHARS", "60000"))
+
+# Separate override for the single-call OCR classification/extraction stage.
+DOCUMENT_PROCESSOR_MODEL = os.getenv("DOCUMENT_PROCESSOR_MODEL", CLEARTITLE_AGENT_MODEL)
+DOCUMENT_CLASSIFICATION_TOKEN_BUDGET = int(os.getenv("DOCUMENT_CLASSIFICATION_TOKEN_BUDGET", "3000"))
+
+# OpenAI / Azure OpenAI settings
+OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "")
+OPENAI_API_VERSION = os.getenv("OPENAI_API_VERSION", "2024-02-15-preview")
 
 # ── API / app ──────────────────────────────────────────────────────────────────
 CORS_ORIGINS = os.getenv(

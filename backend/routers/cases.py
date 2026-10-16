@@ -35,6 +35,7 @@ from backend.integrations.redis.state_store import (
     get_case_job,
     reset_for_retry,
     set_case_status,
+    update_file_in_case,
 )
 from backend.integrations.redis.state_store import (
     case_exists as redis_case_exists,
@@ -48,6 +49,7 @@ from backend.integrations.redis.state_store import (
 from backend.integrations.storage.file_utils import delete_case_dir, get_case_dir, save_upload
 from backend.logger import get_logger
 from backend.services.auth import get_current_user, get_optional_user
+from backend.services.results import classification_action_message
 from backend.services.orchestrator import (
     start_case_pipeline,
     start_retry_pipeline,
@@ -252,7 +254,8 @@ async def get_status(case_id: str, user: dict | None = Depends(get_optional_user
         {
             "doc_id": d["doc_id"],
             "filename": d["filename"],
-            "message": f"'{d['filename']}' — document type not recognised.",
+            "document_type": d.get("document_type") or "",
+            "message": classification_action_message(d),
             "choices": [
                 {"action": "skip", "method": "POST",
                  "url": f"/api/case/{case_id}/doc/{d['doc_id']}/skip",
@@ -432,6 +435,7 @@ async def replace_document_endpoint(
         filename=filename,
         file_paths={"raw": str(dest)},
     )
+    update_file_in_case(case_id, doc_id, str(dest), filename)
     append_log(case_id, f"[{doc_id}] Document replaced — pending retry")
     return {"case_id": case_id, "doc_id": doc_id, "status": "replaced"}
 
@@ -456,9 +460,7 @@ async def skip_document_endpoint(
         if d.get("status") in ("failed", "classification_failed")
     ]
     if not unresolved:
-        from backend.workers.title_chain_tasks import run_case_analysis_task
-        run_case_analysis_task.apply_async(args=[case_id])
-        append_log(case_id, "── All documents resolved — running title chain + verification ──")
+        append_log(case_id, "── All documents resolved — OCR and extraction phase complete ──")
 
     return {"case_id": case_id, "doc_id": doc_id, "status": "skipped"}
 
@@ -467,7 +469,7 @@ async def skip_document_endpoint(
 async def get_doc_pdf(case_id: str, doc_id: str, user: dict | None = Depends(get_optional_user)):
     """Serve the original uploaded PDF for a document."""
     _enforce_access(case_id, user)
-    from backend.database.repositories.document_repo import get_case_documents
+    from backend.database.repositories.document_repo import get_case_documents, resolve_legacy_pdf_path
     docs = get_case_documents(case_id)
     doc = next((d for d in docs if d["doc_id"] == doc_id), None)
     if not doc:
@@ -475,9 +477,11 @@ async def get_doc_pdf(case_id: str, doc_id: str, user: dict | None = Depends(get
     paths = doc.get("file_paths") or {}
     raw_path = paths.get("raw")
     if not raw_path:
+        raw_path = resolve_legacy_pdf_path(case_id, doc_id)
+    if not raw_path:
         raise HTTPException(status_code=404, detail="PDF file not found")
     from pathlib import Path
     pdf = Path(raw_path)
     if not pdf.is_file():
         raise HTTPException(status_code=404, detail="PDF file missing on disk")
-    return FileResponse(str(pdf), media_type="application/pdf", filename=doc.get("filename", f"{doc_id}.pdf"))
+    return FileResponse(str(pdf), media_type="application/pdf", filename=pdf.name)

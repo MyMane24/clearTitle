@@ -86,11 +86,90 @@ export interface OcrTextResponse {
   documents: OcrDocText[];
 }
 
+export interface AgentCheck {
+  rule?: string;
+  result?: string;
+  note?: string;
+}
+
+export interface AgentMissingDoc {
+  document_type: string;
+  reason?: string;
+  required_for_transaction?: number;
+  for_transaction?: number;
+}
+
+export interface AgentTransaction {
+  index: number;
+  date?: string | null;
+  type?: string | null;
+  parties?: string | null;
+  property?: string | null;
+  registration_reference?: string | null;
+  explanation?: string | null;
+  status?: string | null;
+  finding?: string | null;
+  checks?: AgentCheck[];
+  evidence_used?: string[];
+  missing_documents?: AgentMissingDoc[];
+}
+
+export interface AgentIdentity {
+  identity?: Record<string, unknown>;
+  evidence?: { field?: string; value?: string; doc_id?: string }[];
+  summary?: string;
+  unresolved?: string[];
+}
+
+export interface AgentResult {
+  case_id?: string;
+  overall_status?: string;
+  headline?: string;
+  report?: string;
+  findings?: string[];
+  property_identity?: AgentIdentity | null;
+  title_chain?: { transactions?: AgentTransaction[]; title_story?: string; unresolved?: string[] } | null;
+  transactions?: AgentTransaction[];
+  missing_documents?: AgentMissingDoc[];
+  recommendation?: string;
+  updated_at?: string;
+}
+
+export interface AgentState {
+  case_id: string;
+  status: string;
+  stage?: string | null;
+  paused_transaction?: number | null;
+  next_action?: string | null;
+  missing_documents?: AgentMissingDoc[];
+  memory?: Record<string, unknown> | null;
+  result?: AgentResult | null;
+}
+
 export interface TitleChainEntry {
+  tx_id?: string;
+  sequence?: number;
+  document_type?: string | null;
+  transaction_type?: string | null;
+  executed_date?: string | null;
+  registration_number?: string | null;
+  registration_date?: string | null;
+  vendors?: any[];
+  purchasers?: any[];
+  survey_number?: string | null;
+  plot_number?: string | null;
+  site_flat_number?: string | null;
+  property_location?: string | null;
+  market_value?: string | null;
+  consideration?: string | null;
+  schedule_property?: string | null;
+  conveyed_portion?: string | null;
+  source_doc_ids?: string[];
+  inferred?: boolean;
+  uncertainty?: string[];
   transaction_index?: number | null;
   execution_date?: string | null;
   registration_reference?: string | null;
-  transaction_type?: string | null;
   parties?: any;
   financials?: any;
   property_details?: any;
@@ -114,6 +193,23 @@ export interface VerificationItem {
   notes?: string;
 }
 
+export interface AgentReport {
+  status: string;
+  stage?: string | null;
+  paused_transaction?: number | null;
+  next_action?: string | null;
+  missing_documents: AgentMissingDoc[];
+  overall_status?: string | null;
+  headline?: string;
+  report?: string;
+  findings?: string[];
+  property_identity?: AgentIdentity | null;
+  title_chain?: { transactions?: AgentTransaction[]; title_story?: string; unresolved?: string[] } | null;
+  transactions: AgentTransaction[];
+  updated_at?: string | null;
+  recommendation?: string;
+}
+
 export interface CaseResults {
   case: {
     case_id: string;
@@ -128,32 +224,7 @@ export interface CaseResults {
   };
   documents: any[];
   needs_action?: any[];
-  title_chain: {
-    status?: string;
-    chain: TitleChainEntry[];
-    title_story?: string | null;
-    model_used?: string;
-    updated_at?: string;
-    source?: {
-      title_story?: string | null;
-      sd_property?: any;
-      message?: string | null;
-      required_documents?: Array<{
-        date?: string | null;
-        instrument_event?: string | null;
-        parties_effect?: string | null;
-        required_docs?: string | null;
-      }>;
-    } | null;
-  } | null;
-  verification: {
-    status?: string;
-    verdict?: string;
-    summary?: any;
-    items: VerificationItem[];
-    model_used?: string;
-    updated_at?: string;
-  } | null;
+  agent: AgentReport;
 }
 
 async function apiError(response: Response, fallback = "Request failed"): Promise<string> {
@@ -260,6 +331,10 @@ export const API = {
     return request(`/api/case/${caseId}/link`, { method: "POST" });
   },
 
+  async skipAgentTransaction(caseId: string, txRef: string): Promise<{ case_id: string; status: string }> {
+    return request(`/api/results/${caseId}/agent/skip/${txRef}`, { method: "POST" });
+  },
+
   async listCases(): Promise<CasesResponse> {
     try {
       return await request<CasesResponse>("/api/cases");
@@ -278,13 +353,5 @@ export const API = {
 
   async analyze(caseId: string): Promise<{ case_id: string; status: string }> {
     return request(`/api/results/${caseId}/analyze`, { method: "POST" });
-  },
-
-  async reverify(caseId: string): Promise<{ case_id: string; status: string }> {
-    return request(`/api/results/${caseId}/verify`, { method: "POST" });
-  },
-
-  async rerunTitleChain(caseId: string): Promise<{ case_id: string; status: string }> {
-    return request(`/api/results/${caseId}/title-chain`, { method: "POST" });
   },
 };

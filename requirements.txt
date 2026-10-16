@@ -35,3 +35,4 @@ PyJWT==2.10.1
 # Celery + Redis for distributed task processing
 celery==5.4.0
 redis==4.6.0
+openai==1.56.1

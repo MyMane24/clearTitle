@@ -32,7 +32,8 @@ def idempotent_stage(entry: Stage, complete: Stage):
 
             # If the current status is failed or classification_failed, skip the rest of the chain
             curr_stage = stage_from_status(current_status)
-            if curr_stage in (Stage.FAILED, Stage.CLASSIFICATION_FAILED):
+            task_retries = getattr(getattr(current_task, "request", None), "retries", 0) if current_task else 0
+            if curr_stage == Stage.CLASSIFICATION_FAILED or (curr_stage == Stage.FAILED and task_retries == 0):
                 logger.info(
                     "Skipping stage %s for case %s, doc %s because it already failed (status: %s)",
                     func.__name__, case_id, doc_id, current_status

@@ -41,6 +41,8 @@ DEFAULT_ROUTING_MAP = {
     "ALLOTMENT_LETTER": {"provider": "groq", "model": "openai/gpt-oss-20b"},
     "BUILDING_LICENSE": {"provider": "gemini", "model": "gemini-3.6-flash"},
     "COMPLETION_CERTIFICATE": {"provider": "gemini", "model": "gemini-3.6-flash"},
+    "COMPLETION_CERTIFICATE_BY_ARCHITECT": {"provider": "gemini", "model": "gemini-3.6-flash"},
+    "COMPLETION_CERTIFICATE_BY_GRAM_PANCHAYAT": {"provider": "gemini", "model": "gemini-3.6-flash"},
 }
 
 FALLBACK_CHAIN = [

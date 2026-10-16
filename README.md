@@ -384,6 +384,11 @@ clearTitle/
 │   │
 │   ├── prompts/                    # Versioned LLM prompts (editable .txt files)
 │   │   ├── loader.py               #   load_prompt() + load_schema() helpers
+│   │   ├── agent_system.txt        #   Shared agent reasoning and tool policy
+│   │   ├── agent_summary.txt       #   Document navigation summaries
+│   │   ├── agent_chain_task.txt    #   Property identity + title chain
+│   │   ├── agent_verify_task.txt   #   Per-transaction verification
+│   │   └── agent_final.txt         #   Consolidated report
 │   │   ├── verification.txt        #   SD vs EC cross-check prompt
 │   │   ├── verification_schema.json#   Expected output shape
 │   │   ├── title_chain.txt         #   Title tree construction prompt
@@ -475,6 +480,11 @@ All LLM prompts are versioned text files in `backend/prompts/`. Edit the `.txt` 
 
 | File | Used by | Purpose |
 |---|---|---|
+| `agent_system.txt` | `services/cleartitle_agent.py` | Shared ClearTitle agent instructions |
+| `agent_summary.txt` | `services/cleartitle_agent.py` | Per-document navigation summary |
+| `agent_chain_task.txt` | `services/cleartitle_agent.py` | Property identity and title-chain construction |
+| `agent_verify_task.txt` | `services/cleartitle_agent.py` | Per-transaction verification |
+| `agent_final.txt` | `services/cleartitle_agent.py` | Consolidated report |
 | `verification.txt` | `services/verify.py` | SD vs EC field-by-field cross-check |
 | `title_chain.txt` | `services/title_chain.py` | Title tree construction from SD + EC ledger |
 | `analysis_system.txt` | `integrations/llm/analysis_executor.py` | Gemini system instruction for analysis tasks |

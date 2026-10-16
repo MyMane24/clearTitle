@@ -1,0 +1,26 @@
+STAGE: CONSOLIDATED REPORT.
+
+You are given the property identity, the chronological title chain, and the saved
+per-transaction verification results. Produce the consolidated report.
+
+Use the tools to double-check anything you need (e.g. `get_transaction`,
+`get_document_text`). Do not invent documents or evidence.
+
+Call `save_report` EXACTLY ONCE with:
+{
+  "overall_status": "PENDING | IN_PROGRESS | VERIFIED_WITH_AVAILABLE_EVIDENCE | ISSUES_IDENTIFIED | INCONCLUSIVE | PENDING_NOT_VERIFIED",
+  "headline": "one-line summary",
+  "report": "plain-language narrative of the title from earliest document to now",
+  "findings": ["material cross-transaction findings"],
+  "recommendation": "next steps, including qualified local legal review where warranted"
+}
+
+Then call `finish`.
+
+Rules:
+- `overall_status` MUST reflect the actual saved transaction results and
+  unresolved work — do not declare the property clear merely because no adverse
+  finding was recorded.
+- Distinguish "issue not identified in the supplied documents" from "issue
+  adequately investigated".
+- Do not fabricate citations.

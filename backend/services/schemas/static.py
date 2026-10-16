@@ -1,5 +1,5 @@
 ﻿"""Per-document JSON schemas keyed by document type (extraction-only)."""
-# â”€â”€ Schema definitions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Schema definitions ─────────────────────────────────────────────────────
 
 
 SALE_DEED_SCHEMA = {
@@ -184,6 +184,66 @@ PROPERTY_TAX_ASSESSMENT_SCHEMA = {
         }
     ],
     "validity": {"valid_for_month": None, "issued_by": None},
+}
+
+
+E_SWATTU_SCHEMA = {
+    "document_type": "E_SWATTU",
+    "document_metadata": {
+        "document_title_as_written": None,
+        "issuing_department_as_written": None,
+        "form_number_as_written": None,
+        "rule_reference_as_written": None,
+    },
+    "form9_records": [
+        {
+            "certificate_number_as_written": None,
+            "gsc_code_as_written": None,
+            "gso_code_as_written": None,
+            "jurisdiction_as_written": {
+                "district": None,
+                "block": None,
+                "taluk": None,
+                "gram_panchayat": None,
+                "village": None,
+            },
+            "property_identifiers_as_written": [],
+            "property_classification_as_written": [],
+            "property_type_as_written": None,
+            "areas_as_written": [],
+            "dimensions_as_written": [],
+            "roof_type_as_written": None,
+            "boundaries_as_written": {
+                "north": None,
+                "east": None,
+                "west": None,
+                "south": None,
+            },
+            "survey_number_as_written": None,
+            "property_use_and_area_as_written": None,
+            "resolution_and_mutation_entries_as_written": [],
+            "assessment_status_and_demand_as_written": [],
+            "owners_as_written": [
+                {
+                    "owner_number": None,
+                    "owner_name": None,
+                    "parent_or_spouse_name": None,
+                    "address": None,
+                    "identity_document": None,
+                    "photo_reference": None,
+                }
+            ],
+            "possession_type_as_written": None,
+            "supporting_documents_as_written": [],
+            "rights_as_written": None,
+            "liabilities_as_written": None,
+            "floor_or_building_details_as_written": [],
+            "issue_details_as_written": [],
+            "other_fields_as_written": [
+                {"label_as_written": None, "value_as_written": None}
+            ],
+        }
+    ],
 }
 
 
@@ -628,12 +688,66 @@ COMPLETION_CERTIFICATE_SCHEMA = {
     },
 }
 
+
+def _completion_certificate_subtype_schema(document_type: str, issuer_type: str) -> dict:
+    return {
+        "document_type": document_type,
+        "certificate_details": {
+            "certificate_title": None,
+            "reference_number": None,
+            "certificate_date": None,
+            "place_of_issue": None,
+        },
+        "issuer": {
+            "issuer_type": issuer_type,
+            "organization": None,
+            "person_name": None,
+            "designation_or_profession": None,
+            "address": None,
+            "phone_numbers": [],
+            "email_addresses": [],
+            "other_contact_details": [],
+            "signature_or_stamp": None,
+        },
+        "owners_or_applicants": [{"name": None, "role": None, "additional_description": None}],
+        "property_details": {
+            "property_type": None,
+            "building_description": None,
+            "survey_number": None,
+            "cts_number": None,
+            "panchayat_number": None,
+            "house_number": None,
+            "other_property_identifiers": [],
+            "location": None,
+        },
+        "referenced_certificates": [
+            {
+                "certificate_type": None,
+                "issuer": None,
+                "reference_number": None,
+                "date": None,
+                "description": None,
+            }
+        ],
+        "certificate_description": None,
+        "other_details": [],
+    }
+
+
+COMPLETION_CERTIFICATE_BY_ARCHITECT_SCHEMA = _completion_certificate_subtype_schema(
+    "COMPLETION_CERTIFICATE_BY_ARCHITECT", "ARCHITECT_CIVIL_ENGINEER_CONTRACTOR"
+)
+COMPLETION_CERTIFICATE_BY_GRAM_PANCHAYAT_SCHEMA = _completion_certificate_subtype_schema(
+    "COMPLETION_CERTIFICATE_BY_GRAM_PANCHAYAT", "GRAM_PANCHAYAT"
+)
+
 SCHEMA_MAP = {
     "SALE_DEED": SALE_DEED_SCHEMA,
     "ENCUMBRANCE_CERTIFICATE": EC_SCHEMA,
     "PROPERTY_REGISTER_CARD": PROPERTY_REGISTER_CARD_SCHEMA,
     "E_PAYMENT_RECEIPT": E_PAYMENT_RECEIPT_SCHEMA,
     "PROPERTY_TAX_ASSESSMENT": PROPERTY_TAX_ASSESSMENT_SCHEMA,
+    "E_SWATTU": E_SWATTU_SCHEMA,
     "TAX_RECEIPT": E_PAYMENT_RECEIPT_SCHEMA,
     "GIFT_DEED": GIFT_DEED_SCHEMA,
     "RTC_PAHANI": RTC_PAHANI_SCHEMA,
@@ -646,5 +760,7 @@ SCHEMA_MAP = {
     "BUILDING_LICENSE": BUILDING_LICENSE_SCHEMA,
     "PARTITION_DEED": PARTITION_DEED_SCHEMA,
     "COMPLETION_CERTIFICATE": COMPLETION_CERTIFICATE_SCHEMA,
+    "COMPLETION_CERTIFICATE_BY_ARCHITECT": COMPLETION_CERTIFICATE_BY_ARCHITECT_SCHEMA,
+    "COMPLETION_CERTIFICATE_BY_GRAM_PANCHAYAT": COMPLETION_CERTIFICATE_BY_GRAM_PANCHAYAT_SCHEMA,
     "KHATA": KHATA_SCHEMA,
 }
