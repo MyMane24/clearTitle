@@ -829,16 +829,20 @@ export function VerificationDashboard() {
         const d = await API.health();
         if (!cancelled) setHealth(d);
       } catch {
-        if (!cancelled) setHealth({ status: 'error', sarvam_key: false, groq_key: false, gemini_key: false });
+        if (!cancelled) setHealth({ status: 'error', sarvam_key: false, openai_key: false, gemini_key: false, agent_provider: 'openai', agent_provider_key: false });
       }
     })();
     return () => { cancelled = true; };
   }, []);
 
-  const healthOk = !!health && !!health.sarvam_key && !!health.groq_key && !!health.gemini_key;
+  const healthOk = !!health && !!health.sarvam_key && !!health.openai_key && !!health.agent_provider_key;
   const healthText = !health ? "Checking..."
     : healthOk ? "API keys loaded"
-      : `⚠ Missing: ${[!health.sarvam_key && "Sarvam", !health.groq_key && "Groq", !health.gemini_key && "Gemini"].filter(Boolean).join(", ")}`;
+      : `⚠ Missing: ${[
+          !health.sarvam_key && "Sarvam",
+          !health.openai_key && "OpenAI",
+          !health.agent_provider_key && `${health.agent_provider} agent provider`,
+        ].filter(Boolean).join(", ")}`;
 
   // ── Sidebar: load cases ──
   const loadCases = useCallback(async () => {

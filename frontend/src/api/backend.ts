@@ -12,8 +12,10 @@ export function setToken(token: string | null): void {
 export interface HealthStatus {
   status: string;
   sarvam_key: boolean;
-  groq_key: boolean;
+  openai_key: boolean;
   gemini_key: boolean;
+  agent_provider: string;
+  agent_provider_key: boolean;
 }
 
 export interface AuthUser {
@@ -257,10 +259,10 @@ export const API = {
   async health(): Promise<HealthStatus> {
     try {
       const r = await fetch("/health");
-      if (!r.ok) return { status: "error", sarvam_key: false, groq_key: false, gemini_key: false };
+      if (!r.ok) return { status: "error", sarvam_key: false, openai_key: false, gemini_key: false, agent_provider: "openai", agent_provider_key: false };
       return r.json();
     } catch {
-      return { status: "error", sarvam_key: false, groq_key: false, gemini_key: false };
+      return { status: "error", sarvam_key: false, openai_key: false, gemini_key: false, agent_provider: "openai", agent_provider_key: false };
     }
   },
 

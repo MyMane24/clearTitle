@@ -7,26 +7,17 @@ Extracted verbatim from `backend/services/rate_limiter.py`.
 
 from __future__ import annotations
 
-import json
 import random
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any
 
 from backend.config import (
     GEMINI_BURST,
     GEMINI_RPM,
     GEMINI_TPM,
-    GROQ_BURST,
-    GROQ_RPM,
-    GROQ_TPM,
 )
 from backend.integrations.redis.client import get_redis as _get_redis
-from backend.logger import get_logger
-
-logger = get_logger(__name__)
-
 
 # ── Rate limit config ─────────────────────────────────────────────────────────
 
@@ -36,19 +27,11 @@ class RateLimitConfig:
     tokens_per_minute: int = 4_000_000
     burst_size: int = 5
 
-
 GEMINI_LIMITS = RateLimitConfig(
     requests_per_minute=GEMINI_RPM,
     tokens_per_minute=GEMINI_TPM,
     burst_size=GEMINI_BURST,
 )
-
-GROQ_LIMITS = RateLimitConfig(
-    requests_per_minute=GROQ_RPM,
-    tokens_per_minute=GROQ_TPM,
-    burst_size=GROQ_BURST,
-)
-
 
 # ── Lua script for atomic token-bucket acquire ────────────────────────────────
 #
@@ -98,7 +81,6 @@ redis.call('SET', KEYS[2], tostring(cur))
 redis.call('SET', KEYS[3], tostring(now))
 return 1
 """
-
 
 # ── Rate limiter class ────────────────────────────────────────────────────────
 
@@ -176,41 +158,6 @@ class TokenBucketRateLimiter:
             time.sleep(backoff)
         return False
 
-
 gemini_limiter = TokenBucketRateLimiter("gemini", GEMINI_LIMITS)
-groq_limiter   = TokenBucketRateLimiter("groq",   GROQ_LIMITS)
-
 
 # ── LLM call tracker ─────────────────────────────────────────────────────────
-
-class LLMCallTracker:
-    """Logs per-call LLM metrics to a Redis list for cost/usage dashboards."""
-
-    @staticmethod
-    def record(provider: str, model: str, doc_type: str, input_tokens: int,
-               output_tokens: int, cached_tokens: int, latency_ms: int,
-               cost_usd: float, retry_count: int, status: str) -> dict[str, Any]:
-        entry = {
-            "timestamp":    datetime.now(timezone.utc).isoformat(),
-            "provider":     provider,
-            "model":        model,
-            "doc_type":     doc_type,
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "cached_tokens": cached_tokens,
-            "latency_ms":   latency_ms,
-            "cost_usd":     round(cost_usd, 8),
-            "retry_count":  retry_count,
-            "status":       status,
-        }
-        # Pipeline lpush + ltrim into a single round-trip (was 2 separate calls)
-        try:
-            r = _get_redis()
-            pipe = r.pipeline()
-            pipe.lpush("llm_call_log", json.dumps(entry))
-            pipe.ltrim("llm_call_log", 0, 9999)
-            pipe.execute()
-        except Exception as e:
-            logger.warning("Failed to record LLM call metric: %s", e)
-
-        return entry

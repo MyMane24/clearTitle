@@ -15,9 +15,6 @@ numpy==1.26.4
 # Sarvam SDK
 sarvamai==0.1.28
 
-# Groq
-groq==0.11.0
-
 # Gemini
 google-genai==1.45.0
 

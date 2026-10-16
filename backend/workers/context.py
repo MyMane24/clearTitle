@@ -18,7 +18,7 @@ class StageContext:
 
     # Ports — dependency-injectable facades over the relocated service modules.
     config: Any = None    # AppConfig (Phase 4)
-    llm: Any = None       # model router
+    llm: Any = None       # provider-agnostic agent LLM
     cache: Any = None     # redis state store
     storage: Any = None   # file paths
     state: Any = None     # persistence (repos)

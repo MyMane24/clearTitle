@@ -11,7 +11,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.config import CORS_ORIGINS, GEMINI_API_KEY, GROQ_API_KEY, SARVAM_API_KEY
+from backend.config import (
+    CLEARTITLE_AGENT_PROVIDER,
+    CORS_ORIGINS,
+    GEMINI_API_KEY,
+    OPENAI_API_KEY,
+    SARVAM_API_KEY,
+)
 from backend.logger import get_logger
 from backend.routers import auth as auth_router
 from backend.routers import cases as cases_router
@@ -61,11 +67,20 @@ app.include_router(auth_router.google_router)
 
 @app.get("/health")
 async def health():
+    agent_provider = CLEARTITLE_AGENT_PROVIDER.lower()
+    if agent_provider == "gemini":
+        agent_provider_key = bool(GEMINI_API_KEY)
+    elif agent_provider in {"openai", "luna"}:
+        agent_provider_key = bool(OPENAI_API_KEY)
+    else:
+        agent_provider_key = False
     return {
         "status": "ok",
         "sarvam_key": bool(SARVAM_API_KEY),
-        "groq_key":   bool(GROQ_API_KEY),
+        "openai_key": bool(OPENAI_API_KEY),
         "gemini_key": bool(GEMINI_API_KEY),
+        "agent_provider": agent_provider,
+        "agent_provider_key": agent_provider_key,
     }
 
 

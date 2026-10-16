@@ -32,7 +32,7 @@ The browser talks to FastAPI. FastAPI stores durable state in MySQL, uses Redis 
                               | Celery workers |
                               +--+----------+--+
                                  |          |
-                           Sarvam OCR   Gemini/Groq
+                      Sarvam OCR   OpenAI-compatible extraction
                                  |          |
                                  +----+-----+
                                       |
@@ -53,7 +53,7 @@ The browser talks to FastAPI. FastAPI stores durable state in MySQL, uses Redis 
 | `backend/routers/` | HTTP endpoints, authentication dependencies, case ownership checks, upload/status/result actions. |
 | `backend/services/` | Application workflows: OCR/extraction routing, agent orchestration, result assembly, PDF report creation, and authentication. |
 | `backend/workers/` | Celery tasks for document stages, case finalization, agent execution, and transaction skip/resume. |
-| `backend/integrations/` | Adapters to Sarvam OCR, Gemini/Groq/OpenAI-compatible LLMs, Redis, and filesystem storage. |
+| `backend/integrations/` | Adapters to Sarvam OCR, OpenAI-compatible document processing, optional Gemini agent calls, Redis, and filesystem storage. |
 | `backend/database/repositories/` | Parameterized MySQL reads/writes for cases, documents, users, and agent state. |
 | `backend/database/migrations.py` | Creates the current application tables and applies best-effort changes to older schemas. |
 
@@ -89,8 +89,8 @@ Every PDF passes through these six stages:
 | 1 | Preprocess | Tries to improve the scan (deskew/contrast/denoise). If preprocessing fails, it logs a warning and uses the original PDF. | `outputs/<case_id>/preprocessed/`; `documents.file_paths.preprocessed` |
 | 2 | OCR | Sends the PDF through Sarvam OCR with retry handling and page/chunk support. | OCR chunk artifacts under `outputs/<case_id>/ocr_raw/`; `documents.file_paths.ocr_chunks` |
 | 3 | Merge | Combines OCR chunks, including overlap handling, into one document text record. | `outputs/<case_id>/ocr_raw/<doc_id>_merged.json`; `documents.file_paths.merged_ocr` |
-| 4 | Classify | Uses filename and OCR text to choose a supported document type. If the classifier returns unknown, a declared upload-slot type can be used. Otherwise, the document is marked `classification_failed` for user action. | `documents.document_type` and `documents.status` |
-| 5 | Structure | Routes the document type to a configured Gemini or Groq extraction model and parses structured fields using the corresponding schema. | Temporary JSON under `structured/`; model and cost metrics |
+| 4 | Classify | Uses a bounded OCR prefix with an LLM, plus deterministic rules for recognized document formats. Unrelated documents are flagged for user action. | `documents.document_type` and `documents.status` |
+| 5 | Structure | Sends the full merged OCR and matching schema to the configured OpenAI-compatible document processor. | Structured data and summary in MySQL; structured JSON artifact |
 | 6 | Persist | Normalizes EC ledger structure where applicable, writes the final structured JSON, and persists it to MySQL. | `documents.structured_data`, `documents.file_paths.structured`, page/token/model/cost fields |
 
 ### Step 4 — Finalize the document pipeline
@@ -180,7 +180,7 @@ CELERY WORKER (document chains run concurrently)
     |<-- OCR chunks -----------------------------|
     |-- merge chunks; save merged OCR ----------> outputs/<case_id>/ocr_raw/
     |-- classify document
-    |-- extract structured fields --------------> Gemini or Groq
+    |-- classify prefix + extract full OCR ----> OpenAI-compatible processor
     |<-- structured fields and usage metrics ---|
     |-- persist document status and fields ------> MySQL
     |-- save structured JSON --------------------> outputs/<case_id>/structured/
@@ -361,8 +361,8 @@ The API and worker share the same image and mounted `outputs/` files. The `mysql
 Important environment setting names are read in `backend/config.py`:
 
 - Database and tasking: `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`, `REDIS_URL`.
-- OCR and extraction: `SARVAM_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `MODEL_ROUTING_MAP`.
-- Agent provider: `CLEARTITLE_AGENT_PROVIDER`, `CLEARTITLE_AGENT_MODEL`, `OPENAI_API_KEY`, optional `OPENAI_API_BASE`/`OPENAI_API_VERSION`.
+- OCR and document extraction: `SARVAM_API_KEY`, `OPENAI_API_KEY`, `DOCUMENT_PROCESSOR_MODEL`.
+- Verification agent: `CLEARTITLE_AGENT_PROVIDER`, `CLEARTITLE_AGENT_MODEL`, `OPENAI_API_KEY`; optional Gemini provider uses `GEMINI_API_KEY` and Gemini rate-limit settings.
 - Auth: `JWT_SECRET_KEY`, Google OAuth client and redirect settings.
 - Processing: `MAX_UPLOAD_SIZE_MB`, `PIPELINE_LOCK_ENABLED`.
 
@@ -375,7 +375,7 @@ Never commit populated secrets. `.env.example` documents names/placeholders only
 | App startup and API | `backend/main.py`, `backend/routers/*.py` |
 | Case/document processing | `backend/services/orchestrator.py`, `backend/workers/tasks.py`, `backend/workers/stages.py`, `backend/workers/finalize.py` |
 | Agent workflow | `backend/services/cleartitle_agent.py`, `agent_runtime.py`, `agent_tools.py`, `agent_schemas.py`, `agent_rules.py` |
-| LLM provider access | `backend/integrations/llm/agent_llm.py`; extraction adapters under `backend/integrations/llm/` |
+| LLM provider access | `backend/integrations/llm/agent_llm.py`; optional Gemini rate limiting in `rate_limiter.py` |
 | OCR | `backend/integrations/ocr/` |
 | Persistence | `backend/database/migrations.py`, `connection.py`, `repositories/` |
 | Results/PDF | `backend/services/results.py`, `backend/services/report.py` |

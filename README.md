@@ -1,6 +1,6 @@
 # clearTitle — AI Property Title Verification
 
-An end-to-end property title verification platform for **Karnataka property documents**. clearTitle extracts structured JSON from scanned PDFs (Sarvam Vision OCR), runs single-pass LLM structuring with a Gemini/Groq fallback chain, builds a **title chain** and runs **cross-document verification** on every case, and presents everything in a warm, premium dashboard — with a landing page that explains the product.
+An end-to-end property title verification platform for **Karnataka property documents**. clearTitle extracts structured JSON from scanned PDFs using Sarvam OCR and an OpenAI-compatible document processor, then runs a tool-using ClearTitle verification agent over stored structured data and OCR evidence.
 
 ---
 
@@ -30,15 +30,14 @@ flowchart TD
         PREPROC["1 Preprocess\n(denoise & deskew)"]
         OCR["2 Sarvam OCR\n(PDF -> Raw Text)"]
         MERGE["3 Merge Chunks"]
-        CLASSIFY["4 Classify\n(Keyword-based)"]
-        STRUCTURE["5 Structure\n(Gemini primary, Groq fallback)"]
+        CLASSIFY["4 Classify\n(LLM + explicit rules)"]
+        STRUCTURE["5 Structure\n(OpenAI-compatible model)"]
         PERSIST["6 Persist\n(save JSON + tokens/cost to MySQL)"]
     end
 
     subgraph Analysis["Case-Level Analysis (after finalize)"]
         FINALIZE["Finalize\n(recompute status + queue analysis)"]
-        TITLE["Title Chain\nservices/title_chain.py"]
-        VERIFY["Verification\nservices/verify.py"]
+        AGENT["ClearTitle agent\n(title chain + transaction verification)"]
     end
 
     subgraph Storage["Storage Layer"]
@@ -53,10 +52,9 @@ flowchart TD
     CELERY -->|"Reads/writes status"| REDIS
     CELERY --> PREPROC --> OCR --> MERGE --> CLASSIFY --> STRUCTURE --> PERSIST
     PERSIST -->|"chord"| FINALIZE
-    FINALIZE --> TITLE --> VERIFY
+    FINALIZE --> AGENT
     STRUCTURE -->|"Saves structured data"| MYSQL
-    TITLE -->|"Saves title chain"| MYSQL
-    VERIFY -->|"Saves verification + verdict"| MYSQL
+    AGENT -->|"Saves chain, findings, and report"| MYSQL
 ```
 
 ### Key Components
@@ -67,8 +65,8 @@ flowchart TD
 | **API Layer** | FastAPI, Uvicorn | Async REST API with JWT auth for cases, documents, results, and analysis |
 | **Async Tasks** | Celery, Redis | Idempotent background stages — preprocess, OCR, merge, classify, structure, persist, finalize, title-chain, verify |
 | **OCR Service** | Sarvam AI Vision OCR | High-accuracy OCR for mixed English/Kannada text; chunks >10-page PDFs with overlap |
-| **Structuring** | Gemini 2.5 Flash (primary) / Groq (fallback) | Single-pass JSON field extraction per document type |
-| **Analysis** | Gemini 2.5 Flash | Title-chain build + cross-document verification per case |
+| **Document processing** | OpenAI-compatible API | Classification and full-text schema-based extraction |
+| **Verification agent** | OpenAI by default; Gemini optional | Tool-calling analysis of persisted structured data and OCR |
 | **Relational DB** | MySQL | Unified tables for users, cases, documents, title chains, and verification results |
 
 ---
@@ -97,7 +95,7 @@ flowchart TD
 | **Revenue & Clearances** | `MUTATION`, `CONVERSION_ORDER`, `POSSESSION_CERTIFICATE` |
 | **Legal & Others** | `RTC_PAHANI`, `LEGAL_HEIR_CERTIFICATE`, `COURT_ORDER` |
 
-Classification is keyword-based (filename first, then OCR content, English + Kannada). A document that cannot be classified is marked `classification_failed` and the UI asks you to replace or skip it.
+Classification uses an LLM over a bounded OCR prefix plus deterministic rules for known formats such as Karnataka Form 9 and issuer-specific completion certificates. A document classified as unrelated is marked for user action.
 
 ---
 
@@ -117,8 +115,13 @@ Open `.env` and fill in the API keys (everything else works as-is):
 
 ```env
 SARVAM_API_KEY=your_key_here
-GROQ_API_KEY=your_key_here
-GEMINI_API_KEY=your_key_here
+OPENAI_API_KEY=your_key_here
+CLEARTITLE_AGENT_PROVIDER=openai
+CLEARTITLE_AGENT_MODEL=GPT-6 Luna
+
+# Optional: use Gemini for the verification agent instead
+# CLEARTITLE_AGENT_PROVIDER=gemini
+# GEMINI_API_KEY=your_key_here
 
 # optional — only needed to run the local OCR comparison probes
 # (sarvam_digitize_probe / sarvam_extract_probe / bodhan_ocr_probe)
@@ -347,7 +350,7 @@ Every uploaded PDF goes through **6 stages**, each its own idempotent Celery tas
 
 ```
 DOC_001 --> preprocess --> ocr --> merge --> classify --> structure --> persist --+
-DOC_002 --> preprocess --> ocr --> merge --> classify --> structure --> persist --+--> finalize --> title chain --> verify
+DOC_002 --> preprocess --> ocr --> merge --> classify --> structure --> persist --+--> finalize --> ClearTitle agent
 DOC_003 --> preprocess --> ocr --> merge --> classify --> structure --> persist --+
 ```
 
@@ -356,8 +359,8 @@ DOC_003 --> preprocess --> ocr --> merge --> classify --> structure --> persist 
 | 1 | **Preprocess** | CLAHE contrast, denoise, deskew, sharpen via OpenCV (non-fatal: falls back to raw PDF) |
 | 2 | **OCR** | Sarvam OCR (Kannada+English); <=10 pages one job, >10 pages overlapping 10-page chunks in parallel |
 | 3 | **Merge** | Deduplicate overlapping pages, re-join split tables, strip base64 blobs |
-| 4 | **Classify** | Keyword match (filename first, then content) -> document type |
-| 5 | **Structure** | LLM fills the strict per-type JSON schema (Gemini primary, Groq fallback) |
+| 4 | **Classify** | LLM classifies a bounded OCR prefix; deterministic rules handle known formats |
+| 5 | **Structure** | OpenAI-compatible model extracts the full OCR into the matching JSON schema |
 | 6 | **Persist** | Save JSON + tokens/cost/model to MySQL, write final file to `outputs/` |
 
 **Then, once** (case level):
@@ -365,8 +368,7 @@ DOC_003 --> preprocess --> ocr --> merge --> classify --> structure --> persist 
 | Stage | Work |
 |---|---|
 | **Finalize** | Recompute case status (`complete` / `partial` / `failed`), release the pipeline lock, and queue the analysis only when every document structured |
-| **Title chain** | One Gemini call — classify every EC ledger entry and merge it onto the SD's property schedule |
-| **Verification** | One Gemini call — field-by-field SD vs EC comparison -> deterministic `VERIFIED` / `NOT_VERIFIED` / `N/A` verdict |
+| **ClearTitle agent** | Uses tools to inspect persisted document fields and OCR, build a title chain, verify transactions, and save findings/report |
 
 The dashboard polls `/api/status/{case_id}` through the analysis phase and only shows the final report once `verification_status` is set.
 
@@ -383,22 +385,12 @@ clearTitle/
 │   ├── logger.py                   # Logging utility
 │   │
 │   ├── prompts/                    # Versioned LLM prompts (editable .txt files)
-│   │   ├── loader.py               #   load_prompt() + load_schema() helpers
+│   │   ├── loader.py               #   load_prompt() helper
 │   │   ├── agent_system.txt        #   Shared agent reasoning and tool policy
 │   │   ├── agent_summary.txt       #   Document navigation summaries
 │   │   ├── agent_chain_task.txt    #   Property identity + title chain
 │   │   ├── agent_verify_task.txt   #   Per-transaction verification
 │   │   └── agent_final.txt         #   Consolidated report
-│   │   ├── verification.txt        #   SD vs EC cross-check prompt
-│   │   ├── verification_schema.json#   Expected output shape
-│   │   ├── title_chain.txt         #   Title tree construction prompt
-│   │   ├── title_chain_schema.json #   Expected output shape
-│   │   ├── analysis_system.txt     #   Gemini system instruction for analysis
-│   │   ├── extraction_contract.txt #   Shared extraction rules
-│   │   ├── gemini_system.txt       #   Gemini extraction system template
-│   │   ├── gemini_user.txt         #   Gemini extraction user template
-│   │   ├── groq_system.txt         #   Groq extraction system prompt
-│   │   └── groq_user.txt           #   Groq extraction user template
 │   │
 │   ├── routers/                    # HTTP layer (thin: validate -> call service)
 │   │   ├── auth.py                 #   /register, /login, /me
@@ -407,13 +399,11 @@ clearTitle/
 │   │
 │   ├── services/                   # Business logic (no HTTP, no Celery)
 │   │   ├── orchestrator.py         #   builds Celery chains + chords
-│   │   ├── classifier.py           #   keyword-based doc-type detection
-│   │   ├── extract.py              #   OCR retry + LLM fallback-chain driver
-│   │   ├── title_chain.py          #   build title tree from SD + EC ledger
-│   │   ├── verify.py               #   cross-document verification pass
+│   │   ├── document_processor.py   #   classification + full-text extraction
+│   │   ├── cleartitle_agent.py     #   tool-using title-chain + verification workflow
+│   │   ├── extract.py              #   OCR retry + structured output paths
 │   │   ├── report.py               #   PDF title verification report renderer
 │   │   ├── results.py              #   assemble /api/results payload
-│   │   ├── extraction_prompts.py   #   prompt builders (loads from backend/prompts/)
 │   │   ├── auth.py                 #   JWT + bcrypt helpers
 │   │   └── schemas/                #   per-doc-type JSON extraction schemas
 │   │       ├── static.py           #     17 hand-written JSON schemas
@@ -425,14 +415,13 @@ clearTitle/
 │   │   ├── stage_adapter.py        #   task -> stage.invoke adapter
 │   │   ├── idempotency.py          #   skip-already-done guard
 │   │   ├── finalize.py             #   chord callback: recompute status + queue analysis
-│   │   ├── title_chain_tasks.py    #   build_title_chain_task + verify_case_task
+│   │   ├── title_chain_tasks.py    #   queues the ClearTitle agent task
 │   │   └── context.py              #   StageContext (dependencies handed to stages)
 │   │
 │   ├── domain/state_machine.py     # Stage enum + status->stage mapping (pure logic)
 │   │
 │   ├── integrations/               # Adapters to external/plumbing systems
-│   │   ├── llm/                    #   gemini_client, gemini_executor, groq_executor,
-│   │   │                           #   model_router, rate_limiter, analysis_executor
+│   │   ├── llm/                    #   provider-agnostic agent LLM + optional Gemini limiter
 │   │   ├── ocr/                    #   sarvam_client, ocr_merger, preprocessor
 │   │   ├── redis/                  #   client, state_store, lock
 │   │   └── storage/                #   file_utils, file_service
@@ -476,7 +465,7 @@ clearTitle/
 
 ## LLM Prompts
 
-All LLM prompts are versioned text files in `backend/prompts/`. Edit the `.txt` files to change prompts — no Python changes needed.
+The verification agent prompts are versioned text files in `backend/prompts/`. Document classification and extraction instructions live in `backend/services/document_processor.py` alongside their rule-based exceptions.
 
 | File | Used by | Purpose |
 |---|---|---|
@@ -485,16 +474,8 @@ All LLM prompts are versioned text files in `backend/prompts/`. Edit the `.txt` 
 | `agent_chain_task.txt` | `services/cleartitle_agent.py` | Property identity and title-chain construction |
 | `agent_verify_task.txt` | `services/cleartitle_agent.py` | Per-transaction verification |
 | `agent_final.txt` | `services/cleartitle_agent.py` | Consolidated report |
-| `verification.txt` | `services/verify.py` | SD vs EC field-by-field cross-check |
-| `title_chain.txt` | `services/title_chain.py` | Title tree construction from SD + EC ledger |
-| `analysis_system.txt` | `integrations/llm/analysis_executor.py` | Gemini system instruction for analysis tasks |
-| `extraction_contract.txt` | `services/extraction_prompts.py` | Shared extraction rules (OUTPUT_QUALITY_CONTRACT) |
-| `gemini_system.txt` | `services/extraction_prompts.py` | Gemini extraction system template |
-| `gemini_user.txt` | `services/extraction_prompts.py` | Gemini extraction user template |
-| `groq_system.txt` | `integrations/llm/groq_executor.py` | Groq extraction system prompt |
-| `groq_user.txt` | `integrations/llm/groq_executor.py` | Groq extraction user template |
 
-Load helpers: `from backend.prompts.loader import load_prompt, load_schema`
+Load helper: `from backend.prompts.loader import load_prompt`
 
 ---
 
@@ -503,8 +484,8 @@ Load helpers: `from backend.prompts.loader import load_prompt, load_schema`
 | Provider | Model | Cost per case (3 docs) |
 |---|---|---|
 | **Sarvam AI** | OCR (Vision) | Free tier: 10,000 chars/call |
-| **Google** | Gemini 2.5 Flash | ~3-10 per case (varies with doc size and Kannada text) |
-| **Groq** | GPT-OSS 120B/20B | Free tier (fallback only) |
+| **OpenAI-compatible API** | Configured document/agent models | Usage-based; depends on model and document size |
+| **Google Gemini (optional)** | Configured agent model | Usage-based; only when selected for the verification agent |
 
 ---
 

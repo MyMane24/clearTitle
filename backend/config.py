@@ -18,7 +18,7 @@ load_dotenv()
 
 
 def _scrub_dead_proxies() -> None:
-    """Remove injected dead-proxy env vars (Sarvam/Groq SDKs honor them via httpx)."""
+    """Remove injected dead-proxy env vars that can block outbound HTTP calls."""
     for proxy_var in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
         if os.getenv(proxy_var, "").startswith("http://127.0.0.1:9"):
             os.environ.pop(proxy_var, None)
@@ -37,27 +37,15 @@ MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "password")
 MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", os.getenv("MYSQL_DATABASE_V2", "property_ocr_v2"))
 
 # ── API keys ───────────────────────────────────────────────────────────────────
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "")
 BODHAN_API_KEY = os.getenv("BODHAN_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
-# ── Gemini ─────────────────────────────────────────────────────────────────────
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
-GEMINI_MAX_CONTEXT_CHARS = int(os.getenv("GEMINI_MAX_CONTEXT_CHARS", "800000"))
-GEMINI_CACHE_TTL = int(os.getenv("GEMINI_CACHE_TTL", "3600"))
-
-# ── Rate limits ────────────────────────────────────────────────────────────────
+# ── Optional Gemini verification-agent rate limits ──────────────────────────────
 GEMINI_RPM = int(os.getenv("GEMINI_RPM", "30"))
 GEMINI_TPM = int(os.getenv("GEMINI_TPM", "4000000"))
 GEMINI_BURST = int(os.getenv("GEMINI_BURST", "5"))
-GROQ_RPM = int(os.getenv("GROQ_RPM", "60"))
-GROQ_TPM = int(os.getenv("GROQ_TPM", "6000"))
-GROQ_BURST = int(os.getenv("GROQ_BURST", "10"))
-
-# ── Model routing ──────────────────────────────────────────────────────────────
-MODEL_ROUTING_MAP = os.getenv("MODEL_ROUTING_MAP", "")
 
 # ── Uploads ────────────────────────────────────────────────────────────────────
 MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50"))
