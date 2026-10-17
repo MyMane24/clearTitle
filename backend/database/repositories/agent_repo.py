@@ -2,10 +2,10 @@
 
 Authoritative stores (each fact lives in exactly one place):
 
-* ``title_chains.chain``     — the authoritative title chain + property identity
+* ``title_chains``           — Phase A property identity, graph, and detailed chain
 * ``findings``               — one verification result per transaction (upserted)
 * ``reports``                — final report versions (append-only history)
-* ``cases.agent_result``     — latest published result (read-optimised copy)
+* ``cases.agent_result``     — legacy result column; not used for Phase A
 * ``agent_todos``            — durable transaction-verification checklist
 * ``case_memory``            — *only* resume state; never authoritative findings
 * ``documents.summary``      — per-document navigation label
@@ -16,10 +16,8 @@ There is no second database and no duplicate findings store.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from backend.database.connection import _get_conn
-from backend.integrations.storage.file_utils import BASE_DIR, read_json
 
 
 def _dump(value) -> str:
@@ -41,25 +39,15 @@ def _load(value):
 
 
 def get_agent_documents(case_id: str) -> list[dict]:
-    """All documents with the fields the agent needs (document_type + summary)."""
+    """Return document ids, citation filenames, and saved summaries for the agent."""
     with _get_conn() as conn:
         cursor = conn.cursor(dictionary=True)
         cursor.execute(
-            "SELECT doc_id, doc_index, filename, document_type, page_count, status, "
-            "file_paths, summary "
+            "SELECT doc_id, filename, summary "
             "FROM documents WHERE case_id = %s ORDER BY doc_index ASC",
             (case_id,),
         )
-        result = []
-        for row in cursor.fetchall():
-            doc = dict(row)
-            if doc.get("file_paths") and isinstance(doc["file_paths"], str):
-                try:
-                    doc["file_paths"] = json.loads(doc["file_paths"])
-                except Exception:
-                    doc["file_paths"] = {}
-            result.append(doc)
-        return result
+        return [dict(row) for row in cursor.fetchall()]
 
 
 def get_document_metadata(case_id: str, doc_id: str) -> dict | None:
@@ -90,31 +78,35 @@ def set_document_summary(*, case_id: str, doc_id: str, summary: str) -> None:
 
 
 def get_document_raw_text(case_id: str, doc_id: str) -> str:
-    """Full raw merged OCR text for a document (read on demand, never cached)."""
+    """Read the canonical merged OCR text directly from the database."""
     with _get_conn() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT file_paths FROM documents WHERE case_id = %s AND doc_id = %s",
+            "SELECT merged_ocr_text FROM documents WHERE case_id = %s AND doc_id = %s",
             (case_id, doc_id),
         )
         row = cursor.fetchone()
+    return str(row[0] or "") if row else ""
 
-    merged_path = None
-    if row and row[0]:
-        try:
-            merged_path = (_load(row[0]) or {}).get("merged_ocr")
-        except Exception:
-            merged_path = None
-    if not merged_path:
-        merged_path = str(BASE_DIR / "outputs" / case_id / "ocr_raw" / f"{doc_id}_merged.json")
 
-    p = Path(merged_path)
-    if not p.is_file():
-        return ""
-    try:
-        return read_json(p).get("full_text") or ""
-    except Exception:
-        return ""
+def save_phase_a_result(*, case_id: str, result: dict) -> None:
+    """Persist Phase A in its three authoritative title_chains columns."""
+    identity = result.get("property_identity") or {}
+    graph = result.get("title_chain_graph") or ""
+    detailed_chain = result.get("title_chain") or []
+    with _get_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO title_chains "
+            "(case_id, status, property_identity, title_chain_graph, detailed_chain) "
+            "VALUES (%s, %s, %s, %s, %s) "
+            "ON DUPLICATE KEY UPDATE status = VALUES(status), "
+            "property_identity = VALUES(property_identity), "
+            "title_chain_graph = VALUES(title_chain_graph), "
+            "detailed_chain = VALUES(detailed_chain)",
+            (case_id, "complete", _dump(identity), graph, _dump(detailed_chain)),
+        )
+        conn.commit()
 
 
 # ── case columns (agent_status / agent_memory / agent_result) ─────────────────
@@ -332,17 +324,20 @@ def get_agent_result(case_id: str) -> dict | None:
         cursor = conn.cursor()
         try:
             cursor.execute(
-                "SELECT result FROM reports WHERE case_id = %s ORDER BY id DESC LIMIT 1",
+                "SELECT property_identity, title_chain_graph, detailed_chain "
+                "FROM title_chains WHERE case_id = %s",
                 (case_id,),
             )
             row = cursor.fetchone()
         except Exception:
             row = None
-    if row and row[0] is not None:
-        loaded = _load(row[0])
-        if loaded is not None:
-            return loaded
-    return _read_case_column(case_id, "agent_result")
+    if not row or all(value is None for value in row):
+        return None
+    return {
+        "property_identity": _load(row[0]) or {},
+        "title_chain_graph": row[1] or "",
+        "title_chain": _load(row[2]) or [],
+    }
 
 
 def get_agent_state(case_id: str) -> dict:

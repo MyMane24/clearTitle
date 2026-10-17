@@ -30,40 +30,17 @@ def _case_row(case_id: str) -> dict:
     return dict(row)
 
 
-def _memory_transactions(memory: dict) -> list[dict]:
-    chain = (memory.get("title_chain") or {}).get("transactions") or []
-    todo = {t["index"]: t for t in (memory.get("todo") or [])}
-    merged = []
-    for tx in chain:
-        item = dict(tx)
-        item.update(todo.get(tx["index"], {}))
-        merged.append(item)
-    return merged
-
-
 def _agent_block(case_id: str) -> dict:
     from backend.database.repositories.agent_repo import get_agent_state
     state = get_agent_state(case_id)
     memory = state.get("memory") or {}
     result = state.get("result") or {}
+    # Return the agent's saved deliverable without rebuilding or translating its
+    # fields for the UI. Status is orchestration metadata, not part of the result.
     return {
+        **result,
         "status": state.get("status") or ("done" if result else "idle"),
         "stage": memory.get("stage"),
-        "paused_transaction": memory.get("paused_transaction"),
-        "next_action": memory.get("next_action"),
-        "missing_documents": memory.get("missing_documents") or result.get("missing_documents") or [],
-        "overall_status": result.get("overall_status"),
-        "headline": result.get("headline") or "",
-        "report": result.get("report") or "",
-        "findings": result.get("findings") or [],
-        "recommendation": result.get("recommendation") or "",
-        "property_identity": result.get("property_identity") or memory.get("identity") or {},
-        "title_chain": result.get("title_chain") or {
-            "transactions": (memory.get("title_chain") or {}).get("transactions") or [],
-            "title_story": (memory.get("title_chain") or {}).get("title_story") or "",
-        },
-        "transactions": result.get("transactions") or _memory_transactions(memory),
-        "updated_at": result.get("updated_at") or memory.get("updated_at"),
     }
 
 

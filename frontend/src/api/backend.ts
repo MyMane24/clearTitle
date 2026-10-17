@@ -198,16 +198,17 @@ export interface VerificationItem {
 export interface AgentReport {
   status: string;
   stage?: string | null;
+  property_identity?: unknown;
+  title_chain_graph?: string;
+  title_chain?: unknown;
   paused_transaction?: number | null;
   next_action?: string | null;
-  missing_documents: AgentMissingDoc[];
+  missing_documents?: AgentMissingDoc[];
   overall_status?: string | null;
   headline?: string;
   report?: string;
   findings?: string[];
-  property_identity?: AgentIdentity | null;
-  title_chain?: { transactions?: AgentTransaction[]; title_story?: string; unresolved?: string[] } | null;
-  transactions: AgentTransaction[];
+  transactions?: AgentTransaction[];
   updated_at?: string | null;
   recommendation?: string;
 }

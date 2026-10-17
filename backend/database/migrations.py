@@ -5,7 +5,7 @@ Tables:
   users                 — auth accounts
   cases                 — pipeline cases (user-scoped)
   documents             — per-doc extraction state (no per-doc verification)
-  title_chains          — LLM-built title chain for a case (legacy)
+  title_chains          — Phase A property identity, graph, and detailed chain
   verification_results  — LLM field-verification results for a case (legacy)
   case_memory           — ClearTitle agent resume state (current task + pending work)
   findings              — per-transaction agent findings + evidence
@@ -88,6 +88,9 @@ CREATE TABLE IF NOT EXISTS title_chains (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     case_id VARCHAR(32) NOT NULL,
     status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    property_identity JSON NULL,
+    title_chain_graph LONGTEXT NULL,
+    detailed_chain JSON NULL,
     chain JSON NULL,
     source JSON NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -195,14 +198,15 @@ def ensure_tables():
             ("cases", "user_id", "ALTER TABLE cases ADD COLUMN user_id VARCHAR(32) NULL DEFAULT NULL AFTER id"),
             ("documents", "expected_type", "ALTER TABLE documents ADD COLUMN expected_type VARCHAR(32) NULL DEFAULT NULL"),
             ("documents", "merged_ocr_text", "ALTER TABLE documents ADD COLUMN merged_ocr_text LONGTEXT NULL AFTER structured_data"),
-            # ClearTitle single-agent workflow: one navigation summary per document,
-            # plus case-scoped agent status / memory / result (memory and result are
-            # deliberately separate columns — memory is for resuming, result is the
-            # final deliverable).
+            # ClearTitle agent status and resume memory; Phase A's deliverable lives
+            # in the three dedicated title_chains columns below.
             ("documents", "summary", "ALTER TABLE documents ADD COLUMN summary TEXT NULL"),
             ("cases", "agent_status", "ALTER TABLE cases ADD COLUMN agent_status VARCHAR(32) NULL DEFAULT NULL"),
             ("cases", "agent_memory", "ALTER TABLE cases ADD COLUMN agent_memory JSON NULL"),
             ("cases", "agent_result", "ALTER TABLE cases ADD COLUMN agent_result JSON NULL"),
+            ("title_chains", "property_identity", "ALTER TABLE title_chains ADD COLUMN property_identity JSON NULL"),
+            ("title_chains", "title_chain_graph", "ALTER TABLE title_chains ADD COLUMN title_chain_graph LONGTEXT NULL"),
+            ("title_chains", "detailed_chain", "ALTER TABLE title_chains ADD COLUMN detailed_chain JSON NULL"),
             ("findings", "tx_id", "ALTER TABLE findings ADD COLUMN tx_id VARCHAR(64) NULL DEFAULT NULL"),
         ]:
             _, _, sql = col_def
@@ -238,4 +242,34 @@ def ensure_tables():
                 conn.commit()
             except Exception:
                 conn.rollback()
+
+        # Split Phase A results previously stored as one JSON object in chain.
+        # Clear the duplicate case read-copy only for records positively
+        # identified as Phase A results; preserve unrelated legacy data.
+        try:
+            cursor.execute(
+                "UPDATE title_chains SET "
+                "property_identity = JSON_EXTRACT(chain, '$.property_identity'), "
+                "title_chain_graph = JSON_UNQUOTE(JSON_EXTRACT(chain, '$.title_chain_graph')), "
+                "detailed_chain = JSON_EXTRACT(chain, '$.title_chain') "
+                "WHERE chain IS NOT NULL "
+                "AND JSON_CONTAINS_PATH(chain, 'all', '$.property_identity', '$.title_chain_graph', '$.title_chain') "
+                "AND property_identity IS NULL AND title_chain_graph IS NULL AND detailed_chain IS NULL"
+            )
+            cursor.execute(
+                "UPDATE cases c JOIN title_chains tc ON tc.case_id = c.id "
+                "SET c.agent_result = NULL "
+                "WHERE c.agent_result IS NOT NULL AND tc.property_identity IS NOT NULL "
+                "AND tc.title_chain_graph IS NOT NULL AND tc.detailed_chain IS NOT NULL "
+                "AND JSON_CONTAINS_PATH(c.agent_result, 'all', '$.property_identity', '$.title_chain_graph', '$.title_chain')"
+            )
+            cursor.execute(
+                "UPDATE title_chains SET chain = NULL "
+                "WHERE property_identity IS NOT NULL AND title_chain_graph IS NOT NULL "
+                "AND detailed_chain IS NOT NULL "
+                "AND JSON_CONTAINS_PATH(chain, 'all', '$.property_identity', '$.title_chain_graph', '$.title_chain')"
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
     _tables_initialized = True

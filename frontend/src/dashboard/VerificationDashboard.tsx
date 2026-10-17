@@ -7,6 +7,7 @@ import {
   StatusResponse, TitleChainEntry, getToken, setToken,
 } from '../api/backend';
 import { DocSummary } from './utils';
+import { PhaseAChainView } from './PhaseAResult';
 import {
   AlertTriangle, ArrowLeft, Check, CheckCircle2,
   ChevronDown, ChevronUp, FileText, FileUp,
@@ -1198,12 +1199,28 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
 
   // Title chain data from agent
   const titleChain = agent?.title_chain;
-  const chain = titleChain?.transactions || [];
+  const legacyTitleChain = titleChain && !Array.isArray(titleChain)
+    ? titleChain as { transactions?: any[]; title_story?: string; unresolved?: string[] }
+    : {};
+  const chain = legacyTitleChain.transactions || [];
   const sortedChain = sortChain(chain);
-  const titleStory = titleChain?.title_story || '';
-  const chainUnresolved = titleChain?.unresolved || [];
+  const titleStory = legacyTitleChain.title_story || '';
+  const chainUnresolved = legacyTitleChain.unresolved || [];
   const propertyIdentity = (agent?.property_identity || {}) as Record<string, unknown>;
-  const identityEntries = Object.entries(propertyIdentity).filter(([, value]) => value != null && value !== '');
+  const identityDetails = Array.isArray(propertyIdentity.details)
+    ? propertyIdentity.details.map((detail, index) => {
+      const record: Record<string, unknown> = detail && typeof detail === 'object' && !Array.isArray(detail)
+        ? detail as Record<string, unknown>
+        : { value: detail };
+      return {
+        label: typeof record.label === 'string' ? record.label : `Property detail ${index + 1}`,
+        value: record.value,
+      };
+    }).filter(detail => detail.value != null && detail.value !== '')
+    : [];
+  const identityEntries = Object.entries(propertyIdentity).filter(([key, value]) =>
+    key !== 'details' && value != null && value !== ''
+  );
 
   return (
     <div className="ctd-root">
@@ -1512,23 +1529,27 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                     </div>
                   </div>
 
-                  {!!identityEntries.length && (
-                    <section className="chain-summary-card" aria-label="Target property identity">
-                      <div className="chain-summary-heading">
-                        <span className="chain-summary-mark">ID</span>
-                        <div>
-                          <span className="chain-node-label">TARGET PROPERTY</span>
-                          <h2>Property identity</h2>
-                        </div>
+                  {(identityDetails.length > 0 || identityEntries.length > 0) && (
+                    <section className="verification-property-identity" aria-labelledby="verification-property-identity-title">
+                      <div className="verification-property-identity-heading">
+                        <span className="verification-property-identity-kicker">TARGET PROPERTY</span>
+                        <h2 id="verification-property-identity-title">Property identity</h2>
+                        <p>Recorded identifiers and descriptions for the property under verification.</p>
                       </div>
-                      <div className="chain-summary-grid">
-                        {identityEntries.map(([key, value]) => (
-                          <div className="chain-summary-field" key={key}>
-                            <span className="chain-node-label">{key.replace(/_/g, ' ')}</span>
-                            <span>{typeof value === 'object' ? JSON.stringify(value) : String(value)}</span>
+                      <dl className="verification-property-identity-list">
+                        {identityDetails.map((detail, index) => (
+                          <div className="verification-property-identity-item" key={`${detail.label}-${index}`}>
+                            <dt>{detail.label}</dt>
+                            <dd>{typeof detail.value === 'object' ? JSON.stringify(detail.value) : String(detail.value)}</dd>
                           </div>
                         ))}
-                      </div>
+                        {identityEntries.map(([key, value]) => (
+                          <div className="verification-property-identity-item" key={key}>
+                            <dt>{key.replace(/[_-]+/g, ' ')}</dt>
+                            <dd>{typeof value === 'object' ? JSON.stringify(value) : String(value)}</dd>
+                          </div>
+                        ))}
+                      </dl>
                     </section>
                   )}
                   {!!chainUnresolved.length && (
@@ -1805,42 +1826,10 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
               {/* TAB 2: TITLE CHAIN */}
               {activeReportTab === 'title-chain' && (
                 <div className="tab-pane active">
-                  <div className="chain-page-head">
-                    <div className="chain-page-head-left">
-                      <span className="chain-kicker">TITLE CHAIN • CASE {currentCaseId || caseInfo?.case_id || 'A722E83D'}</span>
-                      <h1 className="chain-page-title">Chain of title</h1>
-                      <p className="chain-page-sub">Chronological property devolution, ownership transitions, and adverse encumbrance tracking.</p>
-                    </div>
-                    <div className="chain-page-head-right">
-                      <button className="chain-back-btn" onClick={() => setActiveReportTab('verification')}>
-                        <ArrowLeft size={14} /> Back to Report
-                      </button>
-                      <span className="chain-milestones">
-                        <span className="chain-milestones-dot" />
-                        {sortedChain.length} TRANSACTIONS LINKED
-                      </span>
-                    </div>
-                  </div>
-
-                  {titleStory && (
-                    <section className="chain-story-card">
-                      <button
-                        className="chain-story-toggle"
-                        onClick={() => setTitleStoryOpen(open => !open)}
-                        aria-expanded={titleStoryOpen}
-                      >
-                        <span>
-                          <span className="chain-node-label">CHAIN SUMMARY</span>
-                          <strong>Title-chain narrative</strong>
-                        </span>
-                        {titleStoryOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                      </button>
-                      {titleStoryOpen && <p className="chain-story-text">{titleStory}</p>}
-                    </section>
-                  )}
-
-                  {/* Connected Chronological Chain Nodes */}
-                  <ChainTimeline chain={chain} />
+                  <PhaseAChainView
+                    result={agent || {}}
+                    onBack={() => setActiveReportTab('verification')}
+                  />
                 </div>
               )}
 

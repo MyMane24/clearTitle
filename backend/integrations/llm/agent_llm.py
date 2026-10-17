@@ -233,7 +233,7 @@ def _openai_complete_with_tools(
                 tools=openai_tools if openai_tools else None,
                 tool_choice="auto" if openai_tools else None,
                 max_completion_tokens=32000,
-                reasoning_effort="none",
+                extra_body={"reasoning_effort": "none"},
             )
             choice = response.choices[0]
             calls = []
@@ -246,7 +246,8 @@ def _openai_complete_with_tools(
             return {"tool_calls": calls, "content": choice.message.content}
         except Exception as e:
             last_exc = e
-            transient = any(
+            malformed_tool_json = isinstance(e, json.JSONDecodeError) and attempt < 2
+            transient = malformed_tool_json or any(
                 x in str(e).lower()
                 for x in ["429", "rate", "timeout", "503", "502", "504", "quota", "unavailable"]
             )
@@ -332,7 +333,7 @@ def _openai_complete_json(
                 model=model,
                 messages=messages,
                 max_completion_tokens=32000,
-                reasoning_effort="none",
+                extra_body={"reasoning_effort": "none"},
                 response_format={"type": "json_object"},
             )
             return _extract_json(response.choices[0].message.content or "")

@@ -47,6 +47,7 @@ class ToolContext:
         self.chain = chain or {}
         self.current_tx_id = current_tx_id
         self.saved_chain: dict | None = None
+        self.saved_phase_a_result: dict | None = None
         self.saved_results: list[dict] = []
         self.missing_requests: list[dict] = []
         self.saved_report: dict | None = None
@@ -112,7 +113,7 @@ def _verification_props() -> dict:
 
 _LIST_DOCS = {
     "name": "list_documents",
-    "description": "List every document in the case with its type, filename, status and summary.",
+    "description": "List all uploaded document IDs and their saved summaries. No other document fields are available to this phase.",
     "parameters": {"type": "object", "properties": {}},
 }
 _DOC_META = {
@@ -122,11 +123,24 @@ _DOC_META = {
 }
 _DOC_TEXT = {
     "name": "get_document_text",
-    "description": "Get the full raw OCR text of one document (optionally truncated).",
+    "description": "Read a chunk of one document's merged OCR text directly from the database.",
     "parameters": {
         "type": "object",
-        "properties": {"doc_id": {"type": "string"}, "max_chars": {"type": "integer"}},
+        "properties": {
+            "doc_id": {"type": "string"},
+            "start_char": {"type": "integer"},
+            "max_chars": {"type": "integer"},
+        },
         "required": ["doc_id"],
+    },
+}
+_SAVE_PHASE_A = {
+    "name": "save_phase_a_result",
+    "description": "Save the completed Phase A property identity and title-chain graph. Preserve the supplied result without rewriting it.",
+    "parameters": {
+        "type": "object",
+        "properties": {"result": {"type": "object"}},
+        "required": ["result"],
     },
 }
 _FINISH = {"name": "finish", "description": "Signal that this stage is complete.", "parameters": {"type": "object", "properties": {}}}
@@ -171,13 +185,14 @@ _SAVE_REPORT = {
     "parameters": {"type": "object", "properties": {"report": {"type": "object"}}, "required": ["report"]},
 }
 
+PHASE_A_TOOLS = [_LIST_DOCS, _DOC_TEXT, _SAVE_PHASE_A, _FINISH]
 CHAIN_TOOLS = [_LIST_DOCS, _DOC_META, _DOC_TEXT, _SAVE_CHAIN, _FINISH]
 VERIFY_TOOLS = [_LIST_TX, _GET_TX, _LOAD_RULES, _DOC_META, _DOC_TEXT, _SAVE_RESULT, _REQ_MISSING, _FINISH]
 FINAL_TOOLS = [_LIST_TX, _GET_TX, _DOC_TEXT, _SAVE_REPORT, _FINISH]
 
 
 def tools_for(phase: str) -> list[dict]:
-    return {"chain": CHAIN_TOOLS, "verify": VERIFY_TOOLS, "final": FINAL_TOOLS}.get(phase, [])
+    return {"phase_a": PHASE_A_TOOLS, "chain": CHAIN_TOOLS, "verify": VERIFY_TOOLS, "final": FINAL_TOOLS}.get(phase, [])
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -202,8 +217,7 @@ def _find_tx(ctx: ToolContext, tx_id: str) -> dict | None:
 
 def _h_list_documents(ctx: ToolContext, args: dict) -> dict:
     return {"documents": [
-        {"doc_id": d["doc_id"], "document_type": d.get("document_type"),
-         "filename": d.get("filename"), "status": d.get("status"), "summary": d.get("summary")}
+        {"doc_id": d["doc_id"], "filename": d.get("filename") or "", "summary": d.get("summary") or ""}
         for d in ctx.docs
     ]}
 
@@ -218,9 +232,126 @@ def _h_doc_text(ctx: ToolContext, args: dict) -> dict:
     doc_id = str(args.get("doc_id") or "")
     if doc_id not in ctx.by_id:
         return {"error": f"no document {doc_id!r} in case"}
-    max_chars = min(int(args.get("max_chars") or _DEFAULT_TEXT_CHARS), _TEXT_CAP)
+    max_chars = min(max(int(args.get("max_chars") or _DEFAULT_TEXT_CHARS), 1), _TEXT_CAP)
+    start_char = max(int(args.get("start_char") or 0), 0)
     text = repo.get_document_raw_text(ctx.case_id, doc_id)
-    return {"doc_id": doc_id, "truncated": len(text) > max_chars, "text": text[:max_chars]}
+    end_char = min(start_char + max_chars, len(text))
+    return {
+        "doc_id": doc_id,
+        "total_chars": len(text),
+        "start_char": start_char,
+        "next_start_char": end_char if end_char < len(text) else None,
+        "has_more": end_char < len(text),
+        "text": text[start_char:end_char],
+    }
+
+
+def _h_save_phase_a_result(ctx: ToolContext, args: dict) -> dict:
+    result = args.get("result")
+    if not isinstance(result, dict):
+        return {"error": "result must be an object"}
+    if not isinstance(result.get("property_identity"), dict):
+        return {"error": "result.property_identity must be an object containing the target property identity"}
+    if not isinstance(result["property_identity"].get("details"), list):
+        return {"error": "result.property_identity.details must be a list"}
+    if "unresolved" in result["property_identity"]:
+        return {"error": "do not add an unresolved field to property_identity"}
+    if not isinstance(result.get("title_chain_graph"), str) or not result["title_chain_graph"].strip():
+        return {"error": "result.title_chain_graph must contain the readable title-chain graph"}
+    chain = result.get("title_chain")
+    if not isinstance(chain, list) or not chain:
+        return {"error": "result.title_chain must contain the ordered ownership chain"}
+
+    def validate_citations(refs, where):
+        if not isinstance(refs, list) or not refs:
+            return f"{where} must contain at least one source reference"
+        cited_filenames = []
+        for ref in refs:
+            if not isinstance(ref, dict) or not isinstance(ref.get("doc_id"), str) or not ref["doc_id"].strip():
+                return f"{where} references must contain document IDs"
+            document = ctx.by_id.get(ref["doc_id"])
+            if not document:
+                return f"{where} references a document outside this case"
+            filename = ref.get("filename")
+            if not isinstance(filename, str) or filename != document.get("filename"):
+                return f"{where} must preserve the exact PDF filename for {ref['doc_id']}"
+            cited_filenames.append(filename)
+        return cited_filenames
+
+    seen_transaction_numbers: set[str] = set()
+    for index, entry in enumerate(chain):
+        if not isinstance(entry, dict):
+            return {"error": f"result.title_chain[{index}] must be an object"}
+        if entry.get("chain_position") != index + 1:
+            return {"error": "title_chain must be numbered from earliest supported root to current/latest owner"}
+        if "unresolved" in entry:
+            return {"error": f"do not add an unresolved field to title_chain[{index}]"}
+        transaction = entry.get("documented_transaction")
+        if not isinstance(transaction, dict) or not transaction:
+            return {"error": f"title_chain[{index}].documented_transaction must contain the open-ended transaction details"}
+        if not isinstance(transaction.get("transaction_type"), str) or not transaction["transaction_type"].strip():
+            return {"error": f"title_chain[{index}].documented_transaction must identify the transaction_type"}
+        if "executed_date" not in transaction:
+            return {"error": f"title_chain[{index}].documented_transaction must include executed_date (null if not stated)"}
+        if "transaction_number" not in transaction:
+            return {"error": f"title_chain[{index}].documented_transaction must include transaction_number (null if not stated)"}
+        transaction_number = transaction.get("transaction_number")
+        if transaction_number:
+            registration_ref = str(transaction_number).strip().casefold()
+            if registration_ref in seen_transaction_numbers:
+                return {
+                    "error": f"duplicate transaction_number {transaction_number!r}; merge duplicate document copies into one chronological chain entry"
+                }
+            seen_transaction_numbers.add(registration_ref)
+        points = transaction.get("summary_points")
+        if not isinstance(points, list) or not points:
+            return {"error": f"title_chain[{index}].documented_transaction.summary_points must contain plain-language facts"}
+        for point_index, point in enumerate(points):
+            if not isinstance(point, str) or not point.strip():
+                return {"error": f"title_chain[{index}].documented_transaction.summary_points[{point_index}] must be a plain-language sentence"}
+        transaction_refs = validate_citations(
+            transaction.get("source_refs"), f"title_chain[{index}].documented_transaction.source_refs"
+        )
+        if isinstance(transaction_refs, str):
+            return {"error": transaction_refs}
+        related_events = entry.get("related_events") or []
+        if not isinstance(related_events, list):
+            return {"error": f"title_chain[{index}].related_events must be a list"}
+        for event_index, event in enumerate(related_events):
+            if not isinstance(event, dict):
+                return {"error": f"title_chain[{index}].related_events[{event_index}] must be an object"}
+            if not isinstance(event.get("summary_points"), list) or not event["summary_points"]:
+                return {"error": f"title_chain[{index}].related_events[{event_index}] must contain plain-language summary_points"}
+            for point_index, point in enumerate(event["summary_points"]):
+                if not isinstance(point, str) or not point.strip():
+                    return {"error": f"title_chain[{index}].related_events[{event_index}].summary_points[{point_index}] must be a plain-language sentence"}
+            event_refs = validate_citations(
+                event.get("source_refs"), f"title_chain[{index}].related_events[{event_index}].source_refs"
+            )
+            if isinstance(event_refs, str):
+                return {"error": event_refs}
+    source_ids = set(ctx.by_id)
+    referenced_ids = _collect_document_ids(result)
+    unknown_ids = sorted(referenced_ids - source_ids)
+    if unknown_ids:
+        return {"error": "result references documents outside this case", "doc_ids": unknown_ids}
+    repo.save_phase_a_result(case_id=ctx.case_id, result=result)
+    ctx.saved_phase_a_result = result
+    return {"saved": True}
+
+
+def _collect_document_ids(value) -> set[str]:
+    found: set[str] = set()
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key in {"doc_id", "source_doc_id"} and isinstance(item, str):
+                found.add(item)
+            else:
+                found.update(_collect_document_ids(item))
+    elif isinstance(value, list):
+        for item in value:
+            found.update(_collect_document_ids(item))
+    return found
 
 
 def _h_save_title_chain(ctx: ToolContext, args: dict) -> dict:
@@ -348,6 +479,7 @@ _HANDLERS: dict[str, Callable[[ToolContext, dict], dict]] = {
     "list_documents": _h_list_documents,
     "get_document_metadata": _h_doc_metadata,
     "get_document_text": _h_doc_text,
+    "save_phase_a_result": _h_save_phase_a_result,
     "save_title_chain": _h_save_title_chain,
     "list_transactions": _h_list_transactions,
     "get_transaction": _h_get_transaction,
@@ -371,4 +503,3 @@ def dispatch(ctx: ToolContext, name: str, args: dict) -> dict:
     except Exception as e:  # noqa: BLE001 - tool failure is reported, never fatal
         logger.exception("tool %s failed for case %s", name, getattr(ctx, "case_id", "?"))
         return {"error": str(e)}
-

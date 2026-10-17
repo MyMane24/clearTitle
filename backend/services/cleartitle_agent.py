@@ -44,6 +44,7 @@ STATUS_ERROR = "error"
 _CHAIN_MAX_STEPS = 10
 _VERIFY_MAX_STEPS = 12
 _FINAL_MAX_STEPS = 6
+_PHASE_A_MAX_STEPS = 80
 
 
 # ── document summaries (cheap navigation aid, generated only when missing) ────
@@ -90,6 +91,29 @@ def _chain_instruction(docs: list[dict]) -> str:
     return load_prompt("agent_chain_task") + "\n\n--- CASE DOCUMENTS ---\n" + _doc_list(docs)
 
 
+def _phase_a_instruction(docs: list[dict]) -> str:
+    manifest = "\n".join(
+        f"- {doc['doc_id']} | citation filename: {doc.get('filename') or '(filename unavailable)'} | summary: {doc.get('summary') or '(no saved summary)'}"
+        for doc in docs
+    )
+    skill = (repo_skill_path()).read_text(encoding="utf-8")
+    return (
+        "MANDATORY SKILL — FOLLOW THIS FOR EVERY TITLE-CHAIN BUILD\n\n"
+        + skill
+        + "\n\n"
+        + load_prompt("title_chain_task")
+        + "\n\n--- ALL UPLOADED DOCUMENT SUMMARIES ---\n"
+        + manifest
+    )
+
+
+def repo_skill_path():
+    """Resolve the mandatory skill file from the backend package tree."""
+    from pathlib import Path
+
+    return Path(__file__).resolve().parents[1] / "skills" / "title_chain" / "skill.md"
+
+
 def _verify_instruction(tx: dict) -> str:
     rules = agent_rules.transaction_rules_for({"type": tx.get("transaction_type")})
     return (
@@ -129,6 +153,27 @@ def _build_chain(case_id: str, docs: list[dict]) -> dict | None:
         instruction=_chain_instruction(docs), max_steps=_CHAIN_MAX_STEPS,
     )
     return ctx.saved_chain or repo.get_title_chain(case_id)
+
+
+def _build_phase_a(case_id: str, docs: list[dict]) -> dict:
+    ctx = ToolContext(case_id, docs)
+    try:
+        run_tool_loop(
+            ctx=ctx,
+            phase="phase_a",
+            system=load_prompt("title_chain_system"),
+            instruction=_phase_a_instruction(docs),
+            max_steps=_PHASE_A_MAX_STEPS,
+        )
+    except AgentLLMError:
+        # A provider failure after the result was durably saved must not turn a
+        # completed Phase A into an apparent failure.
+        if not ctx.saved_phase_a_result:
+            raise
+        logger.warning("Phase A saved for %s but final model turn failed", case_id)
+    if not ctx.saved_phase_a_result:
+        raise AgentLLMError("Phase A ended without saving the property identity and title-chain result")
+    return ctx.saved_phase_a_result
 
 
 def _verify_transaction(case_id: str, docs: list[dict], chain: dict, tx_id: str) -> ToolContext:
@@ -179,7 +224,7 @@ def _build_final(case_id: str, docs: list[dict], chain: dict) -> dict:
 
 
 def run_agent(case_id: str) -> dict:
-    """Run or resume the agent for a case. Idempotent and resumable."""
+    """Build and persist Phase A: property identity and title-chain graph."""
     lock = None
     if PIPELINE_LOCK_ENABLED:
         try:
@@ -191,10 +236,34 @@ def run_agent(case_id: str) -> dict:
             logger.warning("agent lock unavailable for %s: %s", case_id, e)
             lock = None
     try:
-        return _run(case_id)
+        return _run_phase_a(case_id)
     finally:
         if lock is not None:
             lock.release()
+
+
+def _run_phase_a(case_id: str) -> dict:
+    """Run Phase A only; later verification phases are intentionally not invoked."""
+    docs = repo.get_agent_documents(case_id)
+    if not docs:
+        repo.set_agent_status(case_id=case_id, status=STATUS_ERROR)
+        return {"case_id": case_id, "status": STATUS_ERROR, "reason": "no documents"}
+
+    memory = repo.get_agent_memory(case_id) or {}
+    try:
+        repo.set_agent_status(case_id=case_id, status=STATUS_RUNNING)
+        memory.update({"stage": "phase_a", "error": None})
+        _save_state(case_id, memory, STATUS_RUNNING)
+        result = _build_phase_a(case_id, docs)
+        memory.update({"stage": "phase_a_complete", "updated_at": _now()})
+        _save_state(case_id, memory, STATUS_DONE)
+        logger.info("Phase A title chain saved for case %s", case_id)
+        return {"case_id": case_id, "status": STATUS_DONE, "result": result}
+    except Exception as e:
+        logger.exception("Phase A failed for %s: %s", case_id, e)
+        memory.update({"stage": "phase_a_error", "error": str(e)})
+        _save_state(case_id, memory, STATUS_ERROR)
+        return {"case_id": case_id, "status": STATUS_ERROR, "error": str(e)}
 
 
 def _run(case_id: str) -> dict:
