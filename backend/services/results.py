@@ -3,6 +3,14 @@
 from __future__ import annotations
 
 from backend.database.repositories.document_repo import get_case_documents
+from backend.services.agent_schemas import (
+    normalize_transaction_verification,
+)
+
+
+def _transaction_for_api(raw: dict) -> dict:
+    """Adapt historical result rows into the canonical v2.1 response shape."""
+    return normalize_transaction_verification(raw)
 
 
 def classification_action_message(document: dict) -> str:
@@ -35,12 +43,34 @@ def _agent_block(case_id: str) -> dict:
     state = get_agent_state(case_id)
     memory = state.get("memory") or {}
     result = state.get("result") or {}
-    # Return the agent's saved deliverable without rebuilding or translating its
-    # fields for the UI. Status is orchestration metadata, not part of the result.
+    case_result = state.get("case_result") or {}
+    transactions = [
+        _transaction_for_api(item)
+        for item in case_result if isinstance(case_result, list) and isinstance(item, dict)
+    ]
+    statuses = {str(item.get("status") or "").upper() for item in transactions}
+    if "ISSUES_IDENTIFIED" in statuses:
+        overall_status = "ISSUES_IDENTIFIED"
+    elif statuses and statuses == {"VERIFIED_WITH_AVAILABLE_EVIDENCE"}:
+        overall_status = "VERIFIED_WITH_AVAILABLE_EVIDENCE"
+    else:
+        overall_status = "INCONCLUSIVE" if transactions else None
+    # Keep the Phase A chain separate and expose saved transaction results even
+    # while a run is paused before the consolidated report is produced.
     return {
         **result,
+        "transactions": transactions,
+        "overall_status": overall_status,
         "status": state.get("status") or ("done" if result else "idle"),
-        "stage": memory.get("stage"),
+        "updated_at": memory.get("updated_at"),
+        "stage": memory.get("stage") or memory.get("current_stage"),
+        "paused_transaction": memory.get("paused_transaction") or (
+            memory.get("current_tx_id")
+            if state.get("status") == "paused" and memory.get("status") == "PENDING_NOT_VERIFIED"
+            else None
+        ),
+        "next_action": memory.get("next_action"),
+        "skipped_tx_ids": memory.get("skipped_tx_ids") or [],
     }
 
 

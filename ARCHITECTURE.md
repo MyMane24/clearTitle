@@ -1,382 +1,339 @@
-# ClearTitle Architecture
+# ClearTitle — System Architecture and Design
 
-This document describes the current implementation in this repository. It is intended for both maintainers and users who want to understand what happens to a document from upload through the final report.
+This document describes the implementation currently in this repository. It covers the high-level architecture, runtime flows, verification-agent behavior, persistence model, and operational status semantics. It is not a legal opinion or a claim that the product determines legal title.
 
-## 1. At a glance
+## 1. System purpose and boundaries
 
-ClearTitle has two processing phases:
+ClearTitle accepts property-document PDFs, extracts searchable text and structured fields, then runs a case-level investigation over a saved title chain. The agent assesses each chain transaction against selected uploaded evidence and creates a consolidated report.
 
-1. **Document pipeline:** prepare each PDF, run OCR, classify it, structure its contents, and persist the extraction.
-2. **Title investigation:** after all documents are structured, the ClearTitle agent establishes property identity, builds a chronological title chain, verifies each transaction, and produces a case report.
+The system has two distinct workflows:
 
-The browser talks to FastAPI. FastAPI stores durable state in MySQL, uses Redis for Celery and a best-effort case cache, and queues long-running work to Celery workers. Original files and intermediate OCR/structured output are stored in the `outputs/` directory.
+1. **Document processing:** upload, preprocess, OCR, merge, classify, structure, persist.
+2. **Title investigation:** establish/reuse the property identity and chain, verify transactions, and save the report.
 
-```text
-                         +-----------------------+
-                         | User / React browser  |
-                         +-----------+-----------+
-                                     | HTTP
-                                     v
-                         +-----------+-----------+
-                         |      FastAPI API      |
-                         +--+--------+--------+--+
-                            |        |        |
-                     durable data   cache   case files
-                            |        |        |
-                            v        v        v
-                         MySQL     Redis   outputs/<case_id>
-                                      |
-                                      | Celery queue
-                                      v
-                              +-------+--------+
-                              | Celery workers |
-                              +--+----------+--+
-                                 |          |
-                      Sarvam OCR   OpenAI-compatible extraction
-                                 |          |
-                                 +----+-----+
-                                      |
-                               structured data
-                                      |
-                                      v
-                              ClearTitle agent
-                                /         \
-                         configured LLM   MySQL + OCR files
-```
+Document extraction success is not title verification. Likewise, an agent run marked `done` means its work loop ended; it does not mean every transaction was verified or that title is legally clear.
 
-### Runtime components
-
-| Component | Responsibility |
-|---|---|
-| `frontend/src/` | React user interface: upload, case history, processing status, OCR viewer, transaction findings, and report controls. |
-| `backend/main.py` | FastAPI app, router registration, startup database initialization, health endpoint, and production SPA serving. |
-| `backend/routers/` | HTTP endpoints, authentication dependencies, case ownership checks, upload/status/result actions. |
-| `backend/services/` | Application workflows: OCR/extraction routing, agent orchestration, result assembly, PDF report creation, and authentication. |
-| `backend/workers/` | Celery tasks for document stages, case finalization, agent execution, and transaction skip/resume. |
-| `backend/integrations/` | Adapters to Sarvam OCR, OpenAI-compatible document processing, optional Gemini agent calls, Redis, and filesystem storage. |
-| `backend/database/repositories/` | Parameterized MySQL reads/writes for cases, documents, users, and agent state. |
-| `backend/database/migrations.py` | Creates the current application tables and applies best-effort changes to older schemas. |
-
-In Docker, the frontend is built with Vite and served as static files by FastAPI. `frontend/server.ts` is a separate Node/Express development server; it is not the Docker production API.
-
-## 2. End-to-end user flow
-
-### Step 1 — Upload documents
-
-The user opens `/app`, selects PDFs, and submits them through `POST /api/upload`.
-
-- The API checks the upload is a PDF and enforces the configured file-size limit.
-- It creates a short case ID and sequential document IDs such as `DOC_001`.
-- Files are saved under `outputs/<case_id>/raw/`.
-- A `cases` row and one `documents` row per PDF are written to MySQL.
-- Redis is warmed with case metadata and file paths for the pipeline. It is a cache; MySQL is the durable source of truth.
-- Upload slots can identify a file as the expected sale deed or encumbrance certificate. The expected type is a classification fallback, not OCR evidence.
-
-The UI currently requires a sale deed and EC slot before enabling its main “Verify Title” action. The upload endpoint itself accepts a list of PDF files.
-
-### Step 2 — Start background processing
-
-The browser calls `POST /api/process/{case_id}`. The API checks case access, optionally acquires a Redis pipeline lock, sets the case to `processing`, and asks `services/orchestrator.py` to queue work.
-
-The orchestrator creates one **sequential Celery chain per document** and combines those chains in a chord. Different documents may therefore process concurrently; stages for a single document run in order. Idempotency wrappers skip stages whose persisted status is already beyond the target stage.
-
-### Step 3 — Extract each document
-
-Every PDF passes through these six stages:
-
-| Order | Stage | What it does | Main artifacts/state |
-|---:|---|---|---|
-| 1 | Preprocess | Tries to improve the scan (deskew/contrast/denoise). If preprocessing fails, it logs a warning and uses the original PDF. | `outputs/<case_id>/preprocessed/`; `documents.file_paths.preprocessed` |
-| 2 | OCR | Sends the PDF through Sarvam OCR with retry handling and page/chunk support. | OCR chunk artifacts under `outputs/<case_id>/ocr_raw/`; `documents.file_paths.ocr_chunks` |
-| 3 | Merge | Combines OCR chunks, including overlap handling, into one document text record. | `outputs/<case_id>/ocr_raw/<doc_id>_merged.json`; `documents.file_paths.merged_ocr` |
-| 4 | Classify | Uses a bounded OCR prefix with an LLM, plus deterministic rules for recognized document formats. Unrelated documents are flagged for user action. | `documents.document_type` and `documents.status` |
-| 5 | Structure | Sends the full merged OCR and matching schema to the configured OpenAI-compatible document processor. | Structured data and summary in MySQL; structured JSON artifact |
-| 6 | Persist | Normalizes EC ledger structure where applicable, writes the final structured JSON, and persists it to MySQL. | `documents.structured_data`, `documents.file_paths.structured`, page/token/model/cost fields |
-
-### Step 4 — Finalize the document pipeline
-
-After the document chains finish, `workers/finalize.py` recalculates case/document counts and sets the document-pipeline status:
-
-- `complete`: every document is structured (or otherwise counted as resolved by the repository status calculation).
-- `partial`: at least one document failed while others completed.
-- `failed`: no document completed and failures occurred.
-
-When the case is `complete`, the finalizer queues the ClearTitle agent. A user can replace or skip a classification-failed document; when all unresolved documents are addressed, that route also queues the agent. Failed OCR/structuring documents can be retried using `POST /api/retry/{case_id}`.
-
-The document-pipeline status and agent status are separate concepts. A case can have all PDFs processed while agent verification is paused for missing evidence.
-
-### Step 5 — ClearTitle agent investigates the case
-
-`workers/title_chain_tasks.py` invokes `services/cleartitle_agent.py::run_agent`. The agent is a tool-calling workflow; the model interprets evidence, while Python tools validate and persist results.
-
-#### 5.1 Document summaries
-
-`ensure_summaries` creates a short navigation summary only when a document has no saved summary. It reads merged OCR text and supplies up to 6,000 characters to `agent_summary.txt`. The summary helps the agent find documents; it is not a substitute for reading source evidence.
-
-#### 5.2 Property identity and title chain
-
-If a saved chain with transactions already exists, the agent reuses it on resume. Otherwise, it starts the `chain` tool phase:
-
-1. The prompt receives document IDs, types, filenames, and summaries.
-2. The agent can call `list_documents`, `get_document_metadata`, and `get_document_text` to inspect specific documents. Metadata includes structured extraction; text is read from merged OCR. The text tool defaults to 40,000 characters per call and caps a requested read at 200,000 characters.
-3. The agent determines property identity and chronological transfers, preserving explicit uncertainty and document references.
-4. It calls `save_title_chain`. The tool validates the Pydantic `TitleChain`, assigns stable IDs such as `TX001` where missing, saves the chain, and creates one TODO per transaction.
-
-The chain is a document-supported ownership history. It is not itself a conclusion that every transfer has been verified.
-
-**Contract caveat in the current source:** `agent_chain_task.txt` illustrates transactions with `sequence` but no `tx_id`, while the Pydantic `TransactionEntry` requires `tx_id`. The tool assigns a missing ID only after Pydantic validation. This prompt/schema ordering should be reconciled before relying on the model to omit IDs.
-
-#### 5.3 Transaction-by-transaction verification
-
-For each TODO that is not complete or skipped:
-
-1. The agent receives the transaction and the cross-document plus transaction-type rules from `backend/services/agent_rules.py`.
-2. It can retrieve transaction details, applicable rules, document metadata, and full OCR text through tools.
-3. It records supporting/contradictory evidence, limitations, missing documents, and a permitted verification status.
-4. `save_transaction_result` validates the result and persists it to `findings`; the TODO is marked complete only after persistence succeeds.
-
-If a required document is missing, `request_missing_documents` saves `PENDING_NOT_VERIFIED`, leaves the TODO pending, and pauses the run. The user can upload/process additional evidence and resume with `POST /api/results/{case_id}/analyze`, or explicitly skip the paused transaction using `POST /api/results/{case_id}/agent/skip/{tx_ref}`. A skipped transaction remains incomplete and is not represented as verified.
-
-#### 5.4 Consolidated report
-
-When the transaction loop finishes without pausing, the final phase receives the saved chain and transaction results. It calls `save_report`; the application assembles the final response and persists the report to `reports` plus the latest-result copy in `cases.agent_result`.
-
-The report status is based on saved transaction outcomes and remaining work. “No issue identified in supplied documents” is not equivalent to “fully investigated” or a legal determination that title is marketable.
-
-### Step 6 — View results and report
-
-The browser polls case status while document processing is active. It then calls `GET /api/results/{case_id}` for case status, extracted documents, action-required documents, and the `agent` result containing property identity, title chain, transaction results, findings, missing documents, and report text.
-
-Other result actions:
-
-- `GET /api/results/{case_id}/ocr` returns merged raw OCR text by document.
-- `GET /api/case/{case_id}/doc/{doc_id}/pdf` serves an uploaded PDF.
-- `GET /api/results/{case_id}/report/pdf` builds and downloads a PDF report.
-- `POST /api/results/{case_id}/analyze` queues an agent run/resume.
-- `POST /api/results/{case_id}/agent/skip/{tx_ref}` queues a transaction skip/resume.
-
-Owned cases require the authenticated owner. Cases with a null `user_id` are treated as anonymous cases and are accessible by case ID; the UI can link such a case to a signed-in account.
-
-## 3. Main sequence diagram
+## 2. High-level architecture
 
 ```text
-USER / BROWSER
-    |
-    | 1. Select PDFs and upload slots
-    v
-FASTAPI
-    |-- save PDFs ------------------------------> outputs/<case_id>/raw/
-    |-- create case and document rows ----------> MySQL
-    |-- warm case cache ------------------------> Redis
-    |<-- return case_id and document IDs --------|
-    |
-    | 2. POST /api/process/<case_id>
-    |-- set processing status ------------------> MySQL / Redis
-    |-- queue one task chain per document ------> Celery
-    v
-CELERY WORKER (document chains run concurrently)
-    |-- preprocess PDF
-    |-- OCR ------------------------------------> Sarvam
-    |<-- OCR chunks -----------------------------|
-    |-- merge chunks; save merged OCR ----------> outputs/<case_id>/ocr_raw/
-    |-- classify document
-    |-- classify prefix + extract full OCR ----> OpenAI-compatible processor
-    |<-- structured fields and usage metrics ---|
-    |-- persist document status and fields ------> MySQL
-    |-- save structured JSON --------------------> outputs/<case_id>/structured/
-    |
-    | 3. Finalize case counts/status -----------> MySQL
-    |-- release pipeline lock ------------------> Redis
-    |
-    +-- if all documents are complete:
-    |       queue ClearTitle agent
-    |       agent reads merged OCR on demand ----> outputs/<case_id>/ocr_raw/
-    |       agent reads/saves chain, findings,
-    |       TODOs, memory, and report -----------> MySQL
-    |
-    +-- if a document needs attention:
-            show replace/skip action in UI
-            user resolves it, then retries/resumes
-
-USER / BROWSER
-    | 4. Request results
-    v
-FASTAPI -- read case, documents, and agent data --> MySQL
-    |
-    +-- return results --------------------------> React UI
-    +-- optionally generate PDF report ----------> Browser download
+Browser (React SPA)
+       │ HTTP / JSON
+       ▼
+FastAPI API ───────────── MySQL (durable application state)
+       │                         │
+       ├── Redis (cache, locks)  └── title/documents/results
+       │
+       └── enqueue Celery task ──► Redis broker ──► Celery worker
+                                                       │
+                         ┌─────────────────────────────┼─────────────────────┐
+                         ▼                             ▼                     ▼
+                  Shared outputs/                 Sarvam OCR           LLM provider(s)
+                  PDFs and artifacts              for OCR              classification,
+                                                                       extraction, agent
 ```
 
-## 4. API surface map
+In Docker Compose, the API and worker use the same application image and share the `uploads/` and `outputs/` bind mounts. The API serves the built React SPA from `frontend/dist`. MySQL and Redis use Docker named volumes. phpMyAdmin is an optional local database browser.
 
-The main application router prefixes are registered in `backend/main.py`.
-
-| Method | Path | Purpose |
+| Component | Main responsibility | Code location |
 |---|---|---|
-| `POST` | `/api/auth/register` | Create an email/password account. |
-| `POST` | `/api/auth/login` | Authenticate and return a bearer token. |
-| `GET` | `/api/auth/me` | Return the authenticated user. |
-| `GET` | `/auth/google/login` | Start Google OAuth. |
-| `GET` | `/auth/google/callback` | Complete OAuth and redirect to the frontend. |
-| `GET` | `/api/cases` | List the signed-in user's cases. |
-| `POST` | `/api/upload` | Create a case and upload its initial PDFs. |
-| `POST` | `/api/process/{case_id}` | Start document extraction. |
-| `GET` | `/api/status/{case_id}` | Read document pipeline progress, logs, and action requirements. |
-| `POST` | `/api/retry/{case_id}` | Retry failed documents. |
-| `POST` | `/api/case/{case_id}/upload` | Add documents to an existing case. The frontend follows with processing. |
-| `POST` | `/api/case/{case_id}/doc/{doc_id}/replace` | Replace a failed/unrecognized document. |
-| `POST` | `/api/case/{case_id}/doc/{doc_id}/skip` | Skip an unrecognized document. |
-| `POST` | `/api/case/{case_id}/link` | Link an anonymous case to the signed-in user. |
-| `DELETE` | `/api/case/{case_id}` | Delete a case's DB/cache/files data. |
-| `GET` | `/api/case/{case_id}/doc/{doc_id}/pdf` | Download the original uploaded PDF. |
-| `GET` | `/api/results/{case_id}` | Read extraction and agent results. |
-| `GET` | `/api/results/{case_id}/ocr` | Read merged OCR text for the case. |
-| `GET` | `/api/results/{case_id}/report/pdf` | Generate/download the PDF report. |
-| `POST` | `/api/results/{case_id}/analyze` | Queue or resume the ClearTitle agent. |
-| `POST` | `/api/results/{case_id}/agent/skip/{tx_ref}` | Skip a paused transaction and resume. |
-| `GET` | `/health` | Basic service and configured-provider-key presence check. |
+| React SPA | Upload, processing status, OCR/document results, title chain, verification, case history | `frontend/src/` |
+| FastAPI | HTTP API, auth/access checks, queue requests, result assembly, static SPA serving | `backend/main.py`, `backend/routers/` |
+| Celery | Long-running document and verification tasks | `backend/celery_app.py`, `backend/workers/` |
+| Workflow services | Document pipeline orchestration and ClearTitle agent orchestration | `backend/services/` |
+| Integrations | OCR, LLM, Redis, filesystem adapters | `backend/integrations/` |
+| Repositories | MySQL reads/writes | `backend/database/repositories/` |
+| MySQL | Durable users, cases, document data, title chain, agent memory and results | `backend/database/` |
+| Redis | Celery broker/result backend, transient cache/logs, distributed locks | `backend/integrations/redis/` |
+| Filesystem | Uploaded PDFs and intermediate/final processing artifacts | `outputs/<case_id>/` |
 
-## 5. Data and file storage
+## 3. Runtime and deployment
 
-### MySQL
+`docker-compose.yml` defines five services:
 
-MySQL is the durable source of truth for account, case, document, and agent records. `backend/database/migrations.py` defines the tables and also applies additive columns to older schemas. The repository code uses parameterized SQL for values.
-
-### Redis
-
-Redis has two roles:
-
-1. Celery broker and result backend.
-2. Best-effort hot cache for case metadata, file lists, logs, and lock keys.
-
-Case/document records and logs are persisted to MySQL; Redis misses fall back to MySQL. Redis can be restarted without making it the durable owner of case data.
-
-### Filesystem
-
-The API and worker share `outputs/` through the Docker bind mount. Typical files are:
-
-```text
-outputs/<case_id>/
-├── raw/                     # uploaded PDFs
-├── preprocessed/            # optional preprocessed PDFs
-├── ocr_raw/
-│   ├── <doc_id>_chunks.json
-│   └── <doc_id>_merged.json # full_text used by the agent
-└── structured/
-    ├── <doc_id>_<TYPE>.json # final structured extraction
-    └── <doc_id>_temp.json    # temporary between structure and persist stages
-```
-
-The `documents.file_paths` JSON column records paths such as `raw`, `preprocessed`, `ocr_chunks`, `merged_ocr`, and `structured`. The agent reads merged OCR using the saved `merged_ocr` path, falling back to `outputs/<case_id>/ocr_raw/<doc_id>_merged.json`.
-
-## 6. Database schema
-
-The table/column list below is derived from the checked-in migration source; it describes the schema this code initializes, not a live database inspection. The ER diagram shows logical relationships only: there are no declared SQL foreign-key constraints in this DDL; case ownership and delete behavior are handled in application repositories.
-
-### Entity relationship diagram
-
-```text
-USERS (1) -------- owns -------- (many) CASES
-                                      |
-                                      +-- (many) DOCUMENTS
-                                      +-- (0..1) TITLE_CHAINS
-                                      +-- (0..1) CASE_MEMORY
-                                      +-- (many) FINDINGS, one per transaction
-                                      +-- (many) AGENT_TODOS, one per transaction
-                                      +-- (many) REPORTS, report history
-                                      +-- (0..1) VERIFICATION_RESULTS (legacy)
-
-These are logical links by case_id. The migration does not declare SQL foreign keys.
-```
-
-### Table purpose and persistence path
-
-| Table | Purpose | Main writer/reader |
+| Service | Purpose | Host access |
 |---|---|---|
-| `users` | Password/OAuth accounts. | `user_repo.py`; auth routes/services. |
-| `cases` | Case ownership, document counts/status, logs, agent status, a fallback agent-memory column, and a latest-result copy. | `case_repo.py`, `agent_repo.py`; status/results endpoints. |
-| `documents` | Per-document metadata, extraction status, structured fields, file paths, summary and extraction usage metrics. | `document_repo.py`; workers, OCR viewer, reports, agent. |
-| `title_chains` | Current agent's authoritative property identity and chronological chain in `chain`. | `agent_repo.py`; result assembly and status endpoint. `source` is retained for the older seeder/repository path. |
-| `case_memory` | Authoritative agent resume state such as current phase, paused transaction, skipped IDs and next action. | `agent_repo.py`; agent resume. |
-| `findings` | One current verification payload per case/transaction ID. Includes canonical status, conclusion, evidence, limitations, and rule versions. | `agent_repo.py`; agent and result/report assembly. |
-| `agent_todos` | Durable verification checklist, one row per case/transaction. | `agent_repo.py`; chain save, verification, resume. |
-| `reports` | Append-only report versions; the latest row supplies the current report. | `agent_repo.py`; results/PDF report paths. |
-| `verification_results` | Older case-level field-check result shape. It is retained in the migration for legacy code/demo compatibility; the current ClearTitle agent writes transaction data to `findings`. | Older `verify.py`/repository and demo seeder, not the current post-OCR agent workflow. |
+| `api` | FastAPI plus built React SPA | `http://localhost:8000` |
+| `worker` | Celery background jobs; concurrency is configured in Compose | Internal Docker network |
+| `mysql` | Durable relational storage | Host port `3307` → container `3306` |
+| `redis` | Broker, result backend, cache and locks | Internal Docker network |
+| `phpmyadmin` | Local MySQL browser | `http://localhost:8080` |
 
-### Indexes and uniqueness
+FastAPI initializes tables on startup through `backend/database/migrations.py`. The worker consumes tasks from Redis and accesses the same MySQL and mounted files as the API. In Docker, frontend changes require rebuilding the image because the SPA bundle is baked into it. The standalone Vite/Express frontend development server is a separate development mode.
 
-- `users`: primary key `id`; unique email.
-- `cases`: primary key `id`; indexes on status and user ID.
-- `documents`: primary key `id`; unique `(case_id, doc_id)`; indexes on case, status, and document type.
-- `title_chains`: primary key `id`; unique `case_id`.
-- `verification_results`: primary key `id`; unique `case_id`.
-- `case_memory`: primary key `case_id`.
-- `findings`: primary key `id`; indexes on `case_id` and `(case_id, tx_id)`.
-- `agent_todos`: primary key `id`; unique `(case_id, tx_id)`.
-- `reports`: primary key `id`; index on `case_id`.
+Configuration is loaded by `backend/config.py` from environment variables / `.env`. Important settings include MySQL and Redis connection values, `SARVAM_API_KEY`, `OPENAI_API_KEY`, `CLEARTITLE_AGENT_PROVIDER`, `CLEARTITLE_AGENT_MODEL`, optional Gemini settings, JWT/OAuth settings, upload limits, and pipeline-lock configuration. Secrets must be supplied through environment configuration, not committed to source.
 
-### Important status distinction
+## 4. End-to-end flows
 
-- `cases.status` describes **document processing** (`uploaded`, `processing`, `complete`, `partial`, `failed`).
-- `documents.status` describes **one document's extraction stage** or a terminal document outcome.
-- `cases.agent_status` describes the **agent run** (`idle`, `running`, `paused`, `done`, `error`).
-- `findings.status` describes **one transaction's verification result**. Allowed statuses are `PENDING`, `IN_PROGRESS`, `VERIFIED_WITH_AVAILABLE_EVIDENCE`, `ISSUES_IDENTIFIED`, `INCONCLUSIVE`, and `PENDING_NOT_VERIFIED`.
-- `cases.verdict` is a compact UI summary (`CLEAR_TITLE`, `ATTENTION_REQUIRED`, or `N/A`); it is not an official legal determination.
+### 4.1 Upload and document processing
 
-### Agent data path
+1. The UI uploads PDF files to `POST /api/upload` or adds files through the existing-case upload endpoint.
+2. The API creates a case ID, assigns document IDs such as `DOC_001`, saves the PDFs under `outputs/<case_id>/raw/`, and creates `cases` and `documents` rows. The `documents.filename` column is intended to contain the uploaded filename; older cases may contain generated placeholder filenames.
+3. `POST /api/process/{case_id}` starts `services/orchestrator.py`.
+4. The orchestrator creates a sequential Celery chain for each document and runs document chains concurrently in a Celery chord. Resume logic starts from the last durable document checkpoint.
+5. Each document runs these stages:
+
+   | Order | Stage | Main behavior / persisted output |
+   |---:|---|---|
+   | 1 | Preprocess | Improve scan when possible; retain original on non-fatal preprocessing failure. |
+   | 2 | OCR | Call Sarvam OCR; write OCR chunk artifacts. |
+   | 3 | Merge | Merge OCR chunks; store canonical merged OCR text in `documents.merged_ocr_text` and an artifact/path. |
+   | 4 | Classify | Determine document type; mark unrelated/uncertain items for user action. |
+   | 5 | Structure | Extract typed fields using the configured document-processing model and matching schema. |
+   | 6 | Persist | Store structured JSON, document status, usage metadata, and artifact paths. |
+
+6. `finalize_case_task` recomputes document counts/status, releases the pipeline lock, and, when a verification transaction is already paused/pending after an additional upload, queues the agent to resume after OCR processing.
+7. Failed document extraction can be retried. Classification-failed documents can be replaced or skipped through the case API.
+
+Initial chain/verification analysis is explicitly queued through `POST /api/results/{case_id}/analyze` (the dashboard's analysis action). Document finalization alone does not automatically start the initial title-chain investigation.
+
+The document pipeline status (`cases.status`) is independent of the agent status. A case may have all PDFs processed while verification is paused or incomplete.
+
+### 4.2 Title-chain and transaction verification
+
+The main agent task is `run_case_analysis_task` → `services/cleartitle_agent.py::run_agent`. A Redis lock (`case:<case_id>:agent_lock`) prevents concurrent analysis when locks are enabled.
+
+#### Phase A — chain creation or reuse
+
+- The agent loads the persisted Phase A result from `title_chains`.
+- If a usable chain exists, it is reused; analysis does not rebuild it merely because verification is resumed.
+- If absent, summaries are generated as needed and the Phase A prompt/skill builds the property identity and chronological chain. The result is saved into the dedicated `title_chains` columns.
+- Each saved chain entry becomes a verification transaction with an internal stable ID (`PA-TC-0001`, etc.), sequence, related events, and a marker for the last/current-owner endpoint.
+
+#### Phase B — one transaction at a time
+
+For each eligible chain transaction, the agent receives `agent_system.txt`, `agent_verify_task.txt`, the transaction-verification skill, and the transaction details. The current verifier uses the prompt and skill; the former hardcoded `agent_rules.py` rule catalogue and `load_rules` tool have been removed.
+
+The tool workflow is:
+
+1. `get_transaction` loads the chain entry and any prior saved result.
+2. `record_evidence_requirements` records transaction-specific evidence needed.
+3. `list_documents` returns uploaded filenames, document types, statuses, and saved summaries. Summaries are navigation aids, not evidence.
+4. `select_documents` chooses candidate documents. The tool only permits OCR reads for selected candidate IDs.
+5. `get_document_text` reads selected documents' canonical merged OCR text from MySQL. The model compares it to the transaction, adjacent chain links, and relevant events.
+6. `save_transaction_result` validates and saves a structured result. If essential evidence is missing, the result can instead be saved as `PENDING_NOT_VERIFIED` and the run pauses on that transaction.
+7. The user may upload evidence and resume, or skip the paused transaction. A skip remains pending/not verified; it does not become a completed verification.
+
+The verifier is scoped to one transaction per pass. It does not scan every OCR document by default. Its selected evidence references are persisted as internal document IDs; the UI resolves these to filenames/document labels for display.
+
+#### Completion and consolidated report
+
+After processing all eligible transactions without pausing, the overall status is derived from the saved transaction statuses. No consolidated report object is generated or persisted.
+
+Statuses describe different layers:
+
+| Field/status | Meaning |
+|---|---|
+| `cases.status` | Document-processing state, e.g. uploaded/processing/complete/partial/failed. |
+| `cases.agent_status` | Agent workflow state: idle/running/paused/done/error. `done` means the run ended, not that all title links passed verification. |
+| `case_memory.stage` | Resume checkpoint such as `phase_a`, `verifying`, `verifying_transaction`, `paused`, `done`, or `error`. |
+| Transaction `status` | One transaction's assessment: `PENDING`, `IN_PROGRESS`, `VERIFIED_WITH_AVAILABLE_EVIDENCE`, `ISSUES_IDENTIFIED`, `INCONCLUSIVE`, or `PENDING_NOT_VERIFIED`. |
+| `cases.verdict` | Compact UI mirror; not a legal determination. |
+
+Only transaction statuses actually classified as verified count toward a verified-transaction count. `ISSUES_IDENTIFIED` and skipped/pending results do not count as verified. Overall `INCONCLUSIVE`/`ISSUES_IDENTIFIED` can coexist with agent status `done`.
+
+### 4.3 Result retrieval and UI
+
+`GET /api/results/{case_id}` calls `services/results.py::build_case_results`. It combines case/document extraction data with the Phase A title chain, saved transaction results, and selected workflow-state fields. The React dashboard renders the title chain and transaction verification as separate views. OCR and PDF endpoints are separately available; PDF generation uses `services/report.py` to render the saved transaction entries on demand, not from a persisted report object.
+
+## 5. Low-level application design
+
+### 5.1 Backend layering
 
 ```text
-title_chains.chain  <- property identity + chain transactions
-findings.payload    <- verification result for each tx_id
-agent_todos         <- pending/completed transaction checklist
-case_memory.memory  <- pause/resume state
-reports.result      <- append-only final report versions
-cases.agent_result  <- latest-result fallback/cache copy
-documents.summary   <- brief navigation label for each document
-documents.file_paths.merged_ocr -> filesystem OCR JSON -> full_text
+HTTP router
+  ├─ validates request and case ownership
+  ├─ calls service or queues Celery task
+  └─ serializes response
+
+Service / orchestrator
+  ├─ applies workflow decisions and status transitions
+  ├─ invokes provider adapters / tool loop
+  └─ reads/writes through repository functions
+
+Worker task
+  ├─ owns retry/idempotency boundary for long-running work
+  └─ invokes stage/agent service
+
+Repository
+  └─ performs parameterized MySQL reads/writes
 ```
 
-## 7. Authentication and ownership
+The agent loop in `agent_runtime.py` maintains an in-process sequence of model/tool messages for one phase. `agent_tools.py` supplies phase-specific tool schemas, validates arguments/results, and delegates persistence to repositories. The in-process tool context and model conversation are not the durable resume memory.
 
-- Email/password uses bcrypt hashes and signed bearer tokens.
-- Google sign-in uses the OAuth authorization-code flow.
-- Authenticated users list their own cases; case endpoints check `cases.user_id` when it is set.
-- Anonymous cases have `user_id = NULL`; the current access helper permits access by case ID and supports later linking to a signed-in user.
-- The frontend stores its bearer token in browser local storage and attaches it to API requests.
+### 5.2 Document processing modules
 
-## 8. Deployment and configuration
+- `backend/services/orchestrator.py`: builds document task chains/chords and determines a resume stage from durable checkpoints.
+- `backend/workers/tasks.py`: thin Celery wrappers with retry and idempotency configuration.
+- `backend/workers/stages.py` and `stage_adapter.py`: execute individual document stages and persist stage state.
+- `backend/workers/finalize.py`: recomputes case status, releases locks, and may queue verification resume after evidence upload.
+- `backend/services/document_processor.py`, `extract.py`, and `integrations/`: provider and extraction logic.
 
-Docker Compose runs:
+### 5.3 Verification modules
 
-| Service | Role |
-|---|---|
-| `api` | FastAPI API and built React SPA on host port 8000. |
-| `worker` | Celery tasks for OCR, extraction, finalization, and agent analysis. |
-| `mysql` | MySQL on the internal service network; host port 3307. |
-| `redis` | Celery broker/result backend and cache. |
-| `phpmyadmin` | Local database browser on host port 8080. |
+- `backend/workers/title_chain_tasks.py`: starts case-level agent execution.
+- `backend/workers/agent_tasks.py`: queues skip/resume operations.
+- `backend/services/cleartitle_agent.py`: owns lock, chain reuse/build, ordered transaction loop, pause/resume, and final report invocation.
+- `backend/services/agent_runtime.py`: generic bounded model/tool-call loop.
+- `backend/services/agent_tools.py`: tool schemas/handlers for document navigation, requirements, evidence selection, result persistence, missing evidence, and report persistence.
+- `backend/services/agent_schemas.py`: Pydantic validation for chain, transaction, evidence, and final-result structures.
+- `backend/prompts/` and `backend/skills/`: system/task prompts and mandatory chain/verification procedures.
+- `backend/database/repositories/agent_repo.py`: persistence and retrieval of title chain, readable agent memory/status, and the single case result document.
 
-The API and worker share the same image and mounted `outputs/` files. The `mysql_data` and `redis_data` named volumes survive normal container restarts. Removing volumes destroys their contents.
+### 5.4 Failure, pause, retry, and skip behavior
 
-Important environment setting names are read in `backend/config.py`:
+- Document tasks use retries and idempotency guards; retries can start from a durable checkpoint.
+- If a transaction requests essential missing evidence, the transaction result is saved as pending and `case_memory` records the paused transaction, missing documents, and next action. Agent status becomes `paused`.
+- Uploads are run through document processing before a paused verification is retried.
+- Skipping the currently paused transaction writes a pending/not-verified result, preserves prior verification points and missing evidence, records the skip in readable memory, and advances to the next independent transaction.
+- A later fresh analysis clears the per-pass skip list and retries pending transactions. Terminal transaction statuses (`VERIFIED_WITH_AVAILABLE_EVIDENCE`, `ISSUES_IDENTIFIED`, `INCONCLUSIVE`) are not re-run automatically by the transaction loop.
+- Unexpected agent errors set stage/status to `error`; they do not imply a negative legal finding.
 
-- Database and tasking: `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`, `REDIS_URL`.
-- OCR and document extraction: `SARVAM_API_KEY`, `OPENAI_API_KEY`, `DOCUMENT_PROCESSOR_MODEL`.
-- Verification agent: `CLEARTITLE_AGENT_PROVIDER`, `CLEARTITLE_AGENT_MODEL`, `OPENAI_API_KEY`; optional Gemini provider uses `GEMINI_API_KEY` and Gemini rate-limit settings.
-- Auth: `JWT_SECRET_KEY`, Google OAuth client and redirect settings.
-- Processing: `MAX_UPLOAD_SIZE_MB`, `PIPELINE_LOCK_ENABLED`.
+## 6. Database design
 
-Never commit populated secrets. `.env.example` documents names/placeholders only.
+The schema is initialized in `backend/database/migrations.py`. The logical relationships below are keyed by `case_id`; the DDL does not declare SQL foreign-key constraints. Repositories and routers enforce ownership and lifecycle behavior in application code.
 
-## 9. Source map
+```text
+users (1) ──────── (many) cases
+                         ├── (many) documents
+                         ├── (0..1) title_chains
+                         ├── (0..1) case_memory
+                         ├── (0..1) case_results [all transaction results + latest report]
+                         └── (0..1) case_memory [human-readable progress/checkpoint text]
+```
+
+| Table | Main columns/data | Role and write behavior |
+|---|---|---|
+| `users` | ID, email, password hash, name, timestamps | Login/ownership records. Email is unique. |
+| `cases` | ID, owner ID, document status/counts, verification status/verdict, pipeline logs, `agent_status` | Case-level status only; verification content and memory are stored in their dedicated per-case tables. |
+| `documents` | Case/document IDs, index, filename, expected/actual type, status, `structured_data` JSON, `merged_ocr_text`, `file_paths` JSON, error and extraction metrics | One row per uploaded PDF; stores canonical merged OCR and extraction output. Unique `(case_id, doc_id)`. |
+| `title_chains` | Case ID, status, `property_identity` JSON, `title_chain_graph` text, `detailed_chain` JSON; legacy `chain`/`source` columns may remain | Current Phase A chain. Repository reads/writes the three dedicated columns (`property_identity`, graph, detailed chain). Unique case ID. |
+| `case_results` | `case_id` primary key, `case_result` JSON, update timestamp | Exactly one row per case. `case_result` is an ordered array of transaction metadata, point-wise verification results, and missing-document names/reasons. Each completed transaction is appended/updated immediately. No final report object or per-transaction/report-history tables are stored. |
+| `case_memory` | `case_id` primary key, `case_memory` LONGTEXT, update timestamp | Exactly one row per case. Concise readable progress/outcome/reason text; the repository parses labeled lines needed to resume workflow. |
+
+The startup migration safely copies legacy `findings`, transaction entries from `reports`/case-level report copies, `verification_results`, and case-level memory into the two per-case tables before dropping those redundant stores/columns. Only the transaction entries are retained; report summaries are intentionally discarded. Phase A title-chain data remains in `title_chains`.
+
+### 6.1 Case result JSON
+
+The `case_results.case_result` value is an array. Representative transaction result shape (optional lists/values may be empty):
+
+```json
+{
+  "tx_id": "PA-TC-0001",
+  "sequence": 1,
+  "status": "PENDING_NOT_VERIFIED",
+  "conclusion": "The reported transfer is not verified because its source deed is missing.",
+  "reasoning": "Evidence basis and assessment limitations.",
+  "findings": [
+    {
+      "description": "A later deed recites the earlier transfer.",
+      "significance": "The recital does not independently establish the transfer.",
+      "explanation": "Short supporting explanation.",
+      "source_refs": [{"doc_id": "DOC_017", "page": "2"}]
+    }
+  ],
+  "supporting_evidence": [],
+  "contradictory_evidence": [],
+  "missing_documents": [
+    {"document_type": "Registered source deed", "reason": "Confirm parties and property conveyed."}
+  ],
+  "evidence_requirements": [],
+  "reviewed_document_ids": ["DOC_017"],
+  "impact": "The root ownership link remains unconfirmed.",
+  "unresolved": [],
+  "limitations": [],
+  "verified_at": "...",
+  "schema_version": "1.0"
+}
+```
+
+The UI combines this payload with the corresponding Phase A chain transaction. Document IDs are internal join keys; source display should resolve them through the case's document metadata.
+
+### 6.2 Agent memory JSON
+
+`case_memory.case_memory` is concise plain text, not JSON or a versioned conversation transcript. Example:
+
+```text
+Progress: paused
+Paused transaction: PA-TC-0003
+Pending transactions: PA-TC-0001, PA-TC-0003
+Missing document: Registered source deed — Confirm parties and property conveyed.
+Next action: Upload requested evidence or skip this transaction.
+```
+
+The text explains progress and reasons for pending/skipped/verified outcomes. `cases.agent_status` remains a high-level status column; the memory text is the readable case-level narrative/checkpoint.
+
+Transactions are stored in `case_results.case_result.transactions`, keyed by `tx_id`, and a re-verification replaces that transaction's existing item instead of creating another row. The final report is stored alongside them under `report` in that same case row.
+
+### 6.3 Keys and indexes
+
+The migration declares no foreign keys. Uniqueness/index behavior is:
+
+- `users`: primary key on `id`; unique `email`.
+- `cases`: primary key on `id`; indexes on case `status` and `user_id`.
+- `documents`: primary key on row `id`; unique `(case_id, doc_id)`; indexes on case, extraction status, and document type.
+- `title_chains`: primary key on row `id`; unique `case_id` (one current chain row per case).
+- `case_results`: primary key `case_id` (one result row per case).
+- `case_memory`: primary key `case_id` (one memory row per case).
+
+### 6.4 Consolidated report JSON
+
+There is no persisted consolidated report. Overall status is derived from the transaction statuses when the API responds.
+
+## 7. State ownership and source of truth
+
+| Data | Durable source of truth | Cache/artifact role |
+|---|---|---|
+| Case/document status and extracted data | MySQL `cases` / `documents` | Redis can accelerate status/log access. |
+| Original PDFs and intermediate extraction files | Shared `outputs/<case_id>/` filesystem | `documents.file_paths` points to artifacts. |
+| Canonical OCR text | `documents.merged_ocr_text` | Merged OCR JSON artifact supports processing/legacy fallback. |
+| Property identity and chain | `title_chains` dedicated columns | Result endpoint assembles it with verification data. |
+| Agent progress/resume | `case_memory.case_memory` readable text | No duplicate memory copy. |
+| Transaction verification and latest report | `case_results.case_result` | One case row; transactions are appended as they complete. |
+| Current workflow status | `cases.agent_status` and `case_memory.stage` | Redis task state/log cache is not authoritative for verification. |
+
+## 8. API map
+
+Main routers are registered in `backend/main.py`.
+
+| Method | Path | Function |
+|---|---|---|
+| `POST` | `/api/auth/register`, `/api/auth/login` | Create account / authenticate. |
+| `GET` | `/api/auth/me`, `/api/cases` | Current user / owned cases. |
+| `POST` | `/api/upload` | Create a case and upload initial PDFs. |
+| `POST` | `/api/process/{case_id}` | Queue document processing. |
+| `GET` | `/api/status/{case_id}` | Document progress and action state. |
+| `POST` | `/api/retry/{case_id}` | Retry failed document processing. |
+| `POST` | `/api/case/{case_id}/upload` | Add evidence/documents to an existing case. |
+| `POST` | `/api/case/{case_id}/doc/{doc_id}/replace` or `/skip` | Resolve classification action. |
+| `GET` | `/api/results/{case_id}` | Read case, document, chain, transaction, and report data. |
+| `GET` | `/api/results/{case_id}/ocr` | Read available merged OCR by document. |
+| `POST` | `/api/results/{case_id}/analyze` | Queue or resume agent verification. |
+| `POST` | `/api/results/{case_id}/agent/skip/{tx_ref}` | Skip the currently paused transaction and continue. |
+| `GET` | `/api/results/{case_id}/report/pdf` | Generate/download a PDF report. |
+| `GET` | `/api/case/{case_id}/doc/{doc_id}/pdf` | Download an uploaded PDF. |
+| `GET` | `/health` | Service/provider-key presence health response. |
+
+Case endpoints enforce ownership when `cases.user_id` is set. Guest cases with no owner use the current anonymous-case access behavior and can be linked to an account.
+
+## 9. Security and reliability notes
+
+- Repository SQL parameterizes data values; case access is checked at route boundaries.
+- Celery document stages have retry and idempotency guards. Redis locks protect processing/agent runs where enabled.
+- Redis is not the durable owner of MySQL records or mounted PDFs.
+- OCR and LLM outputs are document-analysis artifacts; they do not establish authenticity or legal validity.
+- Errors should not be interpreted as negative title findings, and a completed workflow should not be rendered as verified title unless transaction statuses support that.
+- Do not log or expose secrets; configure provider keys and auth secrets via environment variables.
+
+## 10. Source map
 
 | Concern | Main files |
 |---|---|
-| App startup and API | `backend/main.py`, `backend/routers/*.py` |
-| Case/document processing | `backend/services/orchestrator.py`, `backend/workers/tasks.py`, `backend/workers/stages.py`, `backend/workers/finalize.py` |
-| Agent workflow | `backend/services/cleartitle_agent.py`, `agent_runtime.py`, `agent_tools.py`, `agent_schemas.py`, `agent_rules.py` |
-| LLM provider access | `backend/integrations/llm/agent_llm.py`; optional Gemini rate limiting in `rate_limiter.py` |
-| OCR | `backend/integrations/ocr/` |
-| Persistence | `backend/database/migrations.py`, `connection.py`, `repositories/` |
-| Results/PDF | `backend/services/results.py`, `backend/services/report.py` |
-| Browser app | `frontend/src/App.tsx`, `frontend/src/api/backend.ts`, `frontend/src/dashboard/`, `frontend/src/pages/` |
+| App startup / routing | `backend/main.py`, `backend/routers/` |
+| Case/document APIs | `backend/routers/cases.py`, `backend/services/orchestrator.py` |
+| Document pipeline | `backend/workers/tasks.py`, `stages.py`, `stage_adapter.py`, `finalize.py` |
+| ClearTitle agent | `backend/services/cleartitle_agent.py`, `agent_runtime.py`, `agent_tools.py`, `agent_schemas.py` |
+| Agent prompt/skills | `backend/prompts/`, `backend/skills/title_chain/`, `backend/skills/transaction_verification/` |
+| Persistence | `backend/database/migrations.py`, `backend/database/repositories/` |
+| Result composition/PDF | `backend/services/results.py`, `backend/services/report.py`, `backend/routers/results.py` |
+| React dashboard | `frontend/src/dashboard/VerificationDashboard.tsx`, `PhaseAResult.tsx`, `frontend/src/api/backend.ts` |
+| Deployment | `Dockerfile`, `docker-compose.yml`, `backend/config.py` |

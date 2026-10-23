@@ -1,0 +1,86 @@
+import unittest
+
+from backend.services.agent_schemas import (
+    SCHEMA_VERSION,
+    SchemaValidationError,
+    normalize_transaction_verification,
+    validate_transaction_verification,
+)
+
+
+class TestTransactionVerificationSchema(unittest.TestCase):
+    def test_v21_requires_canonical_finding_and_evidence_fields(self):
+        self.assertEqual(SCHEMA_VERSION, "2.1")
+        valid = {
+            "tx_id": "PA-TC-0001", "sequence": 1, "status": "ISSUES_IDENTIFIED",
+            "summary": "The reviewed records conflict.",
+            "findings": [{
+                "title": "Purchaser identity differs",
+                "details": "The deed and later recital name different purchasers.",
+                "evidence": [{"doc_id": "DOC_001", "pages": "2-3"}],
+            }],
+        }
+        result = validate_transaction_verification(valid)
+        self.assertEqual(result.findings[0].evidence[0].pages, "2-3")
+        self.assertIsNone(result.verified_at)
+
+        with self.assertRaises(SchemaValidationError):
+            validate_transaction_verification({
+                **valid,
+                "findings": [{"description": "Old shape", "source_refs": [{"doc_id": "DOC_001"}]}],
+            })
+
+    def test_status_timestamp_and_issue_finding_constraints_are_enforced(self):
+        pending = {
+            "tx_id": "PA-TC-0001", "sequence": 1, "status": "PENDING_NOT_VERIFIED",
+            "summary": "Evidence is outstanding.", "verified_at": "2026-10-22T10:00:00Z",
+        }
+        with self.assertRaises(SchemaValidationError):
+            validate_transaction_verification(pending)
+
+        with self.assertRaises(SchemaValidationError):
+            validate_transaction_verification({
+                "tx_id": "PA-TC-0001", "sequence": 1, "status": "ISSUES_IDENTIFIED",
+                "summary": "A discrepancy exists.", "findings": [],
+            })
+
+    def test_legacy_normalization_preserves_pages_requirements_and_distinct_qualifications(self):
+        normalized = normalize_transaction_verification({
+            "tx_id": "PA-TC-0001", "sequence": 1, "status": "PENDING_NOT_VERIFIED",
+            "schema_version": "2.0", "summary": "The deed recites a transfer.",
+            "impact": "The claimed transfer remains unverified.",
+            "findings": [{
+                "description": "The deed recites the transfer from A to B.",
+                "significance": "This is a recital, not inspection of the original deed.",
+                "source_refs": [{"doc_id": "DOC_017", "page": "2-3"}],
+            }],
+            "supporting_evidence": [{"doc_id": "DOC_017", "page": "2-3"}],
+            "contradictory_evidence": [{"doc_id": "DOC_018", "page": "1", "passage": "Different purchaser named."}],
+            "required_documents": [{"document_type": "Original deed", "reason": "Inspect conveyance."}],
+            "missing_documents": [{"document_type": "Original deed", "reason": "Inspect conveyance."}],
+            "reviewed_document_ids": ["DOC_017", "DOC_018"],
+            "transaction_metadata": {"transaction_type": "Sale", "summary_points": ["duplicate narrative"]},
+            "unresolved": ["The original instrument was not reviewed."],
+            "limitations": ["OCR may contain errors."],
+            "verified_at": "2026-10-22T10:00:00Z",
+        })
+        self.assertEqual(normalized["schema_version"], "2.1")
+        self.assertIsNone(normalized["verified_at"])
+        self.assertEqual(normalized["findings"][0]["evidence"][0]["pages"], "2-3")
+        self.assertEqual(normalized["findings"][-1]["title"], "Contradictory evidence")
+        self.assertEqual(normalized["required_documents"], [{
+            "document_type": "Original deed", "reason": "Inspect conveyance.", "for_transaction": "PA-TC-0001",
+        }])
+        self.assertNotIn("summary_points", normalized["transaction_metadata"])
+        self.assertIn("Material qualifications", normalized["summary"])
+
+    def test_fully_supported_result_may_have_no_findings_or_requirements(self):
+        result = validate_transaction_verification({
+            "tx_id": "PA-TC-0002", "sequence": 2,
+            "status": "VERIFIED_WITH_AVAILABLE_EVIDENCE",
+            "summary": "The inspected records support this transaction within scope.",
+            "findings": [], "required_documents": [],
+            "verified_at": "2026-10-22T10:00:00Z",
+        })
+        self.assertEqual(result.findings, [])
+        self.assertEqual(result.required_documents, [])

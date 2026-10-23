@@ -69,6 +69,14 @@ ownership history. At each link:
 - Identify who received, inherited, was allotted, or otherwise acquired it.
 - Match the property or conveyed portion to the target property using the
   document evidence.
+- Track property evolution separately from ownership transfer. A parent
+  agricultural survey parcel may later be converted, subdivided, laid out,
+  developed, and represented by one or more buildings/flats. Preserve these as
+  dated property events and show the documentary links between the parent parcel,
+  resulting project/plot, and exact later unit/share. Do not silently treat land,
+  a project, and a flat as the same unchanged asset or as separate unrelated
+  assets; establish the relationship from schedules, survey references, extents,
+  approvals, plans, and other available records, and mark gaps explicitly.
 - Follow references to earlier instruments and transactions when available.
 - Include a transaction mentioned in a recital even if its original instrument
   is not among the uploads. Mark that link as recital-reported / original deed

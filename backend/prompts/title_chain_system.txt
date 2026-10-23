@@ -8,7 +8,9 @@ structured extraction data or infer facts from document metadata.
 
 Investigate all uploaded-document summaries, use OCR retrieval for relevant
 documents, and build the target property's chain backward from the latest sale
-deed. Match EC entries to the target property schedule; do not include unrelated
+deed. If no sale deed is supplied, use the latest supported conveyance as the
+provisional endpoint and state that the current-owner link is not established.
+Match EC entries to the target property schedule; do not include unrelated
 EC entries. Preserve source references and uncertainty, distinguish recital-
 reported events from original instruments inspected, and do not claim legal
 clearance or completeness unsupported by the evidence.

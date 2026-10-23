@@ -144,10 +144,8 @@ def delete_case(case_id: str) -> None:
         cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
         for table in (
             "title_chains",
-            "verification_results",
             "case_memory",
-            "findings",
-            "reports",
+            "case_results",
             "documents",
         ):
             try:

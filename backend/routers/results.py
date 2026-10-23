@@ -61,7 +61,7 @@ async def trigger_analysis(case_id: str, user: dict | None = Depends(get_optiona
 @router.post("/results/{case_id}/agent/skip/{tx_ref}")
 async def skip_agent_transaction(case_id: str, tx_ref: str, user: dict | None = Depends(get_optional_user)):
     """Skip a paused transaction (verification incomplete) and continue the agent.
-    tx_ref can be either the stable tx_id (e.g. TX001) or the 1-based index/sequence.
+    tx_ref can be either the stable tx_id (e.g. PA-TC-0001) or the 1-based sequence.
     """
     _enforce_access(case_id, user)
     from backend.workers.agent_tasks import skip_cleartitle_transaction_task

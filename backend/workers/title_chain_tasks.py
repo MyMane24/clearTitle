@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 
 @celery_app.task(ignore_result=True)
 def run_case_analysis_task(case_id: str):
-    """Build Phase A property identity and title-chain graph for a case."""
+    """Build Phase A if needed and verify transactions directly from the saved chain."""
     from backend.integrations.redis.state_store import append_log
     from backend.services.cleartitle_agent import run_agent
 
@@ -29,7 +29,7 @@ def run_case_analysis_task(case_id: str):
 
     status = outcome.get("status")
     if status == "done":
-        append_log(case_id, "── Property identity and title chain generated ──")
+        append_log(case_id, "✓ Transaction verification pass complete")
     elif status == "paused":
         append_log(case_id, "⚠ Verification paused — a document is required to continue.")
     elif status == "error":

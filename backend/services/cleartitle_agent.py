@@ -1,16 +1,15 @@
 """The ClearTitle verification agent — one primary tool-calling LLM agent.
 
-The agent owns the post-OCR investigation: it builds the authoritative property
-identity + chronological title chain, maintains a durable per-transaction TODO
-checklist, verifies each transaction through tools, and produces the final report.
+The agent builds or reuses the saved Phase A title chain, then verifies each
+transaction directly using the verification prompt, skill, and uploaded
+documents. Findings and case memory are the durable verification/resume state.
 
 The LLM interprets documents and decides outcomes; this module only orchestrates
 (phases, locking, resume) and persists through the repositories. It never decides
 a transaction's legal status itself.
 
-Pause/resume: when a transaction needs a missing document the run pauses, the
-TODO stays PENDING, and the request is saved. Re-running (`--analyze`) after the
-document pipeline has processed new uploads resumes without rebuilding the chain.
+Completed transactions are skipped on resume; a transaction paused for missing
+evidence is retried when the case is resumed after an upload.
 """
 
 from __future__ import annotations
@@ -24,11 +23,9 @@ from backend.integrations.llm.agent_llm import AgentLLMError, complete_json
 from backend.integrations.redis.lock import RedisLock
 from backend.logger import get_logger
 from backend.prompts.loader import load_prompt
-from backend.services import agent_rules
 from backend.services.agent_runtime import run_tool_loop
 from backend.services.agent_schemas import (
     SCHEMA_VERSION,
-    TodoState,
     normalize_status,
 )
 from backend.services.agent_tools import ToolContext, _now
@@ -41,9 +38,7 @@ STATUS_PAUSED = "paused"
 STATUS_DONE = "done"
 STATUS_ERROR = "error"
 
-_CHAIN_MAX_STEPS = 10
 _VERIFY_MAX_STEPS = 12
-_FINAL_MAX_STEPS = 6
 _PHASE_A_MAX_STEPS = 80
 
 
@@ -80,17 +75,6 @@ def ensure_summaries(case_id: str, docs: list[dict]) -> None:
 # ── phase instructions ────────────────────────────────────────────────────────
 
 
-def _doc_list(docs: list[dict]) -> str:
-    return "\n".join(
-        f"- {d['doc_id']} | {d.get('document_type') or 'UNKNOWN'} | {d.get('filename') or ''} | {d.get('summary') or '(no summary)'}"
-        for d in docs
-    )
-
-
-def _chain_instruction(docs: list[dict]) -> str:
-    return load_prompt("agent_chain_task") + "\n\n--- CASE DOCUMENTS ---\n" + _doc_list(docs)
-
-
 def _phase_a_instruction(docs: list[dict]) -> str:
     manifest = "\n".join(
         f"- {doc['doc_id']} | citation filename: {doc.get('filename') or '(filename unavailable)'} | summary: {doc.get('summary') or '(no saved summary)'}"
@@ -107,6 +91,13 @@ def _phase_a_instruction(docs: list[dict]) -> str:
     )
 
 
+def verification_skill_path():
+    """Resolve the transaction-verification strategy skill."""
+    from pathlib import Path
+
+    return Path(__file__).resolve().parents[1] / "skills" / "transaction_verification" / "skill.md"
+
+
 def repo_skill_path():
     """Resolve the mandatory skill file from the backend package tree."""
     from pathlib import Path
@@ -115,44 +106,16 @@ def repo_skill_path():
 
 
 def _verify_instruction(tx: dict) -> str:
-    rules = agent_rules.transaction_rules_for({"type": tx.get("transaction_type")})
     return (
         load_prompt("agent_verify_task")
+        + "\n\nMANDATORY TRANSACTION-VERIFICATION SKILL\n\n"
+        + verification_skill_path().read_text(encoding="utf-8")
         + "\n\n--- TRANSACTION UNDER INVESTIGATION ---\n"
         + json.dumps(tx, ensure_ascii=False, default=str, indent=2)
-        + "\n\n--- APPLICABLE RULES ---\n"
-        + agent_rules.format_rules(rules)
-    )
-
-
-def _final_instruction(merged: list[dict]) -> str:
-    compact = [
-        {
-            "tx_id": t.get("tx_id"),
-            "sequence": t.get("sequence"),
-            "type": t.get("transaction_type"),
-            "executed_date": t.get("executed_date"),
-            "status": t.get("status"),
-            "conclusion": t.get("conclusion"),
-            "missing_documents": t.get("missing_documents"),
-        }
-        for t in merged
-    ]
-    return load_prompt("agent_final") + "\n\n--- TRANSACTION RESULTS ---\n" + json.dumps(
-        compact, ensure_ascii=False, default=str, indent=2
     )
 
 
 # ── phases ────────────────────────────────────────────────────────────────────
-
-
-def _build_chain(case_id: str, docs: list[dict]) -> dict | None:
-    ctx = ToolContext(case_id, docs)
-    run_tool_loop(
-        ctx=ctx, phase="chain", system=load_prompt("agent_system"),
-        instruction=_chain_instruction(docs), max_steps=_CHAIN_MAX_STEPS,
-    )
-    return ctx.saved_chain or repo.get_title_chain(case_id)
 
 
 def _build_phase_a(case_id: str, docs: list[dict]) -> dict:
@@ -176,55 +139,57 @@ def _build_phase_a(case_id: str, docs: list[dict]) -> dict:
     return ctx.saved_phase_a_result
 
 
-def _verify_transaction(case_id: str, docs: list[dict], chain: dict, tx_id: str) -> ToolContext:
-    ctx = ToolContext(case_id, docs, chain=chain, current_tx_id=tx_id)
-    tx = _find_tx(chain, tx_id) or {"tx_id": tx_id}
+def _phase_a_transactions(phase_a: dict) -> list[dict]:
+    transactions = []
+    for position, entry in enumerate(phase_a.get("title_chain") or [], start=1):
+        transaction = dict(entry.get("documented_transaction") or {})
+        transaction_type = str(transaction.get("transaction_type") or "").casefold()
+        if any(term in transaction_type for term in ("succession", "inheritance", "death")):
+            transaction["executed_date"] = None
+        transaction.update({
+            # Preserve identifiers already assigned by a saved legacy title chain.
+            # Newly reconstructed chains receive the current stable ID format.
+            "tx_id": entry.get("tx_id") or transaction.get("tx_id") or f"PA-TC-{position:04d}",
+            "sequence": position,
+            "is_current_owner_transaction": position == len(phase_a.get("title_chain") or []),
+            "related_events": entry.get("related_events") or [],
+            "chain_position": entry.get("chain_position") or position,
+        })
+        transactions.append(transaction)
+    return transactions
+
+
+def _verify_transaction(
+    case_id: str, docs: list[dict], phase_a: dict, transaction: dict,
+) -> ToolContext:
+    tx_id = transaction["tx_id"]
+    ctx = ToolContext(
+        case_id, docs, current_tx_id=tx_id,
+        phase_a_chain=phase_a.get("title_chain") or [],
+    )
     try:
         run_tool_loop(
             ctx=ctx, phase="verify", system=load_prompt("agent_system"),
-            instruction=_verify_instruction(tx), max_steps=_VERIFY_MAX_STEPS,
+            instruction=_verify_instruction(transaction), max_steps=_VERIFY_MAX_STEPS,
         )
     except AgentLLMError as e:
         logger.warning("verification pass failed for %s tx %s: %s", case_id, tx_id, e)
     return ctx
 
 
-def _build_final(case_id: str, docs: list[dict], chain: dict) -> dict:
-    merged = _merged_transactions(chain, repo.list_transaction_results(case_id))
-    ctx = ToolContext(case_id, docs, chain=chain)
-    try:
-        run_tool_loop(
-            ctx=ctx, phase="final", system=load_prompt("agent_system"),
-            instruction=_final_instruction(merged), max_steps=_FINAL_MAX_STEPS,
-        )
-    except AgentLLMError as e:
-        logger.warning("final report pass failed for %s: %s", case_id, e)
-    report = ctx.saved_report or {}
-    return {
-        "case_id": case_id,
-        "schema_version": SCHEMA_VERSION,
-        "property_identity": chain.get("property_identity") or {},
-        "title_chain": {
-            "transactions": chain.get("transactions") or [],
-            "title_story": chain.get("title_story") or "",
-            "unresolved": chain.get("unresolved") or [],
-        },
-        "transactions": merged,
-        "overall_status": normalize_status(report.get("overall_status")),
-        "headline": report.get("headline") or "",
-        "report": report.get("report") or "",
-        "findings": report.get("findings") or [],
-        "recommendation": report.get("recommendation") or "",
-        "missing_documents": _collect_missing(merged),
-        "updated_at": _now(),
-    }
-
-
 # ── run loop ──────────────────────────────────────────────────────────────────
 
 
 def run_agent(case_id: str) -> dict:
-    """Build and persist Phase A: property identity and title-chain graph."""
+    """Build Phase A when absent, then verify its transactions directly."""
+    return _run_with_lock(case_id)
+
+
+def _run_with_lock(
+    case_id: str,
+    skip_tx_ids: set[str] | None = None,
+    skip_ref=None,
+) -> dict:
     lock = None
     if PIPELINE_LOCK_ENABLED:
         try:
@@ -236,37 +201,19 @@ def run_agent(case_id: str) -> dict:
             logger.warning("agent lock unavailable for %s: %s", case_id, e)
             lock = None
     try:
-        return _run_phase_a(case_id)
+        if skip_ref is not None:
+            return _skip_transaction_locked(case_id, skip_ref)
+        memory = repo.get_agent_memory(case_id) or {}
+        if memory.get("skipped_tx_ids"):
+            memory["skipped_tx_ids"] = []
+            repo.save_agent_memory(case_id=case_id, memory=memory)
+        return _run(case_id, skip_tx_ids=skip_tx_ids or set())
     finally:
         if lock is not None:
             lock.release()
 
 
-def _run_phase_a(case_id: str) -> dict:
-    """Run Phase A only; later verification phases are intentionally not invoked."""
-    docs = repo.get_agent_documents(case_id)
-    if not docs:
-        repo.set_agent_status(case_id=case_id, status=STATUS_ERROR)
-        return {"case_id": case_id, "status": STATUS_ERROR, "reason": "no documents"}
-
-    memory = repo.get_agent_memory(case_id) or {}
-    try:
-        repo.set_agent_status(case_id=case_id, status=STATUS_RUNNING)
-        memory.update({"stage": "phase_a", "error": None})
-        _save_state(case_id, memory, STATUS_RUNNING)
-        result = _build_phase_a(case_id, docs)
-        memory.update({"stage": "phase_a_complete", "updated_at": _now()})
-        _save_state(case_id, memory, STATUS_DONE)
-        logger.info("Phase A title chain saved for case %s", case_id)
-        return {"case_id": case_id, "status": STATUS_DONE, "result": result}
-    except Exception as e:
-        logger.exception("Phase A failed for %s: %s", case_id, e)
-        memory.update({"stage": "phase_a_error", "error": str(e)})
-        _save_state(case_id, memory, STATUS_ERROR)
-        return {"case_id": case_id, "status": STATUS_ERROR, "error": str(e)}
-
-
-def _run(case_id: str) -> dict:
+def _run(case_id: str, skip_tx_ids: set[str] | None = None) -> dict:
     docs = repo.get_agent_documents(case_id)
     if not docs:
         repo.set_agent_status(case_id=case_id, status=STATUS_ERROR)
@@ -276,53 +223,108 @@ def _run(case_id: str) -> dict:
     memory = repo.get_agent_memory(case_id) or {}
     try:
         repo.set_agent_status(case_id=case_id, status=STATUS_RUNNING)
-        ensure_summaries(case_id, docs)
-
-        chain = repo.get_title_chain(case_id)
-        if not chain or not chain.get("transactions"):
-            memory["stage"] = "title_chain"
+        phase_a = repo.get_agent_result(case_id)
+        if not phase_a or not phase_a.get("title_chain"):
+            # Phase A uses summaries for navigation. This is deliberately not
+            # run on every verification resume, where each transaction chooses
+            # evidence requirements before inspecting summaries.
+            ensure_summaries(case_id, docs)
+            memory["stage"] = "phase_a"
             _save_state(case_id, memory, STATUS_RUNNING)
-            chain = _build_chain(case_id, docs)
-            if not chain or not chain.get("transactions"):
-                raise AgentLLMError("title chain construction produced no transactions")
-
-        _sync_todos(case_id, chain)
-        skipped = set(memory.get("skipped_tx_ids") or [])
+            phase_a = _build_phase_a(case_id, docs)
+        transactions = _phase_a_transactions(phase_a)
+        if not transactions:
+            raise AgentLLMError("saved Phase A result contains no transactions")
+        skipped_this_run = skip_tx_ids or set()
 
         memory["stage"] = "verifying"
+        memory["status"] = "IN_PROGRESS"
         _save_state(case_id, memory, STATUS_RUNNING)
 
-        for todo in repo.list_todos(case_id):
-            if todo["state"] == TodoState.COMPLETED.value or todo["tx_id"] in skipped:
+        terminal = {"VERIFIED_WITH_AVAILABLE_EVIDENCE", "ISSUES_IDENTIFIED", "INCONCLUSIVE"}
+        for transaction in transactions:
+            tx_id = transaction["tx_id"]
+            if tx_id in skipped_this_run:
                 continue
-            ctx = _verify_transaction(case_id, docs, chain, todo["tx_id"])
+            previous = repo.get_transaction_result(case_id, tx_id) or {}
+            if normalize_status(previous.get("status")) in terminal:
+                continue
 
-            if ctx.missing_requests:
-                missing = _collect_missing(_merged_transactions(chain, repo.list_transaction_results(case_id)))
+            memory["current_tx_id"] = tx_id
+            memory["stage"] = "verifying_transaction"
+            memory["status"] = "IN_PROGRESS"
+            _save_state(case_id, memory, STATUS_RUNNING)
+            ctx = _verify_transaction(case_id, docs, phase_a, transaction)
+            result_error = getattr(ctx, "result_error", None)
+            if result_error:
+                raise AgentLLMError(f"transaction result was rejected or not persisted: {result_error}")
+            if not getattr(ctx, "saved_results", []) and not ctx.missing_requests:
+                raise AgentLLMError(f"verification ended without a persisted result for {tx_id}")
+
+            saved = repo.get_transaction_result(case_id, tx_id) or {}
+            if ctx.missing_requests or normalize_status(saved.get("status")) == "PENDING_NOT_VERIFIED":
+                missing = _collect_missing([{
+                    "tx_id": tx_id,
+                    "required_documents": saved.get("required_documents")
+                    or (ctx.missing_requests[-1].get("documents") if ctx.missing_requests else [])
+                    or [],
+                }])
                 memory["stage"] = "paused"
-                memory["paused_transaction"] = todo["tx_id"]
+                memory["paused_transaction"] = tx_id
+                memory["current_tx_id"] = tx_id
+                memory["result_ref"] = tx_id
+                memory["status"] = "PENDING_NOT_VERIFIED"
                 memory["missing_documents"] = missing
+                memory["last_transaction_id"] = tx_id
+                memory["last_transaction_status"] = "PENDING_NOT_VERIFIED"
+                memory["last_transaction_summary"] = "Pending — required evidence was not provided; verification is not complete."
+                memory["pending_tx_ids"] = sorted(set(memory.get("pending_tx_ids") or []) | {tx_id})
                 memory["next_action"] = (
-                    f"Provide the missing document(s) for {todo['tx_id']}, then resume; or skip."
+                    f"Upload the requested document(s) for {tx_id} to retry, or skip this transaction."
                 )
                 _save_state(case_id, memory, STATUS_PAUSED)
                 _sync_case_verdict(case_id, "paused", "PENDING_NOT_VERIFIED")
-                logger.info("agent paused for %s at %s", case_id, todo["tx_id"])
-                return {"case_id": case_id, "status": STATUS_PAUSED, "paused_transaction": todo["tx_id"],
+                logger.info("agent paused for %s at %s", case_id, tx_id)
+                return {"case_id": case_id, "status": STATUS_PAUSED, "paused_transaction": tx_id,
                         "missing_documents": missing}
 
-            memory["current_tx_id"] = todo["tx_id"]
+            memory["result_ref"] = tx_id
+            memory["status"] = saved.get("status") or "PENDING_NOT_VERIFIED"
+            memory["last_transaction_id"] = tx_id
+            memory["last_transaction_status"] = saved.get("status") or "PENDING_NOT_VERIFIED"
+            points = [item.get("description") for item in (saved.get("findings") or []) if isinstance(item, dict) and item.get("description")]
+            memory["last_transaction_summary"] = "; ".join(points[:3]) or saved.get("conclusion") or "No verification points were recorded."
+            memory["last_evidence_requirements"] = saved.get("evidence_requirements") or getattr(ctx, "evidence_requirements", [])
+            memory["last_reviewed_document_ids"] = saved.get("reviewed_document_ids") or sorted(getattr(ctx, "selected_document_ids", set()))
+            memory["completed_tx_ids"] = [
+                item["tx_id"] for item in repo.list_transaction_results(case_id)
+                if normalize_status(item.get("status")) in terminal
+            ]
+            memory["pending_tx_ids"] = [
+                item["tx_id"] for item in repo.list_transaction_results(case_id)
+                if normalize_status(item.get("status")) == "PENDING_NOT_VERIFIED"
+            ]
+            memory["current_tx_id"] = None
             _save_state(case_id, memory, STATUS_RUNNING)
 
         memory["stage"] = "done"
         memory["paused_transaction"] = None
-        result = _build_final(case_id, docs, chain)
-        repo.save_agent_result(case_id=case_id, result=result)
-        memory["missing_documents"] = result["missing_documents"]
+        memory["current_tx_id"] = None
+        all_findings = repo.list_transaction_results(case_id)
+        memory["completed_tx_ids"] = [
+            item["tx_id"] for item in all_findings
+            if normalize_status(item.get("status")) in terminal
+        ]
+        memory["pending_tx_ids"] = [
+            item["tx_id"] for item in all_findings
+            if normalize_status(item.get("status")) == "PENDING_NOT_VERIFIED"
+        ]
+        overall_status = _overall_transaction_status(all_findings)
+        memory["missing_documents"] = _collect_missing(all_findings)
         _save_state(case_id, memory, STATUS_DONE)
-        _sync_case_verdict(case_id, "complete", result["overall_status"])
-        logger.info("agent completed for %s: %s", case_id, result["overall_status"])
-        return {"case_id": case_id, "status": STATUS_DONE, "overall_status": result["overall_status"]}
+        _sync_case_verdict(case_id, "complete", overall_status)
+        logger.info("agent completed for %s: %s", case_id, overall_status)
+        return {"case_id": case_id, "status": STATUS_DONE, "overall_status": overall_status}
 
     except Exception as e:  # record failure, don't crash the worker
         logger.exception("agent failed for %s: %s", case_id, e)
@@ -340,42 +342,10 @@ def _find_tx(chain: dict, tx_id: str) -> dict | None:
     return next((t for t in (chain or {}).get("transactions") or [] if t.get("tx_id") == tx_id), None)
 
 
-def _sync_todos(case_id: str, chain: dict) -> None:
-    existing = {t["tx_id"] for t in repo.list_todos(case_id)}
-    for tx in chain.get("transactions") or []:
-        tx_id = tx.get("tx_id")
-        if tx_id and tx_id not in existing:
-            repo.upsert_todo(
-                case_id=case_id, tx_id=tx_id, tx_index=tx.get("sequence") or 0,
-                description=f"Verify transaction {tx_id} ({tx.get('transaction_type') or 'OTHER'})",
-            )
-
-
-def _merged_transactions(chain: dict, findings: list[dict]) -> list[dict]:
-    by_id = {f.get("tx_id"): f for f in findings or []}
-    merged = []
-    for tx in chain.get("transactions") or []:
-        v = by_id.get(tx.get("tx_id")) or {}
-        item = dict(tx)
-        item["status"] = normalize_status(v.get("status") or "PENDING")
-        item["conclusion"] = v.get("conclusion") or ""
-        item["reasoning"] = v.get("reasoning") or ""
-        item["findings"] = v.get("findings") or []
-        item["supporting_evidence"] = v.get("supporting_evidence") or []
-        item["contradictory_evidence"] = v.get("contradictory_evidence") or []
-        item["missing_documents"] = v.get("missing_documents") or []
-        item["unresolved"] = v.get("unresolved") or []
-        item["limitations"] = v.get("limitations") or []
-        item["rule_versions"] = v.get("rule_versions") or []
-        item["verified_at"] = v.get("verified_at") or ""
-        merged.append(item)
-    return merged
-
-
 def _collect_missing(transactions: list[dict]) -> list[dict]:
     out = []
     for t in transactions:
-        for m in t.get("missing_documents") or []:
+        for m in (t.get("required_documents") or t.get("missing_documents") or []):
             if not isinstance(m, dict):
                 continue
             out.append({
@@ -386,12 +356,20 @@ def _collect_missing(transactions: list[dict]) -> list[dict]:
     return out
 
 
+def _overall_transaction_status(transactions: list[dict]) -> str:
+    statuses = {normalize_status(item.get("status")) for item in transactions}
+    if "ISSUES_IDENTIFIED" in statuses:
+        return "ISSUES_IDENTIFIED"
+    if not statuses or statuses - {"VERIFIED_WITH_AVAILABLE_EVIDENCE"}:
+        return "INCONCLUSIVE"
+    return "VERIFIED_WITH_AVAILABLE_EVIDENCE"
+
+
 def _save_state(case_id: str, memory: dict, status: str) -> None:
-    try:
-        repo.save_agent_memory(case_id=case_id, memory=memory)
-        repo.set_agent_status(case_id=case_id, status=status)
-    except Exception as e:  # state save failure must not kill the run
-        logger.warning("failed to save agent state for %s: %s", case_id, e)
+    memory["updated_at"] = _now()
+    memory["current_stage"] = memory.get("stage") or status
+    repo.save_agent_memory(case_id=case_id, memory=memory)
+    repo.set_agent_status(case_id=case_id, status=status)
 
 
 def _verdict_for(overall: str) -> str:
@@ -417,8 +395,10 @@ def _sync_case_verdict(case_id: str, verification_status: str, overall: str) -> 
 
 def _resolve_tx_ref(chain: dict, ref) -> str | None:
     txs = (chain or {}).get("transactions") or []
-    if isinstance(ref, str) and ref.upper().startswith("T"):
-        return ref if any(t.get("tx_id") == ref for t in txs) else None
+    if isinstance(ref, str):
+        matched = next((t.get("tx_id") for t in txs if t.get("tx_id") == ref), None)
+        if matched:
+            return matched
     try:
         seq = int(ref)
     except (TypeError, ValueError):
@@ -430,35 +410,43 @@ def _resolve_tx_ref(chain: dict, ref) -> str | None:
 
 
 def skip_transaction(case_id: str, tx_ref) -> dict:
-    """Record a transaction as skipped (verification incomplete) and continue."""
-    chain = repo.get_title_chain(case_id) or {}
+    """Record a paused transaction as skipped and continue under the case lock."""
+    return _run_with_lock(case_id, skip_ref=tx_ref)
+
+
+def _skip_transaction_locked(case_id: str, tx_ref) -> dict:
+    phase_a = repo.get_agent_result(case_id) or {}
+    chain = {"transactions": _phase_a_transactions(phase_a)}
     tx_id = _resolve_tx_ref(chain, tx_ref)
     if not tx_id:
         return {"case_id": case_id, "status": "error", "reason": f"transaction {tx_ref} not found"}
-
-    repo.save_transaction_result(case_id=case_id, tx_id=tx_id, verification={
-        "tx_id": tx_id,
-        "status": normalize_status("PENDING_NOT_VERIFIED"),
-        "conclusion": "Skipped by user — verification incomplete.",
-        "reasoning": "",
-        "findings": [],
-        "supporting_evidence": [],
-        "contradictory_evidence": [],
-        "missing_documents": [],
-        "unresolved": [],
-        "limitations": ["Not investigated — skipped by the user."],
-        "rule_versions": [],
-        "verified_at": "",
-        "schema_version": SCHEMA_VERSION,
-    })
-    # TODO stays PENDING (skipped != completed) but is excluded from this and
-    # subsequent runs unless new evidence arrives.
     memory = repo.get_agent_memory(case_id) or {}
-    skipped = list(memory.get("skipped_tx_ids") or [])
-    if tx_id not in skipped:
-        skipped.append(tx_id)
-    memory["skipped_tx_ids"] = skipped
-    if memory.get("paused_transaction") == tx_id:
-        memory["paused_transaction"] = None
+    paused_tx_id = memory.get("paused_transaction") or (
+        memory.get("current_tx_id")
+        if memory.get("current_stage") == "paused" and memory.get("status") == "PENDING_NOT_VERIFIED"
+        else None
+    )
+    if paused_tx_id != tx_id:
+        return {"case_id": case_id, "status": "error", "reason": "only the currently paused transaction can be skipped"}
+
+    previous = repo.get_transaction_result(case_id, tx_id) or {}
+    skipped_ids = set(memory.get("skipped_tx_ids") or [])
+    skipped_ids.add(tx_id)
+    tx = next(item for item in chain["transactions"] if item["tx_id"] == tx_id)
+    # Skipping is workflow state only. Never rewrite the verification result (or
+    # its evidence/requirements) to record the user's navigation choice.
+    if previous and normalize_status(previous.get("status")) != "PENDING_NOT_VERIFIED":
+        return {"case_id": case_id, "status": "error", "reason": "only a pending transaction can be skipped"}
+    memory["skipped_tx_ids"] = sorted(skipped_ids)
+    memory["pending_tx_ids"] = sorted(set(memory.get("pending_tx_ids") or []) | {tx_id})
+    memory["last_transaction_id"] = tx_id
+    memory["last_transaction_status"] = "PENDING_NOT_VERIFIED"
+    memory["last_transaction_summary"] = "Not verified — the user skipped evidence upload; requested documents remain required."
+    memory["current_tx_id"] = tx_id
+    memory["result_ref"] = tx_id
+    memory["current_stage"] = "SKIPPED"
+    memory["status"] = "PENDING_NOT_VERIFIED"
+    memory["stage"] = "skipped"
+    memory["next_action"] = None
     repo.save_agent_memory(case_id=case_id, memory=memory)
-    return _run(case_id)
+    return _run(case_id, skip_tx_ids=skipped_ids)

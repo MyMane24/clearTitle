@@ -1,17 +1,4 @@
-"""Persistence for the ClearTitle single-agent workflow.
-
-Authoritative stores (each fact lives in exactly one place):
-
-* ``title_chains``           — Phase A property identity, graph, and detailed chain
-* ``findings``               — one verification result per transaction (upserted)
-* ``reports``                — final report versions (append-only history)
-* ``cases.agent_result``     — legacy result column; not used for Phase A
-* ``agent_todos``            — durable transaction-verification checklist
-* ``case_memory``            — *only* resume state; never authoritative findings
-* ``documents.summary``      — per-document navigation label
-
-There is no second database and no duplicate findings store.
-"""
+"""Persistence for case-level title-chain verification results and memory."""
 
 from __future__ import annotations
 
@@ -39,11 +26,11 @@ def _load(value):
 
 
 def get_agent_documents(case_id: str) -> list[dict]:
-    """Return document ids, citation filenames, and saved summaries for the agent."""
+    """Return navigation summaries and processing state, never OCR text."""
     with _get_conn() as conn:
         cursor = conn.cursor(dictionary=True)
         cursor.execute(
-            "SELECT doc_id, filename, summary "
+            "SELECT doc_id, filename, document_type, status, summary "
             "FROM documents WHERE case_id = %s ORDER BY doc_index ASC",
             (case_id,),
         )
@@ -112,35 +99,30 @@ def save_phase_a_result(*, case_id: str, result: dict) -> None:
 # ── case columns (agent_status / agent_memory / agent_result) ─────────────────
 
 
-def _update_case_column(*, case_id: str, column: str, value) -> None:
-    if column not in ("agent_memory", "agent_result"):
-        raise ValueError(f"unexpected column {column}")
-    with _get_conn() as conn:
-        cursor = conn.cursor()
-        cursor.execute(f"UPDATE cases SET {column} = %s WHERE id = %s", (_dump(value), case_id))
-        conn.commit()
-
-
-def _read_case_column(case_id: str, column: str):
-    if column not in ("agent_memory", "agent_result"):
-        raise ValueError(f"unexpected column {column}")
-    with _get_conn() as conn:
-        cursor = conn.cursor()
-        cursor.execute(f"SELECT {column} FROM cases WHERE id = %s", (case_id,))
-        row = cursor.fetchone()
-    return _load(row[0]) if row else None
-
-
-# ── case_memory: resume state only (NOT authoritative findings) ───────────────
+# ── case_memory: concise human-readable text, with parseable checkpoint labels ─
 
 
 def save_agent_memory(*, case_id: str, memory: dict) -> None:
+    checkpoint = {
+        "case_id": case_id,
+        "current_tx_id": memory.get("current_tx_id") or memory.get("paused_transaction"),
+        "current_stage": memory.get("current_stage") or memory.get("stage"),
+        "status": memory.get("status") or memory.get("last_transaction_status"),
+        "result_ref": memory.get("result_ref") or memory.get("current_tx_id") or memory.get("paused_transaction"),
+        "next_action": memory.get("next_action"),
+        "updated_at": memory.get("updated_at"),
+    }
+    checkpoint = {key: value for key, value in checkpoint.items() if value is not None}
+    skipped_tx_ids = sorted(set(memory.get("skipped_tx_ids") or []))
+    if skipped_tx_ids:
+        checkpoint["skipped_tx_ids"] = skipped_tx_ids
+    text = _dump(checkpoint)
     with _get_conn() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO case_memory (case_id, memory) VALUES (%s, %s) "
-            "ON DUPLICATE KEY UPDATE memory = VALUES(memory)",
-            (case_id, _dump(memory)),
+            "INSERT INTO case_memory (case_id, case_memory) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE case_memory = VALUES(case_memory)",
+            (case_id, text),
         )
         conn.commit()
 
@@ -149,13 +131,47 @@ def get_agent_memory(case_id: str) -> dict | None:
     with _get_conn() as conn:
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT memory FROM case_memory WHERE case_id = %s", (case_id,))
+            cursor.execute("SELECT case_memory FROM case_memory WHERE case_id = %s", (case_id,))
             row = cursor.fetchone()
         except Exception:
             row = None
-    if row and row[0] is not None:
-        return _load(row[0])
-    return _read_case_column(case_id, "agent_memory")
+    if not row or not row[0]:
+        return {}
+    text = str(row[0])
+    try:
+        saved = json.loads(text)
+        if isinstance(saved, dict) and saved.get("case_id"):
+            return saved
+    except (TypeError, ValueError):
+        pass
+    # Backward-compatible reader for the former labeled-text checkpoint.
+    result = {"memory_text": text, "case_id": case_id}
+    for line in text.splitlines():
+        if line.startswith("Progress: "):
+            result["stage"] = line.removeprefix("Progress: ")
+            result["current_stage"] = result["stage"]
+        elif line.startswith("Current transaction: "):
+            result["current_tx_id"] = line.removeprefix("Current transaction: ")
+            result["result_ref"] = result["current_tx_id"]
+        elif line.startswith("Paused transaction: "):
+            result["paused_transaction"] = line.removeprefix("Paused transaction: ")
+        elif line.startswith("Next action: "):
+            result["next_action"] = line.removeprefix("Next action: ")
+        elif line.startswith("Completed transactions: "):
+            result["completed_tx_ids"] = line.removeprefix("Completed transactions: ").split(", ")
+        elif line.startswith("Pending transactions: "):
+            result["pending_tx_ids"] = line.removeprefix("Pending transactions: ").split(", ")
+        elif line.startswith("Skipped this run: "):
+            result["skipped_tx_ids"] = line.removeprefix("Skipped this run: ").split(", ")
+        elif line.startswith("Last transaction: "):
+            tx_id, _, status = line.removeprefix("Last transaction: ").partition(" — ")
+            result["last_transaction_id"] = tx_id
+            result["last_transaction_status"] = status
+            result["status"] = status
+        elif line.startswith("Missing document: "):
+            name, _, reason = line.removeprefix("Missing document: ").partition(" — ")
+            result.setdefault("missing_documents", []).append({"document_type": name, "reason": reason})
+    return result
 
 
 # ── authoritative title chain (title_chains table) ────────────────────────────
@@ -183,106 +199,57 @@ def get_title_chain(case_id: str) -> dict | None:
     return _load(row[0]) if row else None
 
 
-# ── findings: one verification result per transaction (upserted) ──────────────
+# ── case_results: one row per case; transaction results append/update in JSON ──
+
+
+def _case_result(case_id: str) -> list[dict]:
+    with _get_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT case_result FROM case_results WHERE case_id = %s", (case_id,))
+        row = cursor.fetchone()
+    value = _load(row[0]) if row else None
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):  # tolerate pre-change case_result payloads
+        return value.get("transactions") or []
+    return []
 
 
 def save_transaction_result(*, case_id: str, tx_id: str, verification: dict) -> None:
-    """Upsert a single transaction's verification result (idempotent)."""
+    """Validate and upsert one canonical transaction result in the case row."""
+    from backend.services.agent_schemas import validate_transaction_verification
+
+    canonical = validate_transaction_verification(verification).model_dump()
+    if canonical["tx_id"] != tx_id:
+        raise ValueError("transaction result tx_id does not match persistence key")
     with _get_conn() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "DELETE FROM findings WHERE case_id = %s AND tx_id = %s", (case_id, tx_id)
+            "SELECT case_result FROM case_results WHERE case_id = %s FOR UPDATE", (case_id,)
         )
+        row = cursor.fetchone()
+        state = _load(row[0]) if row else None
+        transactions = state if isinstance(state, list) else (
+            state.get("transactions", []) if isinstance(state, dict) else []
+        )
+        transactions[:] = [item for item in transactions if item.get("tx_id") != tx_id]
+        transactions.append(canonical)
+        transactions.sort(key=lambda item: int(item.get("sequence") or 0))
         cursor.execute(
-            "INSERT INTO findings (case_id, tx_id, tx_index, status, finding, payload) "
-            "VALUES (%s, %s, %s, %s, %s, %s)",
-            (
-                case_id,
-                tx_id,
-                int(verification.get("sequence") or 0),
-                verification.get("status"),
-                verification.get("conclusion") or verification.get("finding"),
-                _dump(verification),
-            ),
+            "INSERT INTO case_results (case_id, case_result) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE case_result = VALUES(case_result)",
+            (case_id, _dump(transactions)),
         )
         conn.commit()
 
 
 def get_transaction_result(case_id: str, tx_id: str) -> dict | None:
-    with _get_conn() as conn:
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                "SELECT payload FROM findings WHERE case_id = %s AND tx_id = %s "
-                "ORDER BY id DESC LIMIT 1",
-                (case_id, tx_id),
-            )
-            row = cursor.fetchone()
-        except Exception:
-            row = None
-    return _load(row[0]) if row else None
+    return next((item for item in _case_result(case_id)
+                 if item.get("tx_id") == tx_id), None)
 
 
 def list_transaction_results(case_id: str) -> list[dict]:
-    with _get_conn() as conn:
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                "SELECT payload FROM findings WHERE case_id = %s ORDER BY tx_index ASC, id ASC",
-                (case_id,),
-            )
-            rows = cursor.fetchall()
-        except Exception:
-            rows = []
-    return [p for r in rows if (p := _load(r[0]))]
-
-
-# ── durable TODO checklist (agent_todos table) ────────────────────────────────
-
-
-def list_todos(case_id: str) -> list[dict]:
-    with _get_conn() as conn:
-        cursor = conn.cursor(dictionary=True)
-        try:
-            cursor.execute(
-                "SELECT id, case_id, tx_id, description, state, required_evidence, updated_at "
-                "FROM agent_todos WHERE case_id = %s ORDER BY tx_index ASC, id ASC",
-                (case_id,),
-            )
-            rows = cursor.fetchall()
-        except Exception:
-            rows = []
-    out = []
-    for row in rows:
-        t = dict(row)
-        t["required_evidence"] = _load(t.get("required_evidence")) or []
-        t["updated_at"] = str(t.get("updated_at") or "")
-        out.append(t)
-    return out
-
-
-def upsert_todo(*, case_id: str, tx_id: str, description: str = "", state: str = "PENDING",
-                required_evidence: list[str] | None = None, tx_index: int = 0) -> None:
-    with _get_conn() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO agent_todos (case_id, tx_id, tx_index, description, state, required_evidence) "
-            "VALUES (%s, %s, %s, %s, %s, %s) "
-            "ON DUPLICATE KEY UPDATE description = VALUES(description), "
-            "required_evidence = VALUES(required_evidence)",
-            (case_id, tx_id, tx_index, description, state, _dump(required_evidence or [])),
-        )
-        conn.commit()
-
-
-def set_todo_state(*, case_id: str, tx_id: str, state: str) -> None:
-    with _get_conn() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE agent_todos SET state = %s WHERE case_id = %s AND tx_id = %s",
-            (state, case_id, tx_id),
-        )
-        conn.commit()
+    return _case_result(case_id)
 
 
 # ── agent status + final result ───────────────────────────────────────────────
@@ -303,28 +270,12 @@ def get_agent_status(case_id: str) -> str | None:
     return row[0] if row else None
 
 
-def save_agent_result(*, case_id: str, result: dict) -> None:
-    """Append a final report version + update the read-optimised case column.
-
-    Only called when a *final* report is produced (not on pause), so the
-    reports history has one row per completed pass.
-    """
-    with _get_conn() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO reports (case_id, result) VALUES (%s, %s)",
-            (case_id, _dump(result)),
-        )
-        conn.commit()
-    _update_case_column(case_id=case_id, column="agent_result", value=result)
-
-
 def get_agent_result(case_id: str) -> dict | None:
     with _get_conn() as conn:
         cursor = conn.cursor()
         try:
             cursor.execute(
-                "SELECT property_identity, title_chain_graph, detailed_chain "
+                "SELECT property_identity, title_chain_graph, detailed_chain, chain "
                 "FROM title_chains WHERE case_id = %s",
                 (case_id,),
             )
@@ -333,10 +284,31 @@ def get_agent_result(case_id: str) -> dict | None:
             row = None
     if not row or all(value is None for value in row):
         return None
+    property_identity = _load(row[0]) or {}
+    title_chain_graph = row[1] or ""
+    detailed_chain = _load(row[2])
+    legacy_chain = _load(row[3])
+    if not detailed_chain and isinstance(legacy_chain, dict):
+        # Older title-chain records stored the reconstructed chain directly under
+        # `transactions`; adapt it in memory without rewriting or losing the row.
+        legacy_transactions = legacy_chain.get("transactions")
+        if isinstance(legacy_transactions, list):
+            property_identity = property_identity or legacy_chain.get("property_identity") or {}
+            title_chain_graph = title_chain_graph or legacy_chain.get("title_story") or ""
+            detailed_chain = [
+                {
+                    "tx_id": item.get("tx_id"),
+                    "chain_position": item.get("sequence") or index,
+                    "documented_transaction": item,
+                    "related_events": [],
+                }
+                for index, item in enumerate(legacy_transactions, start=1)
+                if isinstance(item, dict)
+            ]
     return {
-        "property_identity": _load(row[0]) or {},
-        "title_chain_graph": row[1] or "",
-        "title_chain": _load(row[2]) or [],
+        "property_identity": property_identity,
+        "title_chain_graph": title_chain_graph,
+        "title_chain": detailed_chain or [],
     }
 
 
@@ -346,4 +318,5 @@ def get_agent_state(case_id: str) -> dict:
         "status": get_agent_status(case_id),
         "memory": get_agent_memory(case_id),
         "result": get_agent_result(case_id),
+        "case_result": _case_result(case_id),
     }

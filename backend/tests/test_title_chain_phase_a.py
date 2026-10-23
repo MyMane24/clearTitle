@@ -19,10 +19,10 @@ class TestTitleChainPhaseATools(unittest.TestCase):
             },
         ])
 
-    def test_document_manifest_includes_filename_only_for_citation(self):
+    def test_document_manifest_includes_summary_and_processing_metadata(self):
         result = dispatch(self.ctx, "list_documents", {})
         self.assertEqual(result, {
-            "documents": [{"doc_id": "DOC_001", "filename": "private-filename.pdf", "summary": "Latest sale deed for Flat G-04"}]
+            "documents": [{"doc_id": "DOC_001", "filename": "private-filename.pdf", "document_type": "SALE_DEED", "status": "unknown", "summary": "Latest sale deed for Flat G-04"}]
         })
 
     def test_phase_a_instruction_always_embeds_title_chain_skill_and_all_summaries(self):
@@ -107,12 +107,16 @@ class TestTitleChainPhaseATools(unittest.TestCase):
         save.assert_not_called()
 
     @patch("backend.database.repositories.agent_repo.get_agent_state")
-    def test_results_api_block_passes_agent_output_through_without_mapping(self, get_state):
+    def test_results_api_block_passes_agent_output_without_plan(self, get_state):
         identity = {"details": [{"label": "Flat", "value": "G-04"}]}
         graph = "Owner A -> Owner B"
         get_state.return_value = {
             "status": "done",
             "memory": {"stage": "phase_a_complete"},
+            "case_result": [{
+                "tx_id": "PA-TC-0001", "status": "INCONCLUSIVE",
+                "findings": [{"description": "The prior link is recital-reported."}],
+            }],
             "result": {
                 "property_identity": identity,
                 "title_chain_graph": graph,
@@ -123,6 +127,11 @@ class TestTitleChainPhaseATools(unittest.TestCase):
         self.assertIs(block["property_identity"], identity)
         self.assertEqual(block["title_chain_graph"], graph)
         self.assertEqual(block["title_chain"], [{"chain_position": 1, "documented_transaction": {}}])
+        self.assertEqual(block["overall_status"], "INCONCLUSIVE")
+        self.assertEqual(block["transactions"][0]["tx_id"], "PA-TC-0001")
+        self.assertNotIn("findings", block)
+        self.assertIn("The prior link is recital-reported.", block["transactions"][0]["summary"])
+        self.assertNotIn("verification_plan", block)
 
 
 class TestPhaseAStorage(unittest.TestCase):

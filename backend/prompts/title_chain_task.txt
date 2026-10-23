@@ -2,7 +2,9 @@ Build Phase A for this case.
 
 First review the complete list of uploaded document IDs and their saved summaries.
 Identify the latest sale deed(s) and establish the target property from their
-merged OCR. Then inspect the EC and include only entries whose property schedule
+merged OCR. If no sale deed is supplied, use the latest supported conveyance as a
+provisional endpoint and state the limitation rather than asserting a current
+owner. Then inspect the EC and include only entries whose property schedule
 is relevant to that target. Trace the target property's ownership backward
 through relevant instruments, recitals, mutations, and other uploaded evidence.
 Fetch OCR in chunks where necessary; continue until each relevant document has
@@ -25,7 +27,10 @@ title_chain item and its own graph step, including links reported only in a late
 deed's recital. Do not bury a prior sale, inheritance, succession, or partition
 inside the summary points of a later deed. For a recital-only link, use the
 recital document as source, set evidence_status to recital_reported, and use null
-for unavailable dates or instrument numbers. Keep the links in supported
+for unavailable dates or instrument numbers. For succession/inheritance links,
+do not place the deceased owner's reported date of death in `executed_date`;
+leave that field null unless an actual succession instrument has a stated
+execution date. Keep the death date in the factual summary instead. Keep the links in supported
 chronological order; do not invent missing facts to fill the gaps.
 Keep the result compact enough for one valid tool call. In summary_points, write
 plain-language sentences, one fact per point, with no field labels such as

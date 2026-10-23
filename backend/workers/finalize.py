@@ -57,5 +57,19 @@ def finalize_case_task(results: list, case_id: str):
     except Exception as e:
         logger.error("Failed to release pipeline lock for case %s: %s", case_id, e)
 
-    # Title-chain/verification is a separate, explicitly triggered phase. OCR
-    # completion must not implicitly spend credits on the deferred agent flow.
+    # An upload requested by a paused verification transaction must be fully
+    # OCR'd, merged, classified, and summarized before the agent retries it.
+    try:
+        from backend.database.repositories import agent_repo
+        memory = agent_repo.get_agent_memory(case_id) or {}
+        if (memory.get("paused_transaction") or memory.get("pending_tx_ids")
+                or (memory.get("status") == "PENDING_NOT_VERIFIED"
+                    and memory.get("current_tx_id"))):
+            from backend.workers.title_chain_tasks import run_case_analysis_task
+            run_case_analysis_task.delay(case_id)
+    except Exception as e:
+        logger.error("Failed to queue verification resume for %s: %s", case_id, e)
+
+    # Initial title-chain/verification remains explicitly triggered; an existing
+    # pending verification is resumed above only after an additional upload's OCR
+    # pipeline has completed.

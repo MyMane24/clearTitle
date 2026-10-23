@@ -364,7 +364,20 @@ async def upload_more_documents(
         raise HTTPException(status_code=404, detail="Case not found")
     _enforce_access(case_id, user)
 
+    if any(not (f.filename or "").lower().endswith(".pdf") for f in files):
+        raise HTTPException(status_code=400, detail="Only PDF documents can be uploaded")
+    pipeline_lock = None
+    if PIPELINE_LOCK_ENABLED:
+        from backend.integrations.redis.lock import RedisLock
+        pipeline_lock = RedisLock(f"case:{case_id}:pipeline_lock")
+        if not pipeline_lock.acquire():
+            raise HTTPException(status_code=409, detail="Document pipeline is already processing")
+
     meta = get_case_job(case_id)
+    if meta.get("status") == STATUS_PROCESSING:
+        if pipeline_lock:
+            pipeline_lock.release()
+        raise HTTPException(status_code=409, detail="Document pipeline is already processing")
     existing_files = meta.get("files", [])
     start_idx = len(existing_files)
 
@@ -408,7 +421,17 @@ async def upload_more_documents(
     add_files_to_case(case_id, saved)
     append_log(case_id, f"Uploaded {len(saved)} additional file(s) — total docs is now {new_total}")
 
-    return {"case_id": case_id, "files": saved, "total_docs": new_total}
+    set_case_status(case_id, STATUS_PROCESSING)
+    try:
+        start_case_pipeline(case_id)
+    except Exception as e:
+        if pipeline_lock:
+            pipeline_lock.release()
+        set_case_status(case_id, STATUS_FAILED)
+        append_log(case_id, f"FATAL: Failed to start uploaded-document pipeline — {e}")
+        raise HTTPException(status_code=500, detail="Could not process the uploaded document")
+
+    return {"case_id": case_id, "files": saved, "total_docs": new_total, "status": STATUS_PROCESSING}
 
 
 @router.post("/case/{case_id}/doc/{doc_id}/replace")

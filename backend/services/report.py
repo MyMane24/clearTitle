@@ -263,17 +263,21 @@ def _agent_required_docs_rows(agent: dict) -> list:
     """Transactions whose verification needs more evidence (missing documents)."""
     rows = []
     for t in agent.get("transactions") or []:
-        missing = t.get("missing_documents") or []
+        missing = t.get("required_documents") or []
         if not missing:
             continue
         req = "; ".join(
             str(m.get("document_type") or "Document")
             for m in missing if isinstance(m, dict)
         )
+        metadata = t.get("transaction_metadata") or {}
+        vendors = ", ".join(str(value) for value in metadata.get("vendors") or [])
+        purchasers = ", ".join(str(value) for value in metadata.get("purchasers") or [])
+        parties = f"{vendors} → {purchasers}" if vendors or purchasers else "—"
         rows.append([
-            _fmt_date(t.get("date") or ""),
-            str(t.get("type") or "Transaction"),
-            str(t.get("parties") or "—"),
+            _fmt_date(metadata.get("executed_date") or metadata.get("registration_date") or ""),
+            str(metadata.get("transaction_type") or metadata.get("document_type") or "Transaction"),
+            parties,
             req or "—",
         ])
     return rows

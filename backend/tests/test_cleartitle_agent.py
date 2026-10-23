@@ -1,22 +1,7 @@
-﻿import unittest
+import unittest
 
-from backend.services.agent_rules import rules_for
 from backend.services.agent_schemas import normalize_status
-from backend.services.cleartitle_agent import _collect_missing, _merged_transactions
-
-
-class TestAgentRules(unittest.TestCase):
-    def test_common_rules_always_apply(self):
-        for tx in ({"type": "SALE"}, {"type": "MORTGAGE"}, {"type": "WHATEVER"}):
-            ids = {r["id"] for r in rules_for(tx)}
-            self.assertIn("COMMON-1", ids)
-
-    def test_type_specific_rules(self):
-        self.assertIn("MORT-2", {r["id"] for r in rules_for({"type": "MORTGAGE"})})
-        self.assertIn("SALE-1", {r["id"] for r in rules_for({"type": "sale"})})
-
-    def test_unknown_type_falls_back(self):
-        self.assertIn("OTHER-1", {r["id"] for r in rules_for({"type": "not-a-type"})})
+from backend.services.cleartitle_agent import _collect_missing, _overall_transaction_status
 
 
 class TestStatusNormalization(unittest.TestCase):
@@ -29,21 +14,21 @@ class TestStatusNormalization(unittest.TestCase):
     def test_unknown_falls_back(self):
         self.assertEqual(normalize_status("nonsense"), "PENDING")
 
+    def test_missing_evidence_is_pending_not_issues(self):
+        self.assertEqual(normalize_status("missing_evidence"), "PENDING_NOT_VERIFIED")
 
-class TestMemoryMerge(unittest.TestCase):
-    def test_findings_overlay_chain(self):
-        chain = {"transactions": [
-            {"tx_id": "TX001", "sequence": 1, "transaction_type": "SALE"},
-            {"tx_id": "TX002", "sequence": 2, "transaction_type": "GIFT"},
-        ]}
-        findings = [
-            {"tx_id": "TX002", "status": "VERIFIED_WITH_AVAILABLE_EVIDENCE", "conclusion": "ok"}
-        ]
-        merged = _merged_transactions(chain, findings)
-        self.assertEqual(len(merged), 2)
-        self.assertEqual(merged[1]["status"], "VERIFIED_WITH_AVAILABLE_EVIDENCE")
-        self.assertEqual(merged[1]["conclusion"], "ok")
-        self.assertNotIn("conclusion", merged[0])
+
+class TestTransactionSummary(unittest.TestCase):
+    def test_overall_status_comes_from_transaction_statuses(self):
+        self.assertEqual(_overall_transaction_status([
+            {"status": "VERIFIED_WITH_AVAILABLE_EVIDENCE"},
+        ]), "VERIFIED_WITH_AVAILABLE_EVIDENCE")
+        self.assertEqual(_overall_transaction_status([
+            {"status": "VERIFIED_WITH_AVAILABLE_EVIDENCE"}, {"status": "PENDING_NOT_VERIFIED"},
+        ]), "INCONCLUSIVE")
+        self.assertEqual(_overall_transaction_status([
+            {"status": "ISSUES_IDENTIFIED"},
+        ]), "ISSUES_IDENTIFIED")
 
     def test_collect_missing_aggregates_across_transactions(self):
         transactions = [

@@ -6,10 +6,8 @@ Tables:
   cases                 — pipeline cases (user-scoped)
   documents             — per-doc extraction state (no per-doc verification)
   title_chains          — Phase A property identity, graph, and detailed chain
-  verification_results  — LLM field-verification results for a case (legacy)
-  case_memory           — ClearTitle agent resume state (current task + pending work)
-  findings              — per-transaction agent findings + evidence
-  reports               — generated agent report versions
+  case_results          — one case-level verification result document
+  case_memory           — one concise text checkpoint per case
 
 Obsolete tables (cross_doc_verifications, human_feedback, llm_calls and the
 daily_cost_summary view) are dropped best-effort so an existing DB upgrades
@@ -20,6 +18,8 @@ verification_results that are no longer surfaced to any consumer.
 """
 
 from __future__ import annotations
+
+import json
 
 from backend.database.connection import _get_conn
 
@@ -100,64 +100,20 @@ CREATE TABLE IF NOT EXISTS title_chains (
     UNIQUE KEY uq_case_id (case_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS verification_results (
-    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+CREATE TABLE IF NOT EXISTS case_results (
     case_id VARCHAR(32) NOT NULL,
-    status VARCHAR(32) NOT NULL DEFAULT 'pending',
-    verdict VARCHAR(32) DEFAULT NULL,
-    summary JSON NULL,
-    items JSON NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-        ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_case_id (case_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS case_memory (
-    case_id VARCHAR(32) NOT NULL,
-    memory JSON NULL,
+    case_result JSON NULL,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (case_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS findings (
-    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+CREATE TABLE IF NOT EXISTS case_memory (
     case_id VARCHAR(32) NOT NULL,
-    tx_id VARCHAR(64) DEFAULT NULL,
-    tx_index INT NOT NULL DEFAULT 0,
-    status VARCHAR(32) DEFAULT NULL,
-    finding TEXT NULL,
-    payload JSON NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    KEY idx_findings_case (case_id),
-    KEY idx_findings_tx (case_id, tx_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS agent_todos (
-    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    case_id VARCHAR(32) NOT NULL,
-    tx_id VARCHAR(64) NOT NULL,
-    tx_index INT NOT NULL DEFAULT 0,
-    description TEXT NULL,
-    state VARCHAR(32) NOT NULL DEFAULT 'PENDING',
-    required_evidence JSON NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    case_memory LONGTEXT NULL,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_todo_case_tx (case_id, tx_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS reports (
-    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    case_id VARCHAR(32) NOT NULL,
-    result JSON NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    KEY idx_case_id (case_id)
+    PRIMARY KEY (case_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 """
 
@@ -202,16 +158,162 @@ def ensure_tables():
             # in the three dedicated title_chains columns below.
             ("documents", "summary", "ALTER TABLE documents ADD COLUMN summary TEXT NULL"),
             ("cases", "agent_status", "ALTER TABLE cases ADD COLUMN agent_status VARCHAR(32) NULL DEFAULT NULL"),
-            ("cases", "agent_memory", "ALTER TABLE cases ADD COLUMN agent_memory JSON NULL"),
-            ("cases", "agent_result", "ALTER TABLE cases ADD COLUMN agent_result JSON NULL"),
             ("title_chains", "property_identity", "ALTER TABLE title_chains ADD COLUMN property_identity JSON NULL"),
             ("title_chains", "title_chain_graph", "ALTER TABLE title_chains ADD COLUMN title_chain_graph LONGTEXT NULL"),
             ("title_chains", "detailed_chain", "ALTER TABLE title_chains ADD COLUMN detailed_chain JSON NULL"),
-            ("findings", "tx_id", "ALTER TABLE findings ADD COLUMN tx_id VARCHAR(64) NULL DEFAULT NULL"),
+            ("case_memory", "case_memory", "ALTER TABLE case_memory ADD COLUMN case_memory LONGTEXT NULL"),
         ]:
             _, _, sql = col_def
             try:
                 cursor.execute(sql)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+
+        # Consolidate legacy verification stores before removing them. Every
+        # transaction result is copied into the one per-case result row.
+        try:
+            cursor.execute("SHOW COLUMNS FROM case_memory LIKE 'memory'")
+            has_legacy_memory = cursor.fetchone() is not None
+            if has_legacy_memory:
+                cursor.execute("ALTER TABLE case_memory MODIFY memory LONGTEXT NULL")
+                cursor.execute("UPDATE case_memory SET case_memory = memory WHERE case_memory IS NULL")
+                cursor.execute("SELECT case_id, case_memory FROM case_memory")
+                for case_id, raw_memory in cursor.fetchall():
+                    try:
+                        old = json.loads(raw_memory) if isinstance(raw_memory, str) else raw_memory
+                    except (TypeError, ValueError):
+                        old = None
+                    if isinstance(old, dict):
+                        notes = []
+                        for key, label in (("stage", "Progress"), ("current_tx_id", "Current transaction"),
+                                           ("paused_transaction", "Paused transaction"), ("next_action", "Next action")):
+                            if old.get(key):
+                                notes.append(f"{label}: {old[key]}")
+                        for key, label in (("completed_tx_ids", "Completed transactions"),
+                                           ("pending_tx_ids", "Pending transactions"),
+                                           ("skipped_tx_ids", "Skipped this run")):
+                            if old.get(key):
+                                notes.append(f"{label}: {', '.join(map(str, old[key]))}")
+                        for missing in old.get("missing_documents") or []:
+                            if isinstance(missing, dict):
+                                notes.append(f"Missing document: {missing.get('document_type') or 'Document'} — {missing.get('reason') or ''}")
+                        cursor.execute("UPDATE case_memory SET case_memory = %s WHERE case_id = %s", ("\n".join(notes), case_id))
+                cursor.execute("ALTER TABLE case_memory DROP COLUMN memory")
+
+            cursor.execute("SHOW COLUMNS FROM cases LIKE 'agent_memory'")
+            if cursor.fetchone():
+                cursor.execute("SELECT id, agent_memory FROM cases WHERE agent_memory IS NOT NULL")
+                for case_id, raw_memory in cursor.fetchall():
+                    cursor.execute("SELECT 1 FROM case_memory WHERE case_id = %s", (case_id,))
+                    if cursor.fetchone():
+                        continue
+                    try:
+                        old = json.loads(raw_memory) if isinstance(raw_memory, str) else raw_memory
+                    except (TypeError, ValueError):
+                        old = None
+                    if isinstance(old, dict):
+                        notes = [f"Progress: {old['stage']}"] if old.get("stage") else []
+                        if old.get("next_action"):
+                            notes.append(f"Next action: {old['next_action']}")
+                        cursor.execute("INSERT INTO case_memory (case_id, case_memory) VALUES (%s, %s)", (case_id, "\n".join(notes)))
+
+            cursor.execute("SHOW TABLES LIKE 'agent_todos'")
+            if cursor.fetchone():
+                cursor.execute("SELECT case_id, state, description, required_evidence FROM agent_todos ORDER BY case_id, tx_index")
+                for case_id, state, description, evidence in cursor.fetchall():
+                    cursor.execute("SELECT case_memory FROM case_memory WHERE case_id = %s", (case_id,))
+                    row = cursor.fetchone()
+                    note = f"Legacy transaction progress: {state or 'PENDING'}"
+                    if description:
+                        note += f" — {description}"
+                    if evidence:
+                        note += f"; required evidence: {evidence}"
+                    existing = (row[0] or "") if row else ""
+                    updated = f"{existing}\n{note}".strip()
+                    cursor.execute(
+                        "INSERT INTO case_memory (case_id, case_memory) VALUES (%s, %s) "
+                        "ON DUPLICATE KEY UPDATE case_memory = VALUES(case_memory)",
+                        (case_id, updated),
+                    )
+
+            cursor.execute("SELECT case_id, case_result FROM case_results")
+            consolidated = {}
+            for case_id, raw in cursor.fetchall():
+                try:
+                    value = json.loads(raw) if isinstance(raw, str) else (raw or [])
+                    consolidated[case_id] = value if isinstance(value, list) else (value.get("transactions") or [])
+                except (TypeError, ValueError):
+                    consolidated[case_id] = []
+
+            cursor.execute("SHOW TABLES LIKE 'findings'")
+            if cursor.fetchone():
+                cursor.execute("SELECT case_id, payload, tx_id, tx_index, status, finding FROM findings ORDER BY tx_index, id")
+                for case_id, payload, tx_id, tx_index, status, finding in cursor.fetchall():
+                    target = consolidated.setdefault(case_id, [])
+                    try:
+                        item = json.loads(payload) if isinstance(payload, str) else (payload or {})
+                    except (TypeError, ValueError):
+                        item = {}
+                    if not item:
+                        item = {"tx_id": tx_id, "sequence": tx_index, "status": status, "conclusion": finding or ""}
+                    target[:] = [old for old in target if old.get("tx_id") != (item.get("tx_id") or tx_id)]
+                    target.append(item)
+
+            cursor.execute("SHOW TABLES LIKE 'reports'")
+            if cursor.fetchone():
+                cursor.execute("SELECT case_id, result FROM reports ORDER BY id")
+                for case_id, raw in cursor.fetchall():
+                    try:
+                        report = json.loads(raw) if isinstance(raw, str) else raw
+                    except (TypeError, ValueError):
+                        report = None
+                    if report and report.get("transactions"):
+                        target = consolidated.setdefault(case_id, [])
+                        known = {item.get("tx_id") for item in target}
+                        target.extend(item for item in report["transactions"] if item.get("tx_id") not in known)
+
+            cursor.execute("SHOW COLUMNS FROM cases LIKE 'agent_result'")
+            if cursor.fetchone():
+                cursor.execute("SELECT id, agent_result FROM cases WHERE agent_result IS NOT NULL")
+                for case_id, raw in cursor.fetchall():
+                    try:
+                        report = json.loads(raw) if isinstance(raw, str) else raw
+                    except (TypeError, ValueError):
+                        report = None
+                    if report and report.get("transactions"):
+                        target = consolidated.setdefault(case_id, [])
+                        known = {item.get("tx_id") for item in target}
+                        target.extend(item for item in report["transactions"] if item.get("tx_id") not in known)
+
+            for case_id, payload in consolidated.items():
+                cursor.execute(
+                    "INSERT INTO case_results (case_id, case_result) VALUES (%s, %s) "
+                    "ON DUPLICATE KEY UPDATE case_result = VALUES(case_result)",
+                    (case_id, json.dumps(payload, ensure_ascii=False)),
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+        # Retire redundant result stores only after the copy above succeeds.
+        for table in ("findings", "reports", "verification_results"):
+            try:
+                cursor.execute(f"DROP TABLE IF EXISTS {table}")
+                conn.commit()
+            except Exception:
+                conn.rollback()
+        for table in ("agent_todos", "agent_verification_plans"):
+            try:
+                cursor.execute(f"DROP TABLE IF EXISTS {table}")
+                conn.commit()
+            except Exception:
+                conn.rollback()
+
+        for column in ("agent_result", "agent_memory"):
+            try:
+                cursor.execute(f"ALTER TABLE cases DROP COLUMN {column}")
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -244,8 +346,6 @@ def ensure_tables():
                 conn.rollback()
 
         # Split Phase A results previously stored as one JSON object in chain.
-        # Clear the duplicate case read-copy only for records positively
-        # identified as Phase A results; preserve unrelated legacy data.
         try:
             cursor.execute(
                 "UPDATE title_chains SET "
@@ -255,13 +355,6 @@ def ensure_tables():
                 "WHERE chain IS NOT NULL "
                 "AND JSON_CONTAINS_PATH(chain, 'all', '$.property_identity', '$.title_chain_graph', '$.title_chain') "
                 "AND property_identity IS NULL AND title_chain_graph IS NULL AND detailed_chain IS NULL"
-            )
-            cursor.execute(
-                "UPDATE cases c JOIN title_chains tc ON tc.case_id = c.id "
-                "SET c.agent_result = NULL "
-                "WHERE c.agent_result IS NOT NULL AND tc.property_identity IS NOT NULL "
-                "AND tc.title_chain_graph IS NOT NULL AND tc.detailed_chain IS NOT NULL "
-                "AND JSON_CONTAINS_PATH(c.agent_result, 'all', '$.property_identity', '$.title_chain_graph', '$.title_chain')"
             )
             cursor.execute(
                 "UPDATE title_chains SET chain = NULL "
