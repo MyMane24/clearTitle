@@ -8,6 +8,8 @@ import {
 } from '../api/backend';
 import { DocSummary } from './utils';
 import { PhaseAChainView } from './PhaseAResult';
+import { requirementsForPausedTransaction } from './transactionResults';
+import { TransactionResultCard } from './TransactionResultCard';
 import {
   AlertTriangle, ArrowLeft, Check, CheckCircle2,
   ChevronDown, ChevronUp, FileText, FileUp,
@@ -638,84 +640,6 @@ function GuestReportPreview({ results, onSignIn }: {
     </div>
   );
 }
-function agentStatusColor(rawStatus?: string | null): { bg: string; fg: string; bd: string } {
-  const s = String(rawStatus || '').toUpperCase();
-  if (s === 'CLEAR' || s === 'VERIFIED' || s === 'CLEAR_TITLE' || s === 'VERIFIED_WITH_AVAILABLE_EVIDENCE') {
-    return { bg: '#ecfdf5', fg: '#047857', bd: '#a7f3d0' };
-  }
-  if (s === 'ATTENTION_REQUIRED' || s === 'NOT_VERIFIED' || s === 'FAILED' || s === 'DEFECT') {
-    return { bg: '#fef2f2', fg: '#b91c1c', bd: '#fecaca' };
-  }
-  if (s === 'PARTIAL' || s === 'IN_PROGRESS' || s === 'PROCESSING' || s === 'PENDING' || s === 'PENDING_NOT_VERIFIED' || s === 'INCONCLUSIVE') {
-    return { bg: '#fffbeb', fg: '#b45309', bd: '#fde68a' };
-  }
-  return { bg: '#f8fafc', fg: '#475569', bd: '#e2e8f0' };
-}
-
-export function AgentTransactionCard({ tx }: { tx: any }) {
-  const [open, setOpen] = useState(false);
-  const status = String(tx.status || 'UNVERIFIED').toUpperCase();
-  const c = agentStatusColor(tx.status);
-  const missing: any[] = tx.missing_documents || [];
-  const findings: any[] = tx.findings || [];
-  const rules: string[] = tx.rule_versions || [];
-  const supporting: any[] = tx.supporting_evidence || [];
-  const contradictory: any[] = tx.contradictory_evidence || [];
-  const formatEvidence = (ref: any) => {
-    if (!ref) return '';
-    if (typeof ref !== 'object') return String(ref);
-    return [ref.doc_id, ref.page && `page ${ref.page}`, ref.note, ref.passage].filter(Boolean).join(' — ');
-  };
-  return (
-    <div style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 14, marginBottom: 12, background: '#fff' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-          <span className="font-mono" style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>T{tx.index}</span>
-          <span style={{ fontSize: 14, fontWeight: 700, color: '#1e293b' }}>{tx.type || 'Transaction'}</span>
-          {tx.date && <span style={{ fontSize: 12, color: '#64748b' }}>{tx.date}</span>}
-        </div>
-        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', padding: '4px 10px', borderRadius: 999, background: c.bg, color: c.fg, border: `1px solid ${c.bd}` }}>
-          {status.replace(/_/g, ' ')}
-        </span>
-      </div>
-      {tx.parties && <div style={{ fontSize: 13, color: '#475569', marginTop: 8 }}><strong>Parties:</strong> {tx.parties}</div>}
-      {tx.finding && <p style={{ fontSize: 13.5, color: '#334155', lineHeight: 1.7, margin: '8px 0 0' }}>{tx.finding}</p>}
-      {missing.length > 0 && (
-        <div style={{ marginTop: 8, fontSize: 13, color: '#b45309' }}>
-          <strong>Missing:</strong> {missing.map((m, i) => <span key={i}>{i > 0 ? ', ' : ''}{m.document_type || 'Document'}</span>)}
-        </div>
-      )}
-      {(findings.length > 0 || rules.length > 0 || supporting.length > 0 || contradictory.length > 0 || tx.reasoning || tx.impact || tx.explanation || tx.unresolved?.length || tx.limitations?.length) && (
-        <>
-          <button onClick={() => setOpen(o => !o)} style={{ marginTop: 10, padding: 0, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#2563eb' }}>
-            {open ? 'Hide details' : 'View details'} <span style={{ fontSize: 10, display: 'inline-block', transform: open ? 'rotate(180deg)' : 'none' }}>▼</span>
-          </button>
-          {open && (
-            <div style={{ marginTop: 10, borderTop: '1px solid #f1f5f9', paddingTop: 10 }}>
-              {tx.reasoning && <p style={{ fontSize: 13, color: '#475569', lineHeight: 1.7, margin: '0 0 10px' }}>{tx.reasoning}</p>}
-              {tx.impact && <p style={{ fontSize: 13, color: '#475569', lineHeight: 1.7, margin: '0 0 10px' }}><strong>Impact:</strong> {tx.impact}</p>}
-              {tx.explanation && <p style={{ fontSize: 13, color: '#475569', lineHeight: 1.7, margin: '0 0 10px' }}>{tx.explanation}</p>}
-              {findings.map((finding, i) => (
-                <div key={i} style={{ fontSize: 12.5, color: '#475569', marginBottom: 4 }}>
-                  <strong>{finding.description || 'Finding'}</strong>
-                  {finding.significance && <div>Significance: {finding.significance}</div>}
-                  {finding.explanation && <div>{finding.explanation}</div>}
-                  {finding.source_refs?.length > 0 && <div>Sources: {finding.source_refs.map(formatEvidence).filter(Boolean).join('; ')}</div>}
-                </div>
-              ))}
-              {rules.length > 0 && <div style={{ fontSize: 12, color: '#64748b', marginTop: 8 }}><strong>Rules applied:</strong> {rules.join(', ')}</div>}
-              {supporting.length > 0 && <div style={{ fontSize: 12, color: '#64748b', marginTop: 8 }}><strong>Supporting evidence:</strong> {supporting.map(formatEvidence).filter(Boolean).join('; ')}</div>}
-              {contradictory.length > 0 && <div style={{ fontSize: 12, color: '#b45309', marginTop: 8 }}><strong>Contradictory evidence:</strong> {contradictory.map(formatEvidence).filter(Boolean).join('; ')}</div>}
-              {!!tx.unresolved?.length && <div style={{ fontSize: 12, color: '#92400e', marginTop: 8 }}><strong>Unresolved:</strong> {tx.unresolved.join('; ')}</div>}
-              {!!tx.limitations?.length && <div style={{ fontSize: 12, color: '#64748b', marginTop: 8 }}><strong>Limitations:</strong> {tx.limitations.join('; ')}</div>}
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
 export function VerificationDashboard() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -733,16 +657,17 @@ export function VerificationDashboard() {
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
   const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [evidenceUploadBusy, setEvidenceUploadBusy] = useState(false);
   const [cases, setCases] = useState<CaseListItem[]>([]);
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeReportTab, setActiveReportTab] = useState<'verification' | 'title-chain'>('verification');
-  const [summaryOpen, setSummaryOpen] = useState(false);
   const [titleStoryOpen, setTitleStoryOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const analysisTimerRef = useRef<number | null>(null);
+  const uploadedForPausedTxRef = useRef<{ txId: string; updatedAt: string | null } | null>(null);
 
   const addLog = useCallback((msg: string, cls = 'log-info') => {
     setLogs(prev => [...prev.slice(-200), { text: msg, cls }]);
@@ -976,6 +901,11 @@ export function VerificationDashboard() {
         stopPolling();
         updateProgress(100, "Pipeline complete");
         await showResults(caseId);
+        const pausedTx = uploadedForPausedTxRef.current;
+        if (pausedTx) {
+          uploadedForPausedTxRef.current = null;
+          void waitForEvidenceResume(caseId, pausedTx.txId, pausedTx.updatedAt);
+        }
         loadCases();
       }
     } catch (e: any) {
@@ -1097,6 +1027,71 @@ export function VerificationDashboard() {
     }
   };
 
+  const waitForEvidenceResume = async (caseId: string, previousPausedTx: string, previousUpdatedAt: string | null) => {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < ANALYSIS_WAIT_MS) {
+      await new Promise(resolve => window.setTimeout(resolve, 2500));
+      try {
+        const fresh = await API.getResults(caseId);
+        setResults(fresh);
+        const state = fresh.agent;
+        if (state?.status === 'done' || state?.status === 'error') return;
+        if (state?.status === 'paused' && state.paused_transaction &&
+            (state.paused_transaction !== previousPausedTx || (!!previousUpdatedAt && state.updated_at !== previousUpdatedAt))) return;
+      } catch { /* retry transient result reads */ }
+    }
+    addLog('⚠ Verification is taking longer than expected; refresh results to check its status.', 'log-warn');
+  };
+
+  const uploadRequestedEvidence = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (!currentCaseId || !selected.length) return;
+    setEvidenceUploadBusy(true);
+    try {
+      const pausedTx = results?.agent?.paused_transaction;
+      uploadedForPausedTxRef.current = pausedTx ? { txId: pausedTx, updatedAt: results?.agent?.updated_at || null } : null;
+      await API.uploadMore(currentCaseId, selected);
+      addLog(`Uploaded ${selected.length} requested document(s); OCR processing started. Verification will resume when processing finishes.`, "log-info");
+      setView('processing');
+      startPolling(currentCaseId);
+    } catch (e: any) {
+      addLog(`✗ Evidence upload failed: ${e.message}`, "log-err");
+    } finally {
+      setEvidenceUploadBusy(false);
+    }
+  };
+
+  const skipPausedTransaction = async () => {
+    const txId = results?.agent?.paused_transaction;
+    if (!currentCaseId || !txId) return;
+    const previousUpdatedAt = results?.agent?.updated_at || null;
+    setEvidenceUploadBusy(true);
+    try {
+      await API.skipAgentTransaction(currentCaseId, txId);
+      addLog(`Skipped ${txId}; it remains pending and verification will continue with the next transaction.`, "log-warn");
+      setAnalyzing(true);
+      const poll = async (startedAt: number) => {
+        try {
+          const fresh = await API.getResults(currentCaseId);
+          setResults(fresh);
+          const state = fresh.agent;
+          const hasNewState = !!state?.updated_at && state.updated_at !== previousUpdatedAt;
+          if ((hasNewState && ['done', 'paused', 'error'].includes(state?.status || '')) || Date.now() - startedAt > ANALYSIS_WAIT_MS) {
+            setAnalyzing(false);
+            return;
+          }
+        } catch { /* continue polling until completion or timeout */ }
+        window.setTimeout(() => void poll(startedAt), 2500);
+      };
+      void poll(Date.now());
+    } catch (e: any) {
+      addLog(`✗ Skip failed: ${e.message}`, "log-err");
+    } finally {
+      setEvidenceUploadBusy(false);
+    }
+  };
+
   const replaceDoc = async (docId: string, file: File) => {
     if (!currentCaseId) return;
     try {
@@ -1171,31 +1166,20 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
   const rawTx = agent?.transactions || [];
   const agentTx = rawTx.map((t: any, i: number) => ({
     ...t,
-    index: t.sequence ?? t.tx_id?.replace('T', '') ?? i + 1,
-    tx_id: t.tx_id,
-    type: t.transaction_type || t.document_type || 'Transaction',
-    date: t.executed_date || t.execution_date || t.registration_date || null,
-    parties: (() => {
-      const vList = (t.vendors || []).map((v: any) => typeof v === 'string' ? v : (v?.entity_name || '')).filter(Boolean);
-      const pList = (t.purchasers || []).map((p: any) => typeof p === 'string' ? p : (p?.entity_name || '')).filter(Boolean);
-      return (vList.join(', ') || '') + (vList.length && pList.length ? ' → ' : '') + (pList.join(', ') || '');
-    })(),
-    finding: t.conclusion || t.finding || t.reasoning || '',
-    status: t.status || 'UNVERIFIED',
-    reasoning: t.reasoning || '',
-    impact: t.impact || '',
-    findings: t.findings || [],
-    rule_versions: t.rule_versions || [],
-    supporting_evidence: t.supporting_evidence || [],
-    contradictory_evidence: t.contradictory_evidence || [],
-    missing_documents: t.missing_documents || [],
-    explanation: '',
-    unresolved: t.unresolved || [],
-    limitations: t.limitations || [],
+    index: t.sequence ?? i + 1,
   }));
   const verifiedCount = rawTx.filter((t: any) =>
     String(t.status || '').toUpperCase() === 'VERIFIED_WITH_AVAILABLE_EVIDENCE'
   ).length;
+  const issueCount = rawTx.filter((t: any) => String(t.status || '').toUpperCase() === 'ISSUES_IDENTIFIED').length;
+  const skippedTxIds = new Set<string>(agent?.skipped_tx_ids || []);
+  const skippedCount = agentTx.filter((t: any) =>
+    skippedTxIds.has(t.tx_id)
+    || ['SKIPPED', 'SKIPPED_BY_USER'].includes(String(t.status || '').toUpperCase())
+    || t.legacy_fields?.workflow_action === 'SKIPPED_BY_USER'
+  ).length;
+  const pendingCount = Math.max(0, rawTx.length - verifiedCount - issueCount - skippedCount);
+  const pausedRequirements = requirementsForPausedTransaction(rawTx, agent?.paused_transaction);
 
   // Title chain data from agent
   const titleChain = agent?.title_chain;
@@ -1324,7 +1308,7 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                   <div className="case-meta">
                     <span>{c.completed_docs}/{c.total_docs}</span>
                     {(c.status === 'complete' || c.status === 'completed') ? (
-                      <span className="case-status-done"><CheckCircle2 size={11} style={{ verticalAlign: '-1px' }} /> Title Verification Done</span>
+                      <span className="case-status-done"><CheckCircle2 size={11} style={{ verticalAlign: '-1px' }} /> Documents Processed</span>
                     ) : (
                       <span className={`badge ${caseBadgeClass(c.status)}`}>{c.status}</span>
                     )}
@@ -1427,6 +1411,32 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
 
           {view === 'results' && results && (
             <div className="report-main-wrap">
+              {results.agent?.status === 'paused' && results.agent.paused_transaction && pausedRequirements.length > 0 && (
+                <div role="presentation" style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'grid', placeItems: 'center', padding: 20, background: 'rgba(15, 23, 42, 0.56)' }}>
+                  <section role="dialog" aria-modal="true" aria-labelledby="evidence-upload-title" className="card" style={{ width: 'min(600px, 100%)', maxHeight: 'min(82vh, 740px)', overflowY: 'auto', border: '1px solid #f59e0b', background: '#fffbeb', boxShadow: '0 24px 80px rgba(0,0,0,.28)', padding: 24 }}>
+                    <h2 id="evidence-upload-title" style={{ margin: '0 0 8px', color: '#78350f' }}>Documents needed for {results.agent.paused_transaction}</h2>
+                    <p style={{ margin: '0 0 16px', color: '#57534e', lineHeight: 1.55 }}>Verification is paused because the available evidence is not sufficient. Upload the outstanding records to continue, or skip this transaction and leave it unverified.</p>
+                    <ul style={{ margin: '0 0 20px', padding: 0, listStyle: 'none', display: 'grid', gap: 10, maxHeight: '42vh', overflowY: 'auto' }}>
+                      {pausedRequirements.map((item: any, index: number) => (
+                        <li key={`${item.document_type}-${item.reason}-${index}`} style={{ padding: '12px 14px', border: '1px solid #fcd34d', borderRadius: 10, background: '#fff' }}>
+                          <strong style={{ display: 'block', marginBottom: 4, color: '#292524', lineHeight: 1.4 }}>{item.document_type || 'Required document'}</strong>
+                          {item.reason && <span style={{ display: 'block', color: '#57534e', fontSize: 13, lineHeight: 1.5 }}>{item.reason}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                      <label className="btn btn-primary" style={{ cursor: evidenceUploadBusy ? 'wait' : 'pointer' }}>
+                        <Upload size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+                        {evidenceUploadBusy ? 'Working…' : 'Upload requested evidence'}
+                        <input type="file" accept="application/pdf,.pdf" multiple disabled={evidenceUploadBusy} onChange={uploadRequestedEvidence} style={{ display: 'none' }} />
+                      </label>
+                      <button className="btn" disabled={evidenceUploadBusy} onClick={() => void skipPausedTransaction()}>
+                        Skip this transaction
+                      </button>
+                    </div>
+                  </section>
+                </div>
+              )}
               {!auth ? (
                 <GuestReportPreview
                   results={results}
@@ -1500,20 +1510,11 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                           </div>
                         </div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '14px 0 0' }}>
-                        <span className="shimmer-effect" style={{
-                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                          width: 48, height: 48, borderRadius: '50%', flexShrink: 0,
-                          background: String(agent?.overall_status || '').toUpperCase().includes('ATTENTION')
-                            ? 'radial-gradient(circle at 30% 25%, #fee2e2, #fecaca 60%, #f87171)'
-                            : 'radial-gradient(circle at 30% 25%, #d1fae5, #a7f3d0 60%, #34d399)',
-                          boxShadow: String(agent?.overall_status || '').toUpperCase().includes('ATTENTION')
-                            ? '0 0 18px rgba(239,68,68,.55), inset 0 0 8px rgba(255,255,255,.5)'
-                            : '0 0 18px rgba(16,185,129,.55), inset 0 0 8px rgba(255,255,255,.5)',
-                        }}>
-                          {String(agent?.overall_status || '').toUpperCase().includes('ATTENTION')
-                            ? <AlertTriangle size={28} style={{ color: '#dc2626', strokeWidth: 2.25 }} />
-                            : <ShieldCheck size={28} style={{ color: '#047857', strokeWidth: 2.25 }} />}
+                      <div className="verification-verdict-line">
+                        <span className="verification-verdict-icon" aria-hidden="true">
+                          {String(agent?.overall_status || '').toUpperCase().includes('VERIFIED')
+                            ? <ShieldCheck size={24} />
+                            : <AlertTriangle size={24} />}
                         </span>
                         <p className="vr-status-line" style={{ fontWeight: 800, letterSpacing: '.01em', lineHeight: 1.3, margin: 0, textTransform: 'uppercase',
                           color: '#1c1917' }}>
@@ -1522,7 +1523,7 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                             : agent?.status === "running" || agent?.status === "idle"
                             ? "VERIFICATION IN PROGRESS…"
                             : agent?.overall_status
-                            ? `TITLE ${agent.overall_status}`
+                            ? `TRANSACTION REVIEW ${agent.overall_status}`
                             : 'VERIFICATION NOT COMPLETED YET'}
                         </p>
                       </div>
@@ -1568,10 +1569,11 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                   )}
 
                   {/* Verification Pipeline Nodes */}
-                  <div className="pipeline-container">
+                    <div className="pipeline-container phase-a-chain-list verification-results-list">
                     <div className="pl-controls-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, marginBottom: 24 }}>
-                      <span className="font-mono" style={{ fontSize: 12, fontWeight: 800, color: '#1e293b' }}>
-                        {verifiedCount}/{agent?.transactions?.length || 0} transactions verified
+                      <span className="verification-progress-copy">
+                        <strong>Transaction outcomes</strong>
+                        <span>{verifiedCount} verified · {skippedCount} skipped and unverified · {pendingCount} pending · {issueCount} with issues identified</span>
                       </span>
                       <button
                         className="vr-chain-link"
@@ -1585,12 +1587,15 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                       </button>
                     </div>
 
-                    <div className="pipeline-line"></div>
-
                     {/* Dynamic Pipeline Items */}
                     {agent?.transactions && agent.transactions.length > 0 ? (
                       agentTx.map((item: any, idx: number) => (
-                        <AgentTransactionCard key={item.tx_id || idx} tx={item} />
+                        <TransactionResultCard
+                          key={item.tx_id || idx}
+                          transaction={item}
+                          documents={results.documents}
+                          skipped={skippedTxIds.has(item.tx_id)}
+                        />
                       ))
                     ) : (
                       <div className="vr-sheet-empty">
@@ -1600,50 +1605,6 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                       </div>
                     )}
                   </div>
-
-                  {/* Detailed Report — headline + summary preview with expand */}
-                  {(agent?.headline || agent?.report) && (
-                    <div style={{ marginTop: 24, marginBottom: 28 }}>
-                      {agent?.headline && (
-                        <p style={{ fontSize: 16, fontWeight: 700, color: '#1e293b', margin: '0 0 8px', lineHeight: 1.55 }}>
-                          {agent.headline}
-                        </p>
-                      )}
-                      <p style={{
-                        fontSize: 14, color: '#475569', lineHeight: 1.8, margin: 0, whiteSpace: 'pre-line',
-                        overflow: 'hidden', display: '-webkit-box', WebkitBoxOrient: 'vertical',
-                        WebkitLineClamp: summaryOpen ? undefined : 2,
-                      }}>
-{agent?.report}
-                      </p>
-                      <button
-                        onClick={() => setSummaryOpen(o => !o)}
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 4,
-                          marginTop: 10, padding: 0, border: 'none', background: 'transparent',
-                          cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#2563eb',
-                        }}
-                      >
-                        {summaryOpen ? 'Hide' : 'View Full Report'}
-                        <span style={{ fontSize: 10, transition: 'transform .15s', transform: summaryOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>▼</span>
-                      </button>
-                    </div>
-                  )}
-
-                  {!!agent?.findings?.length && (
-                    <section style={{ margin: '0 0 24px', padding: 16, border: '1px solid #e2e8f0', borderRadius: 10, background: '#fff' }}>
-                      <h2 style={{ margin: '0 0 10px', fontSize: 14 }}>Case-level findings</h2>
-                      <ul style={{ margin: 0, paddingLeft: 20, color: '#475569', lineHeight: 1.7 }}>
-                        {agent.findings.map((finding, i) => <li key={i}>{finding}</li>)}
-                      </ul>
-                    </section>
-                  )}
-                  {agent?.recommendation && (
-                    <section style={{ margin: '0 0 24px', padding: 16, border: '1px solid #e2e8f0', borderRadius: 10, background: '#fff' }}>
-                      <h2 style={{ margin: '0 0 8px', fontSize: 14 }}>Recommendation</h2>
-                      <p style={{ margin: 0, color: '#475569', lineHeight: 1.7 }}>{agent.recommendation}</p>
-                    </section>
-                  )}
 
                   {/* Re-run Verification + Download Report Controls */}
                   <div className="pl-actions-row" style={{ marginTop: 24, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -1779,47 +1740,6 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                     )}
                   </div>
 
-                  {/* Required documents — generated by the LLM during title-chain build */}
-{(() => {
-                      const reqDocs = agent?.missing_documents;
-                      if (!Array.isArray(reqDocs) || reqDocs.length === 0) return null;
-                      return (
-                        <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 24, marginTop: 24 }}>
-                          <p style={{ color: '#1c1917', fontSize: 16, fontWeight: 500, marginBottom: 12, textAlign: 'left' }}>
-                            The above results are generated only based on the documents uploaded, and the user
-                            still needs to verify these documents to ensure clearTitle.
-                          </p>
-                          <div style={{ marginBottom: 8 }}>
-                            <span className="font-mono" style={{ fontSize: 15, fontWeight: 700, color: '#111827', letterSpacing: '0.04em', textTransform: 'none' }}>
-                              DOCUMENTS REQUIRED FOR COMPLETE VERIFICATION
-                            </span>
-                          </div>
-                          <div style={{ overflowX: 'auto' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                              <thead>
-                                <tr>
-                                  {['Transaction', 'Document', 'Required For', 'Reason'].map(h => (
-                                    <th key={h} style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '2px solid #e2e8f0', fontSize: 11, letterSpacing: '0.06em', color: '#6b7280', whiteSpace: 'nowrap' }}>
-                                      {h}
-                                    </th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {reqDocs.map((r, i) => (
-                                  <tr key={`${i}-${r.document_type}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                    <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', color: '#44403c', verticalAlign: 'top' }}>{r.for_transaction ? `T${r.for_transaction}` : '—'}</td>
-                                    <td style={{ padding: '8px 10px', fontWeight: 600, color: '#292524', verticalAlign: 'top' }}>{r.document_type || '—'}</td>
-                                    <td style={{ padding: '8px 10px', color: '#57534e', verticalAlign: 'top' }}>{r.for_transaction ? `Transaction T${r.for_transaction}` : '—'}</td>
-                                    <td style={{ padding: '8px 10px', color: '#b45309', verticalAlign: 'top' }}>{r.reason || '—'}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      );
-                    })()}
                 </div>
               )}
 

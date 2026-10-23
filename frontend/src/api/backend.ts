@@ -88,21 +88,28 @@ export interface OcrTextResponse {
   documents: OcrDocText[];
 }
 
-export interface AgentCheck {
-  rule?: string;
-  result?: string;
-  note?: string;
-}
-
 export interface AgentMissingDoc {
   document_type: string;
   reason?: string;
-  required_for_transaction?: number;
-  for_transaction?: number;
+  for_transaction?: string;
 }
 
 export interface AgentTransaction {
-  index: number;
+  tx_id: string;
+  sequence: number;
+  status: string;
+  summary: string;
+  transaction_metadata?: Record<string, unknown>;
+  required_documents: AgentMissingDoc[];
+  reviewed_document_ids: string[];
+  verified_at: string | null;
+  schema_version: string;
+  findings: { title: string; details: string; evidence: { doc_id: string; pages?: string | null }[] }[];
+}
+
+export interface TitleChainTransaction {
+  tx_id?: string;
+  sequence?: number;
   date?: string | null;
   type?: string | null;
   parties?: string | null;
@@ -110,10 +117,8 @@ export interface AgentTransaction {
   registration_reference?: string | null;
   explanation?: string | null;
   status?: string | null;
-  finding?: string | null;
-  checks?: AgentCheck[];
-  evidence_used?: string[];
-  missing_documents?: AgentMissingDoc[];
+  uncertainty?: string[];
+  inferred?: boolean;
 }
 
 export interface AgentIdentity {
@@ -126,14 +131,9 @@ export interface AgentIdentity {
 export interface AgentResult {
   case_id?: string;
   overall_status?: string;
-  headline?: string;
-  report?: string;
-  findings?: string[];
   property_identity?: AgentIdentity | null;
-  title_chain?: { transactions?: AgentTransaction[]; title_story?: string; unresolved?: string[] } | null;
+  title_chain?: { transactions?: TitleChainTransaction[]; title_story?: string; unresolved?: string[] } | null;
   transactions?: AgentTransaction[];
-  missing_documents?: AgentMissingDoc[];
-  recommendation?: string;
   updated_at?: string;
 }
 
@@ -141,9 +141,9 @@ export interface AgentState {
   case_id: string;
   status: string;
   stage?: string | null;
+  updated_at?: string | null;
   paused_transaction?: number | null;
   next_action?: string | null;
-  missing_documents?: AgentMissingDoc[];
   memory?: Record<string, unknown> | null;
   result?: AgentResult | null;
 }
@@ -201,16 +201,12 @@ export interface AgentReport {
   property_identity?: unknown;
   title_chain_graph?: string;
   title_chain?: unknown;
-  paused_transaction?: number | null;
+  paused_transaction?: string | null;
   next_action?: string | null;
-  missing_documents?: AgentMissingDoc[];
   overall_status?: string | null;
-  headline?: string;
-  report?: string;
-  findings?: string[];
   transactions?: AgentTransaction[];
   updated_at?: string | null;
-  recommendation?: string;
+  skipped_tx_ids?: string[];
 }
 
 export interface CaseResults {
