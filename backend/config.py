@@ -48,7 +48,7 @@ GEMINI_TPM = int(os.getenv("GEMINI_TPM", "4000000"))
 GEMINI_BURST = int(os.getenv("GEMINI_BURST", "5"))
 
 # ── Uploads ────────────────────────────────────────────────────────────────────
-MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50"))
+MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "100"))
 
 # ── Auth / JWT ─────────────────────────────────────────────────────────────────
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "cleartitle-secret-key-production-change-me-12345")
@@ -66,6 +66,11 @@ GOOGLE_FRONTEND_REDIRECT_URI = os.getenv("GOOGLE_FRONTEND_REDIRECT_URI", "http:/
 CLEARTITLE_AGENT_PROVIDER = os.getenv("CLEARTITLE_AGENT_PROVIDER", "openai")
 CLEARTITLE_AGENT_MODEL = os.getenv("CLEARTITLE_AGENT_MODEL", "GPT-6 Luna")
 CLEARTITLE_AGENT_MAX_RAW_CHARS = int(os.getenv("CLEARTITLE_AGENT_MAX_RAW_CHARS", "60000"))
+CLEARTITLE_VERIFY_MODEL_CALL_MAX = max(16, min(24, int(os.getenv("CLEARTITLE_VERIFY_MODEL_CALL_MAX", "24"))))
+CLEARTITLE_VERIFY_MODEL_CALL_BUDGET = max(
+    3, min(CLEARTITLE_VERIFY_MODEL_CALL_MAX, int(os.getenv("CLEARTITLE_VERIFY_MODEL_CALL_BUDGET", "16")))
+)
+CLEARTITLE_AGENT_MAX_ATTEMPTS = max(1, int(os.getenv("CLEARTITLE_AGENT_MAX_ATTEMPTS", "5")))
 
 # Separate override for the single-call OCR classification/extraction stage.
 DOCUMENT_PROCESSOR_MODEL = os.getenv("DOCUMENT_PROCESSOR_MODEL", CLEARTITLE_AGENT_MODEL)

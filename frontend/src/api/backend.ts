@@ -16,6 +16,7 @@ export interface HealthStatus {
   gemini_key: boolean;
   agent_provider: string;
   agent_provider_key: boolean;
+  max_upload_size_mb?: number;
 }
 
 export interface AuthUser {

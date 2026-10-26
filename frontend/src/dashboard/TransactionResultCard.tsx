@@ -8,7 +8,7 @@ import {
   type TransactionVerificationResult,
 } from './transactionResults';
 
-type DocumentLabel = { doc_id: string; filename?: string };
+type DocumentLabel = { doc_id: string; filename?: string | null; document_type?: string | null };
 
 type Props = {
   transaction: TransactionVerificationResult;
@@ -18,21 +18,29 @@ type Props = {
 
 const documentIdPattern = /DOC_\d+/g;
 
+function displayDocumentName(document?: DocumentLabel): string {
+  const filename = document?.filename?.trim();
+  const usableFilename = filename && !/^DOC[_-]?\d+(\.pdf)?$/i.test(filename);
+  const type = document?.document_type?.trim().replace(/[_-]+/g, ' ').toLocaleLowerCase();
+  const displayType = type?.replace(/(^|\s)\p{L}/gu, letter => letter.toLocaleUpperCase());
+  if (usableFilename && displayType) return `${displayType} — ${filename}`;
+  if (usableFilename) return filename;
+  return displayType || '';
+}
+
 function resolveDocumentRefs(text: string, documents: DocumentLabel[]): string {
   return text.replace(documentIdPattern, id => {
     const document = documents.find(item => item.doc_id === id);
-    return document?.filename && !/^DOC_\d+\.pdf$/i.test(document.filename)
-      ? `${id} (${document.filename})`
-      : id;
+    return displayDocumentName(document) || 'the cited document';
   });
 }
 
 function evidenceLabel(ref: { doc_id: string; pages?: string | null }, documents: DocumentLabel[]): string {
   const document = documents.find(item => item.doc_id === ref.doc_id);
-  const filename = document?.filename && !/^DOC_\d+\.pdf$/i.test(document.filename)
-    ? ` (${document.filename})`
-    : '';
-  return `${ref.doc_id}${filename}${ref.pages ? ` · page${ref.pages.includes('-') ? 's' : ''} ${ref.pages}` : ''}`;
+  return [
+    displayDocumentName(document),
+    ref.pages ? `page${ref.pages.includes('-') ? 's' : ''} ${ref.pages}` : '',
+  ].filter(Boolean).join(' · ');
 }
 
 export function TransactionResultCard({ transaction, documents = [], skipped = false }: Props) {

@@ -25,9 +25,11 @@ import json
 import random
 import re
 import time
+from dataclasses import asdict, is_dataclass
 from typing import Callable
 
 from backend.config import (
+    CLEARTITLE_AGENT_MAX_ATTEMPTS,
     CLEARTITLE_AGENT_MODEL,
     CLEARTITLE_AGENT_PROVIDER,
     GEMINI_API_KEY,
@@ -39,7 +41,7 @@ from backend.logger import get_logger
 
 logger = get_logger(__name__)
 
-_MAX_ATTEMPTS = 5
+_MAX_ATTEMPTS = CLEARTITLE_AGENT_MAX_ATTEMPTS
 
 
 class AgentLLMError(RuntimeError):
@@ -149,7 +151,17 @@ def _gemini_complete_with_tools(
             calls = []
             for i, fc in enumerate(response.function_calls or []):
                 calls.append({"id": f"call_{i}", "name": fc.name, "args": dict(fc.args or {})})
-            return {"tool_calls": calls, "content": response.text or None}
+            usage = response.usage_metadata
+            usage_data = {}
+            if usage is not None:
+                usage_data = asdict(usage) if is_dataclass(usage) else {
+                    key: getattr(usage, key) for key in (
+                        "prompt_token_count", "candidates_token_count", "total_token_count",
+                        "cached_content_token_count", "thoughts_token_count",
+                    ) if getattr(usage, key, None) is not None
+                }
+            return {"tool_calls": calls, "content": response.text or None,
+                    "usage": usage_data, "attempts": attempt}
         except Exception as e:  # noqa: BLE001 - normalize transient retries
             last_exc = e
             transient = any(
@@ -158,7 +170,9 @@ def _gemini_complete_with_tools(
                           "rate", "unavailable", "too many requests"]
             )
             if not transient or attempt == _MAX_ATTEMPTS:
+                logger.error("agent_provider_request_failed provider=gemini task=%s model=%s attempt=%s", task, model, attempt)
                 raise AgentLLMError(f"gemini tool call failed for task {task}: {e}") from e
+            logger.warning("agent_provider_retry provider=gemini task=%s model=%s attempt=%s", task, model, attempt)
             time.sleep(min(2 ** attempt, 30) + random.uniform(0, 1))
 
     raise AgentLLMError(f"gemini call failed for task {task}: {last_exc}")
@@ -243,7 +257,17 @@ def _openai_complete_with_tools(
                     "name": tc.function.name,
                     "args": json.loads(tc.function.arguments or "{}")
                 })
-            return {"tool_calls": calls, "content": choice.message.content}
+            usage = getattr(response, "usage", None)
+            usage_data = {}
+            if usage is not None:
+                usage_data = {
+                    key: getattr(usage, key) for key in (
+                        "prompt_tokens", "completion_tokens", "total_tokens",
+                        "prompt_tokens_details", "completion_tokens_details",
+                    ) if getattr(usage, key, None) is not None
+                }
+            return {"tool_calls": calls, "content": choice.message.content,
+                    "usage": usage_data, "attempts": attempt}
         except Exception as e:
             last_exc = e
             malformed_tool_json = isinstance(e, json.JSONDecodeError) and attempt < 2
@@ -252,7 +276,9 @@ def _openai_complete_with_tools(
                 for x in ["429", "rate", "timeout", "503", "502", "504", "quota", "unavailable"]
             )
             if not transient or attempt == _MAX_ATTEMPTS:
+                logger.error("agent_provider_request_failed provider=openai task=%s model=%s attempt=%s", task, model, attempt)
                 raise AgentLLMError(f"openai tool call failed for task {task}: {e}") from e
+            logger.warning("agent_provider_retry provider=openai task=%s model=%s attempt=%s", task, model, attempt)
             time.sleep(min(2 ** attempt, 30) + random.uniform(0, 1))
 
     raise AgentLLMError(f"openai call failed for task {task}: {last_exc}")

@@ -20,7 +20,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-SCHEMA_VERSION = "2.1"
+SCHEMA_VERSION = "2.3"
 TITLE_CHAIN_SCHEMA_VERSION = "2.0"
 
 
@@ -70,17 +70,22 @@ class EvidenceRef(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    doc_id: str
-    pages: str | None = None
-    passage: str | None = None
+    doc_id: str = Field(description="Existing uploaded document ID; required for traceability.")
+    pages: str | None = Field(default=None, description="Observed page/range only; do not invent.")
+    passage: str | None = Field(
+        default=None,
+        description="Legacy compatibility only. Omit in new results; cite document ID and pages instead.",
+    )
 
 
 class Finding(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    title: str
-    details: str
+    title: str = Field(description="Short label for one distinct material finding.")
+    details: str = Field(description="Evidence-backed explanation, usually 1-3 sentences; do not repeat summary/actions.")
     evidence: list[EvidenceRef] = Field(default_factory=list)
+    finding_id: str | None = Field(default=None, description="Application-assigned stable ID for dependency references.")
+    origin_tx_id: str | None = Field(default=None, description="Application-assigned transaction that owns this finding.")
 
     @model_validator(mode="after")
     def require_evidence(self):
@@ -89,11 +94,32 @@ class Finding(BaseModel):
         return self
 
 
+def stable_finding_id(tx_id: str, finding: dict[str, Any]) -> str:
+    evidence = sorted(
+        (str(item.get("doc_id") or ""), str(item.get("pages") or ""))
+        for item in finding.get("evidence") or [] if isinstance(item, dict)
+    )
+    identity = json.dumps(
+        [tx_id, finding.get("title") or "", evidence],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return f"{tx_id}:F-{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:16]}"
+
+
 class MissingDocument(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    document_type: str
-    reason: str | None = None
+    document_type: str = Field(
+        description=(
+            "Complete, specific document/evidence needed. Preserve identifying dates, parties, "
+            "registration references, and property identifiers; never abbreviate to meet a word budget."
+        )
+    )
+    reason: str | None = Field(
+        default=None,
+        description="Briefly state what evidence question this complete requested document must resolve.",
+    )
     for_transaction: str | None = None
 
 
@@ -150,10 +176,10 @@ class TransactionVerification(BaseModel):
     required_documents: list[MissingDocument] = Field(default_factory=list)
     reviewed_document_ids: list[str] = Field(default_factory=list)
     status: VerificationStatus
-    summary: str
+    summary: str = Field(description="1-2 sentence conclusion for this transaction only; no finding/action recap.")
     findings: list[Finding] = Field(default_factory=list)
     verified_at: str | None = None
-    schema_version: Literal["2.1"] = SCHEMA_VERSION
+    schema_version: Literal["2.3"] = SCHEMA_VERSION
 
     @model_validator(mode="after")
     def reject_duplicate_requirements(self):
@@ -167,6 +193,9 @@ class TransactionVerification(BaseModel):
             raise ValueError("verified_at must be null until verification is completed")
         if self.status == VerificationStatus.ISSUES_IDENTIFIED and not self.findings:
             raise ValueError("ISSUES_IDENTIFIED requires at least one evidence-backed finding")
+        for finding in self.findings:
+            if finding.origin_tx_id and finding.origin_tx_id != self.tx_id:
+                raise ValueError("finding origin_tx_id must match the result transaction")
         return self
 
 
@@ -214,7 +243,7 @@ def _legacy_evidence(items: Any) -> list[dict[str, Any]]:
 
 
 def normalize_transaction_verification(data: Any) -> dict[str, Any]:
-    """Deterministically adapt v2.0/legacy rows to the v2.1 result contract.
+    """Deterministically adapt legacy rows to the v2.3 result contract.
 
     This is a read/update-boundary adapter only; it never rewrites stored rows.
     It consolidates legacy prose into summary/findings and retains source pointers.
@@ -227,7 +256,7 @@ def normalize_transaction_verification(data: Any) -> dict[str, Any]:
         source["tx_id"] = f"LEGACY-{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:16]}"
     metadata = dict(source.get("transaction_metadata") or {})
     # Metadata used only to echo narrative/evidence already present in findings is
-    # deliberately excluded from the v2.1 presentation contract.
+    # deliberately excluded from the canonical presentation contract.
     for key in ("summary_points", "source_refs", "related_events"):
         metadata.pop(key, None)
 
@@ -303,14 +332,15 @@ def normalize_transaction_verification(data: Any) -> dict[str, Any]:
         qualifiers.extend(text for text in unreferenced_details if text and text.casefold() not in summary.casefold())
     status = normalize_status(source.get("status"))
     if status == VerificationStatus.ISSUES_IDENTIFIED.value and not findings:
-        qualifiers.append("The legacy record marked issues identified but did not retain an evidence-backed finding; its status is therefore inconclusive under schema 2.1.")
+        qualifiers.append("The legacy record marked issues identified but did not retain an evidence-backed finding; its status is therefore inconclusive under schema 2.3.")
         status = VerificationStatus.INCONCLUSIVE.value
     if qualifiers:
         summary = " ".join(part for part in (summary, "Material qualifications: " + " ".join(qualifiers)) if part).strip()
 
-    required = source.get("required_documents")
-    if required is None:
-        required = source.get("missing_documents") or []
+    required = [
+        *(source.get("required_documents") or []),
+        *(source.get("missing_documents") or []),
+    ]
     merged_required = []
     seen_requirements = set()
     for item in required:
@@ -326,16 +356,6 @@ def normalize_transaction_verification(data: Any) -> dict[str, Any]:
         if normalized["document_type"] and key not in seen_requirements:
             seen_requirements.add(key)
             merged_required.append(normalized)
-    if source.get("missing_documents") and source.get("required_documents"):
-        for item in source["missing_documents"]:
-            if not isinstance(item, dict):
-                continue
-            candidate = {"document_type": str(item.get("document_type") or item.get("type") or "").strip(), "reason": item.get("reason"), "for_transaction": item.get("for_transaction") or source.get("tx_id")}
-            key = (candidate["document_type"].casefold(), str(candidate.get("reason") or "").casefold())
-            if candidate["document_type"] and key not in seen_requirements:
-                seen_requirements.add(key)
-                merged_required.append({k: v for k, v in candidate.items() if v is not None})
-
     complete = status in {
         VerificationStatus.VERIFIED_WITH_AVAILABLE_EVIDENCE.value,
         VerificationStatus.ISSUES_IDENTIFIED.value,
@@ -353,6 +373,9 @@ def normalize_transaction_verification(data: Any) -> dict[str, Any]:
         "verified_at": (source.get("verified_at") or None) if complete else None,
         "schema_version": SCHEMA_VERSION,
     }
+    for finding in payload["findings"]:
+        finding["origin_tx_id"] = payload["tx_id"]
+        finding["finding_id"] = stable_finding_id(payload["tx_id"], finding)
     return validate_transaction_verification(payload).model_dump()
 
 

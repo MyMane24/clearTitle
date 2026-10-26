@@ -11,8 +11,10 @@ transaction result before advancing workflow state.
 from __future__ import annotations
 
 import json
+import re
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Callable
+from uuid import uuid4
 
 from backend.database.repositories import agent_repo as repo
 from backend.logger import get_logger
@@ -20,14 +22,38 @@ from backend.services.agent_schemas import (
     SCHEMA_VERSION,
     SchemaValidationError,
     TransactionVerification,
-    validate_transaction_verification,
     normalize_transaction_verification,
+    stable_finding_id,
+    validate_transaction_verification,
 )
 
 logger = get_logger(__name__)
 
 _DEFAULT_TEXT_CHARS = 40000
 _TEXT_CAP = 200000
+
+
+def _is_phase_a_only_document(document: dict) -> bool:
+    """ECs discover chain links in Phase A; they are not Phase B evidence."""
+    document_type = re.sub(r"[\s-]+", "_", str(document.get("document_type") or "").strip().upper())
+    filename = str(document.get("filename") or "").replace("\\", "/").rsplit("/", 1)[-1]
+    filename_stem = re.sub(r"[\s-]+", "_", filename.rsplit(".", 1)[0].strip().upper())
+    return document_type in {"EC", "ENCUMBRANCE_CERTIFICATE"} or filename_stem in {
+        "EC", "ENCUMBRANCE_CERTIFICATE",
+    }
+
+
+def _without_source_refs(value):
+    """Keep Phase A facts/events but hide provenance references from Phase B."""
+    if isinstance(value, dict):
+        return {
+            key: _without_source_refs(item)
+            for key, item in value.items()
+            if key != "source_refs"
+        }
+    if isinstance(value, list):
+        return [_without_source_refs(item) for item in value]
+    return value
 
 
 def _now() -> str:
@@ -38,22 +64,34 @@ class ToolContext:
     """Mutable state shared across one agent run."""
 
     def __init__(self, case_id: str, docs: list[dict], chain: dict | None = None,
-                 current_tx_id: str | None = None, phase_a_chain: list[dict] | None = None):
+                 current_tx_id: str | None = None, phase_a_chain: list[dict] | None = None,
+                 run_id: str | None = None,
+                 fresh_reverification: bool = False):
         self.case_id = case_id
+        self.run_id = run_id or str(uuid4())
         self.docs = docs
         self.by_id = {d["doc_id"]: d for d in docs}
         self.chain = chain or {}
         self.phase_a_chain = phase_a_chain or []
         self.current_tx_id = current_tx_id
+        self.fresh_reverification = fresh_reverification
         self.evidence_requirements: list[dict] = []
         self.listed_document_ids: set[str] = set()
         self.documents_listed = False
         self.selected_document_ids: set[str] = set()
+        self.read_text_ranges: dict[str, list[tuple[int, int, int]]] = {}
+        self.document_text_cache: dict[str, str] = {}
         self.saved_phase_a_result: dict | None = None
         self.saved_results: list[dict] = []
         self.missing_requests: list[dict] = []
         self.result_error: str | None = None
         self.finished = False
+        self.tool_result_cache: dict[str, dict] = {}
+        self.tool_call_fingerprints: dict[str, int] = {}
+        self.tool_call_counts: dict[str, int] = {}
+        self.repeated_tool_calls = 0
+        self.additional_model_calls = 0
+        self.additional_model_calls_used = False
 
 
 # ── JSON schema for tools: generated from the canonical Pydantic contract ──────
@@ -79,7 +117,7 @@ def _verification_props() -> dict:
 
 _LIST_DOCS = {
     "name": "list_documents",
-    "description": "List all uploaded document IDs and their saved summaries. No other document fields are available to this phase.",
+    "description": "Search all uploaded document filenames, types, and summaries. Returns all records and explicit likely candidates for each recorded evidence requirement. Candidate matches are discovery leads, not documentary proof.",
     "parameters": {"type": "object", "properties": {}},
 }
 _DOC_META = {
@@ -89,7 +127,7 @@ _DOC_META = {
 }
 _DOC_TEXT = {
     "name": "get_document_text",
-    "description": "Read a chunk of one document's merged OCR text directly from the database.",
+    "description": "Read one chunk of a selected document's merged OCR directly from the database. Request max_chars=200000 on the first call to reduce pagination; if has_more is true, continue from next_start_char until complete.",
     "parameters": {
         "type": "object",
         "additionalProperties": False,
@@ -158,9 +196,16 @@ _REQ_MISSING = {
         "required": ["tx_id", "sequence", "summary", "required_documents"],
     },
 }
+_REQUEST_MORE_CALLS = {
+    "name": "request_additional_verification_calls",
+    "description": "Request one bounded extension to the verification call budget. Use only when a concrete, material evidence-checking step remains; state that step. At most one extension is granted, up to the hard cap.",
+    "parameters": {"type": "object", "additionalProperties": False, "properties": {
+        "next_step": {"type": "string", "minLength": 12, "maxLength": 400},
+    }, "required": ["next_step"]},
+}
 PHASE_A_TOOLS = [_LIST_DOCS, _DOC_TEXT, _SAVE_PHASE_A, _FINISH]
 VERIFY_TOOLS = [_LIST_TX, _GET_TX, _RECORD_REQUIREMENTS,
-                _LIST_DOCS, _SELECT_DOCUMENTS, _DOC_TEXT,
+                _LIST_DOCS, _DOC_META, _SELECT_DOCUMENTS, _DOC_TEXT, _REQUEST_MORE_CALLS,
                 _SAVE_RESULT, _REQ_MISSING, _FINISH]
 
 
@@ -197,7 +242,7 @@ def _phase_a_entry_for_id(ctx: ToolContext, tx_id: str) -> dict | None:
 def _h_list_documents(ctx: ToolContext, args: dict) -> dict:
     if ctx.current_tx_id and not ctx.evidence_requirements:
         return {"error": "record evidence requirements from the transaction and verification skill before searching summaries"}
-    documents = [
+    all_documents = [
         {
             "doc_id": d["doc_id"], "filename": d.get("filename") or "",
             "document_type": d.get("document_type") or "",
@@ -205,10 +250,26 @@ def _h_list_documents(ctx: ToolContext, args: dict) -> dict:
             "summary": d.get("summary") or "(summary unavailable)",
         }
         for d in ctx.docs
+        if not _is_phase_a_only_document(d)
     ]
+    documents = all_documents
     ctx.listed_document_ids = {d["doc_id"] for d in documents}
     ctx.documents_listed = True
-    return {"documents": documents}
+    result = {"documents": documents}
+    if ctx.current_tx_id:
+        result["scope"] = (
+            "Only transaction-supporting documents are listed. Encumbrance certificates are used "
+            "during title-chain construction, not as transaction-verification evidence. Select only "
+            "documents whose summaries match the active transaction's recorded evidence requirements."
+        )
+        result["requirement_matches"] = [
+            {
+                "requirement": requirement,
+                "candidates": _matching_summary_candidates(ctx, requirement["document_type"], requirement.get("reason", "")),
+            }
+            for requirement in ctx.evidence_requirements
+        ]
+    return result
 
 
 def _h_record_requirements(ctx: ToolContext, args: dict) -> dict:
@@ -222,6 +283,8 @@ def _h_record_requirements(ctx: ToolContext, args: dict) -> dict:
         if not isinstance(item, dict) or not str(item.get("document_type") or "").strip() or not str(item.get("reason") or "").strip():
             return {"error": "each requirement needs a document_type and a reason"}
         normalized.append({"document_type": item["document_type"].strip(), "reason": item["reason"].strip()})
+    if ctx.documents_listed and normalized != ctx.evidence_requirements:
+        return {"error": "evidence requirements are locked after document search; start a controlled new transaction review for changed requirements"}
     ctx.evidence_requirements = normalized
     return {"recorded": True, "requirements": normalized}
 
@@ -233,13 +296,25 @@ def _h_select_documents(ctx: ToolContext, args: dict) -> dict:
     if not isinstance(doc_ids, list) or any(doc_id not in ctx.listed_document_ids for doc_id in doc_ids):
         return {"error": "select only document IDs returned by list_documents"}
     ctx.selected_document_ids = set(doc_ids)
+    logger.info(
+        "agent_documents_selected run_id=%s tx_id=%s doc_ids=%s",
+        ctx.run_id, ctx.current_tx_id, sorted(ctx.selected_document_ids),
+    )
     return {"selected": sorted(ctx.selected_document_ids)}
 
 
 def _h_doc_metadata(ctx: ToolContext, args: dict) -> dict:
     doc_id = str(args.get("doc_id") or "")
+    if ctx.current_tx_id and not ctx.documents_listed:
+        return {"error": "search document summaries before retrieving candidate metadata"}
+    if ctx.current_tx_id and doc_id not in ctx.listed_document_ids:
+        return {"error": "inspect metadata only for a candidate returned by list_documents"}
     meta = repo.get_document_metadata(ctx.case_id, doc_id)
-    return meta if meta else {"error": f"no document {doc_id!r} in case"}
+    if not meta:
+        return {"error": f"no document {doc_id!r} in case"}
+    # Structured extraction is not documentary evidence and must not be offered
+    # to the verification model as a substitute for the stored OCR text.
+    return {key: value for key, value in meta.items() if key != "structured_data"}
 
 
 def _h_doc_text(ctx: ToolContext, args: dict) -> dict:
@@ -252,8 +327,22 @@ def _h_doc_text(ctx: ToolContext, args: dict) -> dict:
         return {"error": "document OCR/processing is not complete; request it or wait for processing"}
     max_chars = min(max(int(args.get("max_chars") or _DEFAULT_TEXT_CHARS), 1), _TEXT_CAP)
     start_char = max(int(args.get("start_char") or 0), 0)
-    text = repo.get_document_raw_text(ctx.case_id, doc_id)
+    if doc_id not in ctx.document_text_cache:
+        ctx.document_text_cache[doc_id] = repo.get_document_raw_text(ctx.case_id, doc_id)
+    text = ctx.document_text_cache[doc_id]
+    if not text:
+        return {"error": f"no stored OCR text is available for {doc_id!r}; the document cannot be verified from its summary"}
     end_char = min(start_char + max_chars, len(text))
+    if any(start_char < prior_end and end_char > prior_start
+           for prior_start, prior_end, _ in ctx.read_text_ranges.get(doc_id, [])):
+        return {
+            "error": "requested OCR range overlaps text already retrieved; request an unread range using next_start_char"
+        }
+    ctx.read_text_ranges.setdefault(doc_id, []).append((start_char, end_char, len(text)))
+    logger.info(
+        "agent_ocr_range run_id=%s tx_id=%s doc_id=%s start=%s end=%s total=%s",
+        ctx.run_id, ctx.current_tx_id, doc_id, start_char, end_char, len(text),
+    )
     return {
         "doc_id": doc_id,
         "total_chars": len(text),
@@ -262,6 +351,21 @@ def _h_doc_text(ctx: ToolContext, args: dict) -> dict:
         "has_more": end_char < len(text),
         "text": text[start_char:end_char],
     }
+
+
+def _has_read_full_text(ctx: ToolContext, doc_id: str) -> bool:
+    ranges = ctx.read_text_ranges.get(doc_id, [])
+    if not ranges:
+        return False
+    total_chars = ranges[0][2]
+    if any(total != total_chars for _, _, total in ranges):
+        return False
+    cursor = 0
+    for start, end, _ in sorted(ranges):
+        if start > cursor:
+            return False
+        cursor = max(cursor, end)
+    return cursor >= total_chars
 
 
 def _h_save_phase_a_result(ctx: ToolContext, args: dict) -> dict:
@@ -355,6 +459,7 @@ def _h_save_phase_a_result(ctx: ToolContext, args: dict) -> dict:
         return {"error": "result references documents outside this case", "doc_ids": unknown_ids}
     repo.save_phase_a_result(case_id=ctx.case_id, result=result)
     ctx.saved_phase_a_result = result
+    ctx.finished = True
     return {"saved": True}
 
 
@@ -394,9 +499,14 @@ def _h_list_transactions(ctx: ToolContext, args: dict) -> dict:
 
 def _h_get_transaction(ctx: ToolContext, args: dict) -> dict:
     tx_id = str(args.get("tx_id") or ctx.current_tx_id or "")
+    if ctx.current_tx_id and tx_id != ctx.current_tx_id:
+        return {"error": "only the active transaction may be loaded during verification"}
     tx = _find_tx(ctx, tx_id)
     if tx is not None:
-        return {"transaction": tx, "verification_result": _prior_result_for_agent(ctx, tx_id, int(tx.get("sequence") or 0))}
+        return {
+            "transaction": _without_source_refs(tx),
+            "verification_result": _prior_result_for_agent(ctx, tx_id, int(tx.get("sequence") or 0)),
+        }
     entry = _phase_a_entry_for_id(ctx, tx_id)
     if entry is None:
         return {"error": f"no transaction {tx_id!r} in chain"}
@@ -404,12 +514,14 @@ def _h_get_transaction(ctx: ToolContext, args: dict) -> dict:
     transaction.update({"tx_id": tx_id, "sequence": entry.get("chain_position")})
     transaction["related_events"] = entry.get("related_events") or []
     return {
-        "transaction": transaction,
+        "transaction": _without_source_refs(transaction),
         "verification_result": _prior_result_for_agent(ctx, tx_id, int(entry.get("chain_position") or 0)),
     }
 
 
 def _prior_result_for_agent(ctx: ToolContext, tx_id: str, sequence: int) -> dict | None:
+    if ctx.fresh_reverification and tx_id == ctx.current_tx_id:
+        return None
     raw = repo.get_transaction_result(ctx.case_id, tx_id)
     if not raw:
         return None
@@ -433,6 +545,116 @@ def _dedupe(items: list[dict], *, requirement: bool = False) -> list[dict]:
     return unique
 
 
+_GENERIC_DOCUMENT_TERMS = {
+    "a", "an", "and", "any", "copy", "dated", "document", "evidence", "for",
+    "from", "instrument", "of", "or", "original", "record", "the", "to",
+}
+
+
+def _document_terms(value: str) -> set[str]:
+    normalized = re.sub(r"[-_/]+", " ", value.casefold())
+    return {
+        token for token in re.findall(r"[a-z0-9]+", normalized)
+        if token not in _GENERIC_DOCUMENT_TERMS and (len(token) > 2 or token.isdigit())
+    }
+
+
+def _matching_summary_candidates(ctx: ToolContext, document_type: str, reason: str = "") -> list[dict]:
+    query_terms = _document_terms(f"{document_type} {reason}")
+    if not query_terms:
+        return []
+    matches = []
+    for doc in ctx.docs:
+        if _is_phase_a_only_document(doc):
+            continue
+        candidate_text = " ".join(str(doc.get(field) or "") for field in (
+            "filename", "document_type", "summary",
+        ))
+        overlap = query_terms & _document_terms(candidate_text)
+        if len(overlap) >= 2 and len(overlap) / len(query_terms) >= 0.25:
+            matches.append({
+                "doc_id": doc["doc_id"],
+                "filename": doc.get("filename") or "",
+                "document_type": doc.get("document_type") or "",
+                "status": doc.get("status") or "unknown",
+                "summary": doc.get("summary") or "",
+            })
+    return matches
+
+
+def _validate_missing_requirements(ctx: ToolContext, requirements: list[dict]) -> dict | None:
+    if not ctx.current_tx_id:
+        return {"error": "no transaction under investigation"}
+    if not ctx.evidence_requirements or not ctx.documents_listed:
+        return {"error": "record the active transaction's requirements and search document summaries before requesting missing evidence"}
+    for item in requirements:
+        if item.get("for_transaction") and item["for_transaction"] != ctx.current_tx_id:
+            return {
+                "error": "required_documents must belong to the active transaction; do not attach another transaction's document request",
+                "active_tx_id": ctx.current_tx_id,
+                "requested_for_transaction": item["for_transaction"],
+            }
+        candidates = _matching_summary_candidates(
+            ctx, str(item.get("document_type") or ""), str(item.get("reason") or "")
+        )
+        if not candidates:
+            continue
+        inaccessible = [candidate for candidate in candidates if candidate["status"] not in {"structured", "complete", "completed"}]
+        if inaccessible:
+            return {
+                "error": "matching uploaded candidate(s) exist but are not processed; do not ask the user to upload duplicates",
+                "existing_candidates": [
+                    {"doc_id": candidate["doc_id"], "filename": candidate["filename"], "status": candidate["status"]}
+                    for candidate in inaccessible
+                ],
+            }
+        unread = [
+            candidate["doc_id"] for candidate in candidates
+            if candidate["doc_id"] not in ctx.selected_document_ids
+            or not _has_read_full_text(ctx, candidate["doc_id"])
+        ]
+        if unread:
+            return {
+                "error": "matching uploaded candidate(s) exist; select and inspect their complete OCR before requesting the document",
+                "candidate_doc_ids": sorted(unread),
+                "candidates": [
+                    {"doc_id": doc_id, "filename": ctx.by_id[doc_id].get("filename") or ""}
+                    for doc_id in sorted(unread)
+                ],
+            }
+    return None
+
+
+def _validate_candidate_review(ctx: ToolContext) -> dict | None:
+    """Require OCR review of every plausible candidate linked to active requirements."""
+    candidates = {
+        candidate["doc_id"]
+        for requirement in ctx.evidence_requirements
+        for candidate in _matching_summary_candidates(
+            ctx, requirement["document_type"], requirement.get("reason", "")
+        )
+    }
+    inaccessible = sorted(
+        doc_id for doc_id in candidates
+        if ctx.by_id[doc_id].get("status") not in {"structured", "complete", "completed"}
+    )
+    if inaccessible:
+        return {
+            "error": "matching uploaded candidate(s) are not processed; do not claim review complete",
+            "candidate_doc_ids": inaccessible,
+        }
+    unread = sorted(
+        doc_id for doc_id in candidates
+        if doc_id not in ctx.selected_document_ids or not _has_read_full_text(ctx, doc_id)
+    )
+    if unread:
+        return {
+            "error": "review each matching uploaded candidate's complete OCR before saving this transaction",
+            "candidate_doc_ids": unread,
+        }
+    return None
+
+
 def _legacy_result(previous: dict, *, tx_id: str, sequence: int) -> dict:
     """Adapt an existing result for resume without changing its persisted row."""
     result = dict(previous or {})
@@ -441,6 +663,61 @@ def _legacy_result(previous: dict, *, tx_id: str, sequence: int) -> dict:
     result.setdefault("status", "PENDING")
     result.setdefault("summary", "No prior verification summary was recorded.")
     return normalize_transaction_verification(result)
+
+
+def _result_compactness_errors(payload: dict) -> list[str]:
+    """Reject duplicated narrative; length and sentence targets are advisory only."""
+    summary = str(payload.get("summary") or "").strip()
+    findings = payload.get("findings") or []
+    errors = []
+
+    def sentences(text: str) -> list[str]:
+        protected = re.sub(
+            r"\b(?:R\.S|No|sq|ft|Mr|Mrs|Ms|Dr|Smt|Shri|St|CD|etc)\.",
+            lambda match: match.group().replace(".", "<DOT>"),
+            text.strip(),
+            flags=re.IGNORECASE,
+        )
+        protected = re.sub(
+            r"\b(?:[A-Za-z]\.){2,}",
+            lambda match: match.group().replace(".", "<DOT>"),
+            protected,
+        )
+        return [
+            part.replace("<DOT>", ".").strip()
+            for part in re.split(r"(?<=[.!?])\s+", protected)
+            if part.strip()
+        ]
+
+    def normalized(text: str) -> str:
+        return re.sub(r"\W+", " ", text.casefold()).strip()
+
+    # Sentence/word counts are writing guidance rather than persistence gates:
+    # a valid evidence-backed result must not be lost because material facts
+    # require a longer explanation.
+    finding_sentences: set[str] = set()
+    for finding in findings:
+        details = str(finding.get("details") or "").strip()
+        finding_sentences.update(normalized(sentence) for sentence in sentences(details))
+
+    summary_sentences = {normalized(sentence) for sentence in sentences(summary)}
+    if summary_sentences & finding_sentences:
+        errors.append("summary repeats a finding; keep the summary to the active transaction's conclusion")
+
+    # Keep complete required-document names and evidence descriptions. They are
+    # actionable data, not disposable prose. Do not shorten these fields to solve
+    # repetition; revise only the rationale when it duplicates a finding.
+    for index, requirement in enumerate(payload.get("required_documents") or []):
+        reason = str(requirement.get("reason") or "").strip()
+        reason_sentences = {normalized(sentence) for sentence in sentences(reason)}
+        if reason_sentences & (finding_sentences | summary_sentences):
+            errors.append(
+                f"required_documents[{index}].reason repeats the conclusion or a finding; "
+                "write a short rationale for why this specific evidence is needed, "
+                "without changing or abbreviating document_type"
+            )
+
+    return errors
 
 
 def _canonical_verification(ctx: ToolContext, args: dict, *, force_pending: bool = False) -> dict:
@@ -460,7 +737,7 @@ def _canonical_verification(ctx: ToolContext, args: dict, *, force_pending: bool
     if args.get("sequence") != expected_sequence:
         raise SchemaValidationError("TransactionVerification", ["sequence does not match the active transaction"])
 
-    previous_raw = repo.get_transaction_result(ctx.case_id, tx_id) or {}
+    previous_raw = {} if ctx.fresh_reverification else (repo.get_transaction_result(ctx.case_id, tx_id) or {})
     previous = _legacy_result(previous_raw, tx_id=tx_id, sequence=expected_sequence)
     payload = dict(args)
     if force_pending:
@@ -469,8 +746,15 @@ def _canonical_verification(ctx: ToolContext, args: dict, *, force_pending: bool
         **(previous.get("transaction_metadata") or {}),
         **_current_transaction_metadata(ctx, tx_id),
     }
+    payload["transaction_metadata"].pop("_verification_checkpoint", None)
+    payload["transaction_metadata"]["_document_manifest"] = {
+        str(document["doc_id"]): str(document.get("status") or "unknown")
+        for document in ctx.docs
+    }
     payload["reviewed_document_ids"] = sorted(
-        set(previous.get("reviewed_document_ids") or []) | ctx.selected_document_ids
+        doc_id for doc_id in (
+            set(previous.get("reviewed_document_ids") or []) | ctx.selected_document_ids
+        ) if not _is_phase_a_only_document(ctx.by_id.get(doc_id) or {})
     )
     status = str(payload.get("status") or "")
     payload["verified_at"] = _now() if status in {
@@ -482,12 +766,75 @@ def _canonical_verification(ctx: ToolContext, args: dict, *, force_pending: bool
     for key in ("findings", "required_documents"):
         if key not in args and key in previous:
             payload[key] = previous[key]
+    for requirement in payload.get("required_documents") or []:
+        owner_tx_id = requirement.get("for_transaction")
+        if owner_tx_id and owner_tx_id != tx_id:
+            raise SchemaValidationError(
+                "TransactionVerification",
+                [f"required_documents entry belongs to {owner_tx_id}, not active transaction {tx_id}"],
+            )
     if isinstance(payload.get("findings"), list):
+        prior_findings = previous.get("findings") or []
+        prior_citations = {
+            (
+                finding.get("title"), finding.get("details"),
+                ref.get("doc_id"), ref.get("pages"), ref.get("passage"),
+            )
+            for finding in previous.get("findings") or [] if isinstance(finding, dict)
+            for ref in finding.get("evidence") or [] if isinstance(ref, dict)
+        }
+        citation_errors = []
+        for index, finding in enumerate(payload["findings"]):
+            retained_finding = (
+                isinstance(finding, dict)
+                and any(
+                    finding.get("title") == prior.get("title")
+                    and finding.get("details") == prior.get("details")
+                    for prior in prior_findings if isinstance(prior, dict)
+                )
+            )
+            for reference in finding.get("evidence") or []:
+                doc_id = reference.get("doc_id")
+                citation_key = (
+                    finding.get("title"), finding.get("details"),
+                    doc_id, reference.get("pages"), reference.get("passage"),
+                )
+                if doc_id not in ctx.by_id:
+                    citation_errors.append(f"findings[{index}] cites a document outside this case: {doc_id}")
+                elif _is_phase_a_only_document(ctx.by_id[doc_id]):
+                    citation_errors.append(
+                        f"findings[{index}] cites an encumbrance certificate, which is title-chain-only and not transaction evidence: {doc_id}"
+                    )
+                elif retained_finding and citation_key in prior_citations:
+                    continue
+                elif doc_id not in ctx.selected_document_ids or not _has_read_full_text(ctx, doc_id):
+                    citation_errors.append(f"findings[{index}] cites a document whose complete OCR was not reviewed: {doc_id}")
+        if citation_errors:
+            raise SchemaValidationError("TransactionVerification", citation_errors)
         payload["findings"] = _dedupe(payload["findings"])
+        for finding in payload["findings"]:
+            finding["origin_tx_id"] = tx_id
+            finding["finding_id"] = stable_finding_id(tx_id, finding)
+
+    if isinstance(payload.get("reviewed_document_ids"), list):
+        unknown_reviewed = sorted(
+            set(payload["reviewed_document_ids"]) - set(ctx.by_id) - set(previous.get("reviewed_document_ids") or [])
+        )
+        if unknown_reviewed:
+            raise SchemaValidationError(
+                "TransactionVerification", [f"reviewed_document_ids contains unknown document IDs: {unknown_reviewed}"]
+            )
     if isinstance(payload.get("required_documents"), list):
         payload["required_documents"] = _dedupe(payload["required_documents"], requirement=True)
     validated = validate_transaction_verification(payload)
-    return validated.model_dump()
+    canonical = validated.model_dump()
+    # Page/document pointers are the report citation contract. Long OCR excerpts
+    # in `passage` duplicate finding prose, so retain the schema field for legacy
+    # compatibility but do not persist it on newly verified results.
+    for finding in canonical.get("findings") or []:
+        for reference in finding.get("evidence") or []:
+            reference.pop("passage", None)
+    return canonical
 
 
 def _current_transaction_metadata(ctx: ToolContext, tx_id: str) -> dict:
@@ -508,31 +855,76 @@ def _current_transaction_metadata(ctx: ToolContext, tx_id: str) -> dict:
             "chain_position", "is_current_owner_transaction",
         ) if transaction.get(key) is not None
     }
+    if not metadata.get("vendors") or not metadata.get("purchasers"):
+        for point in transaction.get("summary_points") or []:
+            match = re.match(
+                r"\s*(?P<vendor>.+?)\s+(?:conveyed|sold|transferred|gifted|released)\b"
+                r".*\bto\s+(?P<purchaser>[^.;]+)[.;]?\s*$",
+                str(point),
+                flags=re.IGNORECASE,
+            )
+            if match:
+                metadata.setdefault("vendors", [match.group("vendor").strip()])
+                metadata.setdefault("purchasers", [match.group("purchaser").strip()])
+                break
     # A death date is the reported succession event date, not an instrument
     # execution date. Preserve it in evidence/findings, never in executed_date.
     tx_type = str(transaction.get("transaction_type") or "").casefold()
     if any(term in tx_type for term in ("succession", "inheritance", "death")):
         metadata.pop("executed_date", None)
     if transaction.get("related_events"):
-        metadata["related_events"] = transaction["related_events"]
+        metadata["related_events"] = _without_source_refs(transaction["related_events"])
     return metadata
 
 
 def _h_save_transaction_result(ctx: ToolContext, args: dict) -> dict:
     tx_id = ctx.current_tx_id or ""
     try:
+        if args.get("status") in {
+            "VERIFIED_WITH_AVAILABLE_EVIDENCE", "ISSUES_IDENTIFIED", "INCONCLUSIVE",
+        }:
+            unread = sorted(doc_id for doc_id in ctx.selected_document_ids if not _has_read_full_text(ctx, doc_id))
+            if not ctx.selected_document_ids or unread:
+                ctx.result_error = "full OCR must be read for every selected supporting document before a completed result can be saved"
+                return {"error": ctx.result_error, "unread_document_ids": unread}
         payload = _canonical_verification(ctx, args)
+        if payload["status"] == "PENDING_NOT_VERIFIED" and not payload.get("required_documents"):
+            return {
+                "error": "PENDING_NOT_VERIFIED requires at least one specific required_documents entry; "
+                "use INCONCLUSIVE if no user-uploadable evidence request is known",
+            }
+        compactness_errors = _result_compactness_errors(payload)
+        if compactness_errors:
+            raise SchemaValidationError("TransactionVerification", compactness_errors)
+        if payload["status"] in {
+            "VERIFIED_WITH_AVAILABLE_EVIDENCE", "ISSUES_IDENTIFIED", "INCONCLUSIVE",
+        }:
+            candidate_issue = _validate_candidate_review(ctx)
+            if candidate_issue:
+                return candidate_issue
+        if payload.get("required_documents"):
+            issue = _validate_missing_requirements(ctx, payload["required_documents"])
+            if issue:
+                return issue
     except SchemaValidationError as e:
         ctx.result_error = str(e)
         return {"error": f"invalid transaction result: {e}", "issues": e.errors}
     try:
+        logger.info("agent_result_persist_attempt run_id=%s tx_id=%s", ctx.run_id, tx_id)
         repo.save_transaction_result(case_id=ctx.case_id, tx_id=tx_id, verification=payload)
-    except Exception as e:  # noqa: BLE001 - surface persistence failure, do NOT mark done
+    except Exception as e:
         logger.exception("save_transaction_result failed for %s/%s", ctx.case_id, tx_id)
         ctx.result_error = f"failed to persist result: {e}"
         return {"error": f"failed to persist result: {e}"}
     ctx.result_error = None
     ctx.saved_results.append(payload)
+    logger.info(
+        "agent_result_persisted run_id=%s tx_id=%s status=%s reviewed_doc_ids=%s",
+        ctx.run_id, tx_id, payload.get("status"), payload.get("reviewed_document_ids"),
+    )
+    # Persistence is the transaction's terminal action. Do not spend another
+    # model turn asking it to finish or allowing it to reopen the investigation.
+    ctx.finished = True
     missing_documents = payload.get("required_documents") or []
     if payload["status"] == "PENDING_NOT_VERIFIED" and missing_documents:
         # Models may save a pending result directly instead of calling the
@@ -552,27 +944,69 @@ def _h_request_missing(ctx: ToolContext, args: dict) -> dict:
     tx_id = ctx.current_tx_id
     if not tx_id:
         return {"error": "no transaction under investigation"}
+    if not isinstance(args.get("required_documents"), list) or not args["required_documents"]:
+        return {"error": "provide at least one specific required_documents entry to pause and ask the user"}
     canonical_args = dict(args)
     canonical_args["status"] = "PENDING_NOT_VERIFIED"
     try:
+        if not ctx.evidence_requirements or not ctx.documents_listed:
+            return {"error": "record transaction requirements and search document summaries before requesting missing evidence"}
+        candidate_issue = _validate_candidate_review(ctx)
+        if candidate_issue:
+            candidate_issue["error"] = candidate_issue["error"].replace(
+                "review each matching uploaded candidate's complete OCR before saving this transaction",
+                "matching uploaded candidate exists; inspect its complete OCR before requesting a duplicate",
+            )
+            candidate_ids = candidate_issue.get("candidate_doc_ids") or []
+            candidate_issue["candidates"] = [
+                {"doc_id": doc_id, "filename": ctx.by_id[doc_id].get("filename") or ""}
+                for doc_id in candidate_ids if doc_id in ctx.by_id
+            ]
+            return candidate_issue
         verification = _canonical_verification(ctx, canonical_args, force_pending=True)
+        compactness_errors = _result_compactness_errors(verification)
+        if compactness_errors:
+            raise SchemaValidationError("TransactionVerification", compactness_errors)
+        issue = _validate_missing_requirements(ctx, verification["required_documents"])
+        if issue:
+            return issue
     except SchemaValidationError as e:
         ctx.result_error = str(e)
         return {"error": f"invalid transaction result: {e}", "issues": e.errors}
     try:
+        logger.info("agent_missing_request_persist_attempt run_id=%s tx_id=%s", ctx.run_id, tx_id)
         repo.save_transaction_result(case_id=ctx.case_id, tx_id=tx_id, verification=verification)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.exception("request_missing_documents failed for %s/%s", ctx.case_id, tx_id)
         ctx.result_error = f"failed to persist request: {e}"
         return {"error": f"failed to persist request: {e}"}
     ctx.result_error = None
     ctx.missing_requests.append({"tx_id": tx_id, "documents": verification["required_documents"]})
+    ctx.finished = True
+    logger.info("agent_missing_request_persisted run_id=%s tx_id=%s", ctx.run_id, tx_id)
     return {"paused": True, "tx_id": tx_id, "required_documents": verification["required_documents"]}
 
 
 def _h_finish(ctx: ToolContext, args: dict) -> dict:
+    if ctx.current_tx_id and not ctx.saved_results and not ctx.missing_requests:
+        return {
+            "error": "the active transaction has no saved result; call save_transaction_result "
+            "or request_missing_documents before finish"
+        }
     ctx.finished = True
     return {"ok": True}
+
+
+def _h_request_more_calls(ctx: ToolContext, args: dict) -> dict:
+    next_step = str(args.get("next_step") or "").strip()
+    if len(next_step) < 12 or len(next_step) > 400:
+        return {"error": "next_step must describe a concrete evidence check (12–400 characters)"}
+    if ctx.additional_model_calls_used:
+        return {"error": "the one permitted verification-budget extension was already used"}
+    ctx.additional_model_calls_used = True
+    ctx.additional_model_calls = 8
+    logger.info("agent_verification_budget_extended run_id=%s tx_id=%s extra_calls=%s reason=%s", ctx.run_id, ctx.current_tx_id, ctx.additional_model_calls, next_step)
+    return {"granted_additional_calls": ctx.additional_model_calls, "hard_cap": 24}
 
 
 _HANDLERS: dict[str, Callable[[ToolContext, dict], dict]] = {
@@ -586,19 +1020,37 @@ _HANDLERS: dict[str, Callable[[ToolContext, dict], dict]] = {
     "get_transaction": _h_get_transaction,
     "save_transaction_result": _h_save_transaction_result,
     "request_missing_documents": _h_request_missing,
+    "request_additional_verification_calls": _h_request_more_calls,
     "finish": _h_finish,
 }
 
 
 def dispatch(ctx: ToolContext, name: str, args: dict) -> dict:
     """Execute one tool call. Never raises; returns a JSON-serializable dict."""
+    if ctx.finished:
+        return {"error": "active transaction is already terminal; no further tools may run"}
     handler = _HANDLERS.get(name)
     if handler is None:
         return {"error": f"unknown tool {name!r}"}
+    call_key = json.dumps([name, args or {}], sort_keys=True, ensure_ascii=False, default=str)
+    prior_count = ctx.tool_call_fingerprints.get(call_key, 0)
+    if prior_count:
+        ctx.repeated_tool_calls += 1
+    ctx.tool_call_fingerprints[call_key] = prior_count + 1
+    if call_key in ctx.tool_result_cache:
+        logger.warning(
+            "agent_duplicate_tool_call run_id=%s tx_id=%s tool=%s repeat=%s",
+            ctx.run_id, ctx.current_tx_id, name, ctx.repeated_tool_calls,
+        )
+        return ctx.tool_result_cache[call_key]
+    ctx.tool_call_counts[name] = ctx.tool_call_counts.get(name, 0) + 1
     try:
-        return handler(ctx, args or {})
+        result = handler(ctx, args or {})
+        if not (isinstance(result, dict) and result.get("error")):
+            ctx.tool_result_cache[call_key] = result
+        return result
     except SchemaValidationError as e:
         return {"error": f"invalid arguments: {e}", "issues": e.errors}
-    except Exception as e:  # noqa: BLE001 - tool failure is reported, never fatal
+    except Exception as e:
         logger.exception("tool %s failed for case %s", name, getattr(ctx, "case_id", "?"))
         return {"error": str(e)}

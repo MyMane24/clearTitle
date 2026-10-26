@@ -32,7 +32,7 @@ def save_verification_results(
             result_status = normalize_status(item.get("status") or status)
             if result_status == "ISSUES_IDENTIFIED":
                 # These historical checks have no stored document/page citations,
-                # so they cannot substantiate an issue finding under v2.1.
+                # so they cannot substantiate an issue finding under v2.2.
                 result_status = "INCONCLUSIVE"
             terminal = result_status in {
                 "VERIFIED_WITH_AVAILABLE_EVIDENCE", "INCONCLUSIVE",

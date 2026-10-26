@@ -22,6 +22,9 @@ const base: TransactionVerificationResult = {
   schema_version: '2.1',
   transaction_metadata: {
     transaction_type: 'Sale deed',
+    executed_date: '15 December 2009',
+    registration_date: '16 December 2009',
+    transaction_number: 'BEL-1-07403-2009-10',
     vendors: ['Anant Mankikar'],
     purchasers: ['Ankur Patel'],
   },
@@ -29,18 +32,36 @@ const base: TransactionVerificationResult = {
 
 function render(transaction: TransactionVerificationResult, skipped = false): string {
   return renderToStaticMarkup(
-    <TransactionResultCard transaction={transaction} documents={[{ doc_id: 'DOC_019', filename: 'sale-2009.pdf' }]} skipped={skipped} />,
+    <TransactionResultCard transaction={transaction} documents={[{ doc_id: 'DOC_019', filename: 'sale-2009.pdf', document_type: 'SALE_DEED' }]} skipped={skipped} />,
   );
 }
 
 test('fully supported result renders summary and cited evidence without an empty evidence-needed section', () => {
   const html = render(base);
   assert.match(html, /Transaction 5 — Sale Deed/);
-  assert.match(html, /Anant Mankikar → Ankur Patel/);
+  assert.match(html, /Reported parties.*Anant Mankikar → Ankur Patel/);
+  assert.match(html, /Execution date.*15 December 2009/);
+  assert.match(html, /Registration date.*16 December 2009/);
+  assert.match(html, /Registration no\..*BEL-1-07403-2009-10/);
   assert.match(html, /Verified with available evidence/);
   assert.match(html, /The inspected deed supports the transfer/);
-  assert.match(html, /DOC_019 \(sale-2009\.pdf\) · pages 2-4/);
+  assert.match(html, /Sale Deed — sale-2009\.pdf · pages 2-4/);
+  assert.doesNotMatch(html, /DOC_019/);
   assert.doesNotMatch(html, /Evidence needed/);
+});
+
+test('legacy dependency fields are not rendered', () => {
+  const legacyResult = {
+    ...base,
+    historical_dependencies: [{
+      origin_tx_id: 'PA-TC-0002',
+      origin_finding_id: 'PA-TC-0002:F-a1b2',
+      relevance: 'The unresolved prior ownership issue affects the seller interest in this transfer.',
+    }],
+  };
+  const html = render(legacyResult as typeof base);
+  assert.match(html, /Key findings/);
+  assert.doesNotMatch(html, /Historical dependencies|Origin: PA-TC-0002|affects the seller interest/);
 });
 
 test('pending result renders each actionable requirement and never claims verification', () => {
@@ -58,6 +79,26 @@ test('pending result renders each actionable requirement and never claims verifi
   assert.doesNotMatch(html, />Verified with available evidence</);
 });
 
+test('action section renders the saved model rationale without UI-side rewriting', () => {
+  const repeated = 'The purchaser identity remains unresolved.';
+  const html = render({
+    ...base,
+    status: 'PENDING_NOT_VERIFIED',
+    summary: 'The transfer remains pending review.',
+    findings: [{
+      title: 'Purchaser identity discrepancy',
+      details: repeated,
+      evidence: [{ doc_id: 'DOC_019', pages: '2' }],
+    }],
+    required_documents: [{
+      document_type: 'Official identity or rectification evidence',
+      reason: repeated,
+    }],
+  });
+  assert.equal(html.match(/The purchaser identity remains unresolved/g)?.length, 2);
+  assert.match(html, /Official identity or rectification evidence/);
+});
+
 test('conflicting purchaser evidence appears together in one finding', () => {
   const html = render({
     ...base,
@@ -69,8 +110,33 @@ test('conflicting purchaser evidence appears together in one finding', () => {
     }],
   });
   assert.match(html, /Conflicting purchaser names/);
-  assert.match(html, /DOC_019.*page 2/);
-  assert.match(html, /DOC_017.*page 4/);
+  assert.match(html, /Sale Deed — sale-2009\.pdf.*page 2/);
+  assert.match(html, /page 4/);
+  assert.doesNotMatch(html, /DOC_019|DOC_017/);
+});
+
+test('missing or opaque filename metadata omits the unavailable filename and never exposes the ID', () => {
+  const html = render({
+    ...base,
+    findings: [{
+      title: 'Evidence reviewed',
+      details: 'DOC_019 supports the reported conveyance.',
+      evidence: [{ doc_id: 'DOC_019' }],
+    }],
+  });
+  assert.match(html, /Sale Deed — sale-2009\.pdf supports/);
+  assert.match(html, /Sale Deed — sale-2009\.pdf/);
+  assert.doesNotMatch(html, /DOC_019/);
+
+  const unavailable = renderToStaticMarkup(
+    <TransactionResultCard
+      transaction={{ ...base, findings: [{ title: 'Evidence', details: 'Reviewed.', evidence: [{ doc_id: 'DOC_021' }] }] }}
+      documents={[{ doc_id: 'DOC_021', filename: 'DOC_021.pdf', document_type: 'SALE_DEED' }]}
+    />,
+  );
+  assert.match(unavailable, /Sale Deed/);
+  assert.doesNotMatch(unavailable, /Document name unavailable|Sale Deed —/);
+  assert.doesNotMatch(unavailable, /DOC_021/);
 });
 
 test('empty findings and requirements render safely; skipped results never show verified', () => {
@@ -109,8 +175,9 @@ test('skipped result retains its actual summary, findings, citations, and outsta
   assert.match(html, /Historical transfer not independently verified/);
   assert.match(html, /Property identity needs reconciliation/);
   assert.match(html, /remain unconfirmed/);
-  assert.match(html, /DOC_019.*pages 2-4/);
-  assert.match(html, /DOC_020.*page 1/);
+   assert.match(html, /Sale Deed — sale-2009\.pdf.*pages 2-4/);
+    assert.match(html, /Sale Deed.*page 1/);
+   assert.doesNotMatch(html, /DOC_019|DOC_020/);
   assert.match(html, /Original registered deed/);
   assert.match(html, /Survey subdivision map/);
   assert.doesNotMatch(html, />Pending verification</);
@@ -135,7 +202,7 @@ test('metadata omits unavailable values and includes traceable transaction conte
     { label: 'Registration no.', value: 'BLG-5-123456-2012-13' },
     { label: 'Execution date', value: '4 September 2012' },
     { label: 'Property', value: 'Survey 191/4 · Plot 40' },
-    { label: 'Parties', value: 'A very long vendor name that should wrap naturally → Purchaser' },
+    { label: 'Reported parties', value: 'A very long vendor name that should wrap naturally → Purchaser' },
   ]);
   assert.deepEqual(transactionMetadataItems({ transaction_type: 'SALE' }), []);
 });

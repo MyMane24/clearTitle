@@ -1,7 +1,12 @@
 import unittest
-
+from unittest.mock import patch
 from backend.services.agent_schemas import normalize_status
-from backend.services.cleartitle_agent import _collect_missing, _overall_transaction_status
+from backend.services.cleartitle_agent import (
+    _collect_missing,
+    _is_terminal_transaction_result,
+    _overall_transaction_status,
+    _verify_transaction,
+)
 
 
 class TestStatusNormalization(unittest.TestCase):
@@ -19,6 +24,53 @@ class TestStatusNormalization(unittest.TestCase):
 
 
 class TestTransactionSummary(unittest.TestCase):
+    def test_saved_bounded_fallback_clears_stale_validation_error(self):
+        phase_a = {"title_chain": [{
+            "tx_id": "PA-TC-0001", "chain_position": 1,
+            "documented_transaction": {"transaction_type": "Sale deed"},
+        }]}
+
+        def stop_after_invalid_result(ctx, **_kwargs):
+            ctx.stop_reason = "model_call_budget_exhausted"
+            ctx.result_error = "last attempted result failed validation"
+
+        with (
+            patch("backend.services.cleartitle_agent.run_tool_loop", side_effect=stop_after_invalid_result),
+            patch("backend.services.cleartitle_agent.repo.get_transaction_result", return_value=None),
+            patch("backend.services.cleartitle_agent.repo.save_transaction_result") as save,
+        ):
+            ctx = _verify_transaction(
+                "CASE1", [], phase_a,
+                {"tx_id": "PA-TC-0001", "sequence": 1, "transaction_type": "Sale deed"},
+            )
+
+        save.assert_called_once()
+        self.assertIsNone(ctx.result_error)
+        self.assertEqual(ctx.stop_reason, "bounded_stop_inconclusive_saved")
+        self.assertEqual(ctx.saved_results[0]["status"], "INCONCLUSIVE")
+
+    def test_bounded_inconclusive_checkpoint_is_retryable_but_normal_inconclusive_is_terminal(self):
+        self.assertFalse(_is_terminal_transaction_result({
+            "status": "INCONCLUSIVE",
+            "transaction_metadata": {"_verification_checkpoint": "bounded_stop"},
+        }))
+        self.assertFalse(_is_terminal_transaction_result({
+            "status": "INCONCLUSIVE",
+            "transaction_metadata": {"_verification_checkpoint": "repeated_tool_call"},
+        }))
+        self.assertTrue(_is_terminal_transaction_result({"status": "INCONCLUSIVE"}))
+
+    def test_inconclusive_result_reopens_only_when_document_manifest_changes(self):
+        prior = {
+            "status": "INCONCLUSIVE",
+            "transaction_metadata": {"_document_manifest": {"DOC1": "complete"}},
+        }
+        self.assertTrue(_is_terminal_transaction_result(prior, [{"doc_id": "DOC1", "status": "complete"}]))
+        self.assertFalse(_is_terminal_transaction_result(prior, [
+            {"doc_id": "DOC1", "status": "complete"},
+            {"doc_id": "DOC2", "status": "complete"},
+        ]))
+
     def test_overall_status_comes_from_transaction_statuses(self):
         self.assertEqual(_overall_transaction_status([
             {"status": "VERIFIED_WITH_AVAILABLE_EVIDENCE"},

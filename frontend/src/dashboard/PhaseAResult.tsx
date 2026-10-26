@@ -158,7 +158,10 @@ function ChainEntry({ entry, index }: {
   const transaction = item.documented_transaction && typeof item.documented_transaction === 'object'
     ? item.documented_transaction as Record<string, unknown>
     : item;
-  const transactionType = transaction.transaction_type || transaction.type || item.event_type;
+  const rawTransactionType = transaction.transaction_type || transaction.type || item.event_type;
+  const transactionType = typeof rawTransactionType === 'string'
+    ? rawTransactionType.replace(/\s*\(EC entry; instrument not supplied\)/i, '')
+    : rawTransactionType;
   const summaryPoints = Array.isArray(transaction.summary_points)
     ? transaction.summary_points.map(pointText).filter((point): point is string => point !== null)
     : [];

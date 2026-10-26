@@ -13,6 +13,8 @@ export type TransactionFinding = {
   title: string;
   details: string;
   evidence: TransactionEvidence[];
+  finding_id?: string | null;
+  origin_tx_id?: string | null;
 };
 
 export type TransactionVerificationResult = {
@@ -81,13 +83,16 @@ export function transactionMetadataItems(metadata: Record<string, unknown> | und
   const items: Array<{ label: string; value: string }> = [];
   const registrationNumber = textValue(metadata.registration_number);
   const transactionNumber = textValue(metadata.transaction_number);
-  if (registrationNumber) items.push({ label: 'Registration no.', value: registrationNumber });
-  else if (transactionNumber) items.push({ label: 'Transaction no.', value: transactionNumber });
+  if (registrationNumber || transactionNumber) {
+    items.push({ label: 'Registration no.', value: registrationNumber || transactionNumber });
+  }
 
   const executionDate = textValue(metadata.executed_date);
   const registrationDate = textValue(metadata.registration_date);
   if (executionDate) items.push({ label: 'Execution date', value: executionDate });
-  else if (registrationDate) items.push({ label: 'Registration date', value: registrationDate });
+  if (registrationDate && registrationDate !== executionDate) {
+    items.push({ label: 'Registration date', value: registrationDate });
+  }
 
   const identifiers = [
     ['Survey', metadata.survey_number],
@@ -105,7 +110,7 @@ export function transactionMetadataItems(metadata: Record<string, unknown> | und
     const value = vendors.length && purchasers.length
       ? `${vendors.join(', ')} → ${purchasers.join(', ')}`
       : [...vendors, ...purchasers].join(', ');
-    items.push({ label: 'Parties', value });
+    items.push({ label: 'Reported parties', value });
   }
   return items;
 }

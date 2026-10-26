@@ -49,6 +49,13 @@ using only doc_id and filename for audit. Before saving, check the chain include
 all supported ownership links and that its last item is the latest sale deed and
 its purchasers.
 
+Use the EC to discover and order relevant transfers/encumbrances, then represent
+each transfer directly as its own title_chain item and each non-transfer
+encumbrance as a related_event. In summary_points and the graph, state the
+transaction/event itself; do not phrase it as "the EC lists/records/shows" or
+label it an "EC entry." Keep the EC citation only in source_refs as Phase A audit
+provenance; Phase B will verify the underlying instrument and supporting records.
+
 The graph and the structured title_chain list MUST both be chronological from
 the earliest supported root first, forward through each ownership link, and end
 with the current/latest owner and property. Do not jumble entries or reverse this
@@ -97,6 +104,10 @@ Save one result object with these fields:
 For each documented transaction, populate transaction_number only from an
 explicit registration / instrument number; otherwise use null. Include
 transaction_type, executed_date (null if absent), and concise summary_points.
+Use a plain transaction label such as "Sale", "Gift", or "Partition" for
+transaction_type. Never add provenance or availability notes such as "EC entry",
+"instrument not supplied", or "reported in EC" to the transaction type; use
+evidence_status and source_refs for Phase A provenance.
 Write summary_points for a property owner to understand: state the supported
 parties and their roles naturally, describe the property/schedule and important
 terms, include consideration when stated, and explain material events or

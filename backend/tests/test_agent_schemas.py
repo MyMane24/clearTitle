@@ -9,8 +9,8 @@ from backend.services.agent_schemas import (
 
 
 class TestTransactionVerificationSchema(unittest.TestCase):
-    def test_v21_requires_canonical_finding_and_evidence_fields(self):
-        self.assertEqual(SCHEMA_VERSION, "2.1")
+    def test_v23_requires_canonical_finding_and_evidence_fields(self):
+        self.assertEqual(SCHEMA_VERSION, "2.3")
         valid = {
             "tx_id": "PA-TC-0001", "sequence": 1, "status": "ISSUES_IDENTIFIED",
             "summary": "The reviewed records conflict.",
@@ -23,12 +23,25 @@ class TestTransactionVerificationSchema(unittest.TestCase):
         result = validate_transaction_verification(valid)
         self.assertEqual(result.findings[0].evidence[0].pages, "2-3")
         self.assertIsNone(result.verified_at)
-
         with self.assertRaises(SchemaValidationError):
             validate_transaction_verification({
                 **valid,
                 "findings": [{"description": "Old shape", "source_refs": [{"doc_id": "DOC_001"}]}],
             })
+
+    def test_dependency_fields_are_rejected_and_legacy_values_are_not_canonicalized(self):
+        with self.assertRaises(SchemaValidationError):
+            validate_transaction_verification({
+                "tx_id": "PA-TC-0002", "sequence": 2, "status": "INCONCLUSIVE",
+                "summary": "No dependency fields are part of the result contract.",
+                "historical_dependencies": [{"origin_tx_id": "PA-TC-0001", "relevance": "Legacy"}],
+            })
+        legacy = normalize_transaction_verification({
+            "tx_id": "PA-TC-0002", "sequence": 2, "status": "INCONCLUSIVE",
+            "summary": "Active transaction assessed independently.", "findings": [],
+            "historical_dependencies": [{"origin_tx_id": "PA-TC-0001", "relevance": "Legacy"}],
+        })
+        self.assertNotIn("historical_dependencies", legacy)
 
     def test_status_timestamp_and_issue_finding_constraints_are_enforced(self):
         pending = {
@@ -64,7 +77,7 @@ class TestTransactionVerificationSchema(unittest.TestCase):
             "limitations": ["OCR may contain errors."],
             "verified_at": "2026-10-22T10:00:00Z",
         })
-        self.assertEqual(normalized["schema_version"], "2.1")
+        self.assertEqual(normalized["schema_version"], "2.3")
         self.assertIsNone(normalized["verified_at"])
         self.assertEqual(normalized["findings"][0]["evidence"][0]["pages"], "2-3")
         self.assertEqual(normalized["findings"][-1]["title"], "Contradictory evidence")

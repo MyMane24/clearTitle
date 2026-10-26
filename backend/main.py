@@ -15,6 +15,7 @@ from backend.config import (
     CLEARTITLE_AGENT_PROVIDER,
     CORS_ORIGINS,
     GEMINI_API_KEY,
+    MAX_UPLOAD_SIZE_MB,
     OPENAI_API_KEY,
     SARVAM_API_KEY,
 )
@@ -81,6 +82,7 @@ async def health():
         "gemini_key": bool(GEMINI_API_KEY),
         "agent_provider": agent_provider,
         "agent_provider_key": agent_provider_key,
+        "max_upload_size_mb": MAX_UPLOAD_SIZE_MB,
     }
 
 

@@ -15,8 +15,9 @@ evidence is retried when the case is resumed after an upload.
 from __future__ import annotations
 
 import json
+from uuid import uuid4
 
-from backend.config import PIPELINE_LOCK_ENABLED
+from backend.config import CLEARTITLE_VERIFY_MODEL_CALL_BUDGET, PIPELINE_LOCK_ENABLED
 from backend.database.repositories import agent_repo as repo
 from backend.database.repositories.case_repo import set_case_verification_status
 from backend.integrations.llm.agent_llm import AgentLLMError, complete_json
@@ -27,8 +28,9 @@ from backend.services.agent_runtime import run_tool_loop
 from backend.services.agent_schemas import (
     SCHEMA_VERSION,
     normalize_status,
+    validate_transaction_verification,
 )
-from backend.services.agent_tools import ToolContext, _now
+from backend.services.agent_tools import ToolContext, _legacy_result, _now, _without_source_refs
 
 logger = get_logger(__name__)
 
@@ -38,7 +40,7 @@ STATUS_PAUSED = "paused"
 STATUS_DONE = "done"
 STATUS_ERROR = "error"
 
-_VERIFY_MAX_STEPS = 12
+_VERIFY_MAX_STEPS = CLEARTITLE_VERIFY_MODEL_CALL_BUDGET
 _PHASE_A_MAX_STEPS = 80
 
 
@@ -111,7 +113,7 @@ def _verify_instruction(tx: dict) -> str:
         + "\n\nMANDATORY TRANSACTION-VERIFICATION SKILL\n\n"
         + verification_skill_path().read_text(encoding="utf-8")
         + "\n\n--- TRANSACTION UNDER INVESTIGATION ---\n"
-        + json.dumps(tx, ensure_ascii=False, default=str, indent=2)
+        + json.dumps(_without_source_refs(tx), ensure_ascii=False, default=str, indent=2)
     )
 
 
@@ -161,11 +163,15 @@ def _phase_a_transactions(phase_a: dict) -> list[dict]:
 
 def _verify_transaction(
     case_id: str, docs: list[dict], phase_a: dict, transaction: dict,
+    run_id: str | None = None, fresh_reverification: bool = False,
 ) -> ToolContext:
     tx_id = transaction["tx_id"]
+    sequence = int(transaction.get("sequence") or 0)
     ctx = ToolContext(
         case_id, docs, current_tx_id=tx_id,
         phase_a_chain=phase_a.get("title_chain") or [],
+        run_id=run_id,
+        fresh_reverification=fresh_reverification,
     )
     try:
         run_tool_loop(
@@ -174,21 +180,83 @@ def _verify_transaction(
         )
     except AgentLLMError as e:
         logger.warning("verification pass failed for %s tx %s: %s", case_id, tx_id, e)
+    if (
+        ctx.stop_reason in {"model_call_budget_exhausted", "repeated_tool_call_limit"}
+        and not ctx.saved_results and not ctx.missing_requests
+    ):
+        existing = None if fresh_reverification else repo.get_transaction_result(case_id, tx_id)
+        if existing:
+            if normalize_status(existing.get("status")) == "PENDING_NOT_VERIFIED":
+                ctx.missing_requests.append({
+                    "tx_id": tx_id,
+                    "documents": existing.get("required_documents") or [],
+                })
+                ctx.stop_reason = "existing_pending_checkpoint_preserved"
+            else:
+                ctx.saved_results.append(existing)
+                ctx.stop_reason = "existing_result_preserved"
+            # The latest model/tool attempt may have failed validation, but the
+            # durable transaction result is still the authoritative outcome.
+            ctx.result_error = None
+        else:
+            # A bounded run that never produced a result is recorded honestly as
+            # inconclusive; it is never promoted to verified or silently discarded.
+            checkpoint_reason = "bounded_stop"
+            stop_summary = (
+                "The verification could not complete its evidence checks within this run; "
+                "no verification claim is made."
+            )
+            fallback = validate_transaction_verification({
+                "tx_id": tx_id,
+                "sequence": sequence,
+                "status": "INCONCLUSIVE",
+                "summary": stop_summary,
+                "findings": [],
+                "required_documents": [],
+                "reviewed_document_ids": [],
+                "transaction_metadata": {"_verification_checkpoint": checkpoint_reason},
+                "verified_at": _now(),
+                "schema_version": SCHEMA_VERSION,
+            }).model_dump()
+            try:
+                repo.save_transaction_result(case_id=case_id, tx_id=tx_id, verification=fallback)
+                ctx.saved_results.append(fallback)
+                ctx.stop_reason = "bounded_stop_inconclusive_saved"
+                ctx.result_error = None
+                logger.warning(
+                    "agent_safe_checkpoint_saved run_id=%s tx_id=%s reason=%s",
+                    run_id or ctx.run_id, tx_id, checkpoint_reason,
+                )
+            except Exception as e:
+                ctx.result_error = f"bounded verification and safe checkpoint persistence failed: {e}"
+                logger.exception("failed to persist bounded-stop checkpoint for %s/%s", case_id, tx_id)
     return ctx
 
 
 # ── run loop ──────────────────────────────────────────────────────────────────
 
 
-def run_agent(case_id: str) -> dict:
-    """Build Phase A when absent, then verify its transactions directly."""
-    return _run_with_lock(case_id)
+def run_agent(case_id: str, *, fresh_reverification: bool = False) -> dict:
+    """Verify transactions, optionally ignoring saved transaction results."""
+    return _run_with_lock(case_id, fresh_reverification=fresh_reverification)
+
+
+def reverify_transactions(case_id: str, tx_ids: set[str]) -> dict:
+    """Freshly re-verify only the explicitly selected transaction IDs."""
+    selected = {str(tx_id).strip() for tx_id in tx_ids if str(tx_id).strip()}
+    if not selected:
+        return {"case_id": case_id, "status": STATUS_ERROR, "reason": "no transaction IDs selected"}
+    return _run_with_lock(
+        case_id, fresh_reverification=True, transaction_ids=selected,
+    )
 
 
 def _run_with_lock(
     case_id: str,
     skip_tx_ids: set[str] | None = None,
     skip_ref=None,
+    fresh_reverification: bool = False,
+    transaction_ids: set[str] | None = None,
 ) -> dict:
     lock = None
     if PIPELINE_LOCK_ENABLED:
@@ -204,16 +272,32 @@ def _run_with_lock(
         if skip_ref is not None:
             return _skip_transaction_locked(case_id, skip_ref)
         memory = repo.get_agent_memory(case_id) or {}
-        if memory.get("skipped_tx_ids"):
+        # A normal fresh analysis clears old navigation skips so pending links
+        # can be retried. An explicit resume supplies the skip set to continue
+        # after those links; preserve it in memory and in the current run.
+        if memory.get("skipped_tx_ids") and skip_tx_ids is None and transaction_ids is None:
             memory["skipped_tx_ids"] = []
             repo.save_agent_memory(case_id=case_id, memory=memory)
+        if fresh_reverification:
+            options = {"transaction_ids": transaction_ids} if transaction_ids is not None else {}
+            return _run(case_id, skip_tx_ids=skip_tx_ids,
+                        fresh_reverification=True, **options)
+        if transaction_ids is not None:
+            return _run(case_id, skip_tx_ids=skip_tx_ids or set(), transaction_ids=transaction_ids)
         return _run(case_id, skip_tx_ids=skip_tx_ids or set())
     finally:
         if lock is not None:
             lock.release()
 
 
-def _run(case_id: str, skip_tx_ids: set[str] | None = None) -> dict:
+def _run(
+    case_id: str,
+    skip_tx_ids: set[str] | None = None,
+    fresh_reverification: bool = False,
+    transaction_ids: set[str] | None = None,
+) -> dict:
+    run_id = str(uuid4())
+    logger.info("agent_run_start run_id=%s case_id=%s", run_id, case_id)
     docs = repo.get_agent_documents(case_id)
     if not docs:
         repo.set_agent_status(case_id=case_id, status=STATUS_ERROR)
@@ -236,25 +320,35 @@ def _run(case_id: str, skip_tx_ids: set[str] | None = None) -> dict:
         if not transactions:
             raise AgentLLMError("saved Phase A result contains no transactions")
         skipped_this_run = skip_tx_ids or set()
+        if skip_tx_ids is not None:
+            memory["skipped_tx_ids"] = sorted(skipped_this_run)
 
         memory["stage"] = "verifying"
         memory["status"] = "IN_PROGRESS"
         _save_state(case_id, memory, STATUS_RUNNING)
 
-        terminal = {"VERIFIED_WITH_AVAILABLE_EVIDENCE", "ISSUES_IDENTIFIED", "INCONCLUSIVE"}
         for transaction in transactions:
             tx_id = transaction["tx_id"]
+            if transaction_ids is not None and tx_id not in transaction_ids:
+                continue
             if tx_id in skipped_this_run:
                 continue
             previous = repo.get_transaction_result(case_id, tx_id) or {}
-            if normalize_status(previous.get("status")) in terminal:
+            if not fresh_reverification and _is_terminal_transaction_result(previous, docs):
                 continue
 
             memory["current_tx_id"] = tx_id
             memory["stage"] = "verifying_transaction"
             memory["status"] = "IN_PROGRESS"
             _save_state(case_id, memory, STATUS_RUNNING)
-            ctx = _verify_transaction(case_id, docs, phase_a, transaction)
+            logger.info("agent_transaction_start run_id=%s tx_id=%s", run_id, tx_id)
+            if fresh_reverification:
+                ctx = _verify_transaction(
+                    case_id, docs, phase_a, transaction, run_id=run_id,
+                    fresh_reverification=True,
+                )
+            else:
+                ctx = _verify_transaction(case_id, docs, phase_a, transaction, run_id=run_id)
             result_error = getattr(ctx, "result_error", None)
             if result_error:
                 raise AgentLLMError(f"transaction result was rejected or not persisted: {result_error}")
@@ -262,6 +356,11 @@ def _run(case_id: str, skip_tx_ids: set[str] | None = None) -> dict:
                 raise AgentLLMError(f"verification ended without a persisted result for {tx_id}")
 
             saved = repo.get_transaction_result(case_id, tx_id) or {}
+            logger.info(
+                "agent_transaction_saved run_id=%s tx_id=%s status=%s stop_reason=%s model_calls=%s tool_calls=%s",
+                run_id, tx_id, saved.get("status"), getattr(ctx, "stop_reason", "unknown"),
+                getattr(ctx, "model_call_count", 0), getattr(ctx, "tool_call_counts", {}),
+            )
             if ctx.missing_requests or normalize_status(saved.get("status")) == "PENDING_NOT_VERIFIED":
                 missing = _collect_missing([{
                     "tx_id": tx_id,
@@ -298,7 +397,7 @@ def _run(case_id: str, skip_tx_ids: set[str] | None = None) -> dict:
             memory["last_reviewed_document_ids"] = saved.get("reviewed_document_ids") or sorted(getattr(ctx, "selected_document_ids", set()))
             memory["completed_tx_ids"] = [
                 item["tx_id"] for item in repo.list_transaction_results(case_id)
-                if normalize_status(item.get("status")) in terminal
+                if _is_terminal_transaction_result(item, docs)
             ]
             memory["pending_tx_ids"] = [
                 item["tx_id"] for item in repo.list_transaction_results(case_id)
@@ -313,7 +412,7 @@ def _run(case_id: str, skip_tx_ids: set[str] | None = None) -> dict:
         all_findings = repo.list_transaction_results(case_id)
         memory["completed_tx_ids"] = [
             item["tx_id"] for item in all_findings
-            if normalize_status(item.get("status")) in terminal
+            if _is_terminal_transaction_result(item, docs)
         ]
         memory["pending_tx_ids"] = [
             item["tx_id"] for item in all_findings
@@ -363,6 +462,25 @@ def _overall_transaction_status(transactions: list[dict]) -> str:
     if not statuses or statuses - {"VERIFIED_WITH_AVAILABLE_EVIDENCE"}:
         return "INCONCLUSIVE"
     return "VERIFIED_WITH_AVAILABLE_EVIDENCE"
+
+
+def _is_terminal_transaction_result(result: dict, documents: list[dict] | None = None) -> bool:
+    status = normalize_status(result.get("status"))
+    metadata = result.get("transaction_metadata") or {}
+    checkpoint = metadata.get("_verification_checkpoint")
+    if checkpoint in {"bounded_stop", "repeated_tool_call"}:
+        return False
+    if status == "INCONCLUSIVE" and documents is not None:
+        prior_manifest = metadata.get("_document_manifest")
+        current_manifest = {
+            str(document["doc_id"]): str(document.get("status") or "unknown")
+            for document in documents
+        }
+        if isinstance(prior_manifest, dict) and prior_manifest != current_manifest:
+            return False
+    return status in {
+        "VERIFIED_WITH_AVAILABLE_EVIDENCE", "ISSUES_IDENTIFIED", "INCONCLUSIVE",
+    }
 
 
 def _save_state(case_id: str, memory: dict, status: str) -> None:
@@ -432,7 +550,6 @@ def _skip_transaction_locked(case_id: str, tx_ref) -> dict:
     previous = repo.get_transaction_result(case_id, tx_id) or {}
     skipped_ids = set(memory.get("skipped_tx_ids") or [])
     skipped_ids.add(tx_id)
-    tx = next(item for item in chain["transactions"] if item["tx_id"] == tx_id)
     # Skipping is workflow state only. Never rewrite the verification result (or
     # its evidence/requirements) to record the user's navigation choice.
     if previous and normalize_status(previous.get("status")) != "PENDING_NOT_VERIFIED":

@@ -36,7 +36,7 @@ def test_legacy_transaction_result_is_normalized_without_losing_distinct_values(
     assert "Legacy summary A" in adapted["summary"]
     assert "Legacy summary B" in adapted["summary"]
     assert adapted["required_documents"][0]["document_type"] == "Deed"
-    assert adapted["schema_version"] == "2.1"
+    assert adapted["schema_version"] == "2.3"
     assert adapted["reviewed_document_ids"] == ["DOC_001"]
 
 

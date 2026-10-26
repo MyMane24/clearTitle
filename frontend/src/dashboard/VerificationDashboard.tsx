@@ -378,8 +378,10 @@ function ChainTimeline({ chain }: {
           const purchasers = normalizeParties(rawPurchasers);
           const execDate = e.execution_date || e.executed_date || e.registration_date;
           const regRef = e.registration_reference || e.registration_number;
-          const typeKey = String(e.transaction_type || '').toUpperCase();
-          const docType = e.document_type || e.transaction_type || 'Transaction';
+          const rawTransactionType = String(e.transaction_type || '');
+          const transactionType = rawTransactionType.replace(/\s*\(EC entry; instrument not supplied\)/i, '');
+          const typeKey = transactionType.toUpperCase();
+          const docType = e.document_type || transactionType || 'Transaction';
           const leftPartyLabel = typeKey === 'SALE' ? 'VENDORS (SELLER)'
             : typeKey === 'GIFT' ? 'DONORS'
             : typeKey === 'MORTGAGE' ? 'BORROWERS / MORTGAGORS'
@@ -418,8 +420,8 @@ function ChainTimeline({ chain }: {
                         <span className={`chain-entry-badge badge-${tagCls}`}>ENTRY #{entryIdx}</span>
                       )}
                     </p>
-                    {e.transaction_type && e.transaction_type !== docType && (
-                      <p className="chain-node-classification">Transaction class: {e.transaction_type}</p>
+                    {transactionType && transactionType !== docType && (
+                      <p className="chain-node-classification">Transaction class: {transactionType}</p>
                     )}
                   </div>
                   {execDate && (
@@ -658,6 +660,8 @@ export function VerificationDashboard() {
   const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [evidenceUploadBusy, setEvidenceUploadBusy] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [pipelineStartError, setPipelineStartError] = useState<string | null>(null);
   const [cases, setCases] = useState<CaseListItem[]>([]);
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -711,6 +715,49 @@ export function VerificationDashboard() {
       }
     }
   }, [results]);
+
+  // A verification run can be resumed outside this page (for example after
+  // requested evidence is processed). Refresh an open results view so a newly
+  // paused transaction and its upload/skip dialog do not remain invisible.
+  useEffect(() => {
+    if (view === 'upload' || !currentCaseId) return;
+    let cancelled = false;
+    const refreshResults = async () => {
+      if (document.visibilityState === 'hidden') return;
+      try {
+        const fresh = await API.getResults(currentCaseId);
+        if (cancelled) return;
+        setResults(previous => {
+          if (
+            previous?.agent?.status === fresh.agent?.status &&
+            previous?.agent?.updated_at === fresh.agent?.updated_at &&
+            previous?.agent?.paused_transaction === fresh.agent?.paused_transaction
+          ) return previous;
+          return fresh;
+        });
+        const freshAgent = fresh.agent;
+        const freshPausedRequirements = requirementsForPausedTransaction(
+          freshAgent?.transactions,
+          freshAgent?.paused_transaction,
+        );
+        if (
+          fresh.case.case_id === currentCaseId &&
+          COMPLETE_STATUSES.includes(String(fresh.case.status || '').toLowerCase()) &&
+          String(freshAgent?.status || '').toLowerCase() === 'paused' &&
+          freshAgent?.paused_transaction &&
+          freshPausedRequirements.length > 0
+        ) setView('results');
+      } catch { /* transient result reads are retried on the next refresh */ }
+    };
+    void refreshResults();
+    const timer = window.setInterval(() => void refreshResults(), 5000);
+    window.addEventListener('focus', refreshResults);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refreshResults);
+    };
+  }, [view, currentCaseId]);
 
   // Close profile menu on outside click / Escape
   useEffect(() => {
@@ -813,6 +860,7 @@ export function VerificationDashboard() {
   const addFilesToSlot = (slot: UploadSlot, incoming: File[]) => {
     const pdfs = incoming.filter(f => f.name.toLowerCase().endsWith(".pdf"));
     if (pdfs.length === 0) return;
+    setUploadError(null);
     setFiles(prev => {
       if (slot === 'additional') {
         const next = [...prev];
@@ -832,16 +880,26 @@ export function VerificationDashboard() {
 
   const removeFile = (index: number) => {
     setFiles(prev => prev.filter((_, i) => i !== index));
+    setUploadError(null);
   };
 
   const clearFiles = () => {
     setFiles([]);
     setCurrentCaseId(null);
+    setUploadError(null);
   };
 
   // ── Processing ──
   const startProcessing = async () => {
     if (slotCount('sale_deed') < 1 || slotCount('ec') < 1) return;
+    const maxSizeMb = health?.max_upload_size_mb ?? 50;
+    const oversizedFile = files.find(item => item.file.size > maxSizeMb * 1024 * 1024);
+    if (oversizedFile) {
+      setUploadError(`${oversizedFile.file.name} is larger than the ${maxSizeMb} MB upload limit. Reduce or split the PDF, then try again.`);
+      return;
+    }
+    setUploadError(null);
+    setPipelineStartError(null);
     setView('processing');
     updateProgress(5, "Uploading documents...");
 
@@ -852,7 +910,10 @@ export function VerificationDashboard() {
         files.map(f => f.slot),
       );
     } catch (e: any) {
-      addLog(`✗ Upload failed: ${e.message}`, "log-err");
+      const message = e?.message || 'The upload could not be completed.';
+      addLog(`✗ Upload failed: ${message}`, "log-err");
+      setUploadError(message);
+      setView('upload');
       return;
     }
 
@@ -866,7 +927,9 @@ export function VerificationDashboard() {
       await API.process(uploadResp.case_id);
       addLog("✓ Pipeline started — running in background", "log-ok");
     } catch (e: any) {
-      addLog(`✗ Pipeline start failed: ${e.message}`, "log-err");
+      const message = e?.message || 'The document pipeline could not be started.';
+      addLog(`✗ Pipeline start failed: ${message}`, "log-err");
+      setPipelineStartError(message);
       return;
     }
 
@@ -1027,6 +1090,17 @@ export function VerificationDashboard() {
     }
   };
 
+  const retryPipelineStart = async () => {
+    if (!currentCaseId) return;
+    setPipelineStartError(null);
+    try {
+      await API.process(currentCaseId);
+      startPolling(currentCaseId);
+    } catch (e: any) {
+      setPipelineStartError(e?.message || 'The document pipeline could not be started.');
+    }
+  };
+
   const waitForEvidenceResume = async (caseId: string, previousPausedTx: string, previousUpdatedAt: string | null) => {
     const startedAt = Date.now();
     while (Date.now() - startedAt < ANALYSIS_WAIT_MS) {
@@ -1164,6 +1238,10 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
 
   // Transform agent.transactions to UI format
   const rawTx = agent?.transactions || [];
+  const requiredDocumentCount = rawTx.reduce(
+    (count: number, transaction: any) => count + (Array.isArray(transaction.required_documents) ? transaction.required_documents.length : 0),
+    0,
+  );
   const agentTx = rawTx.map((t: any, i: number) => ({
     ...t,
     index: t.sequence ?? i + 1,
@@ -1180,6 +1258,12 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
   ).length;
   const pendingCount = Math.max(0, rawTx.length - verifiedCount - issueCount - skippedCount);
   const pausedRequirements = requirementsForPausedTransaction(rawTx, agent?.paused_transaction);
+  const pausedTransactionId = String(agent?.paused_transaction || '').trim();
+  const showPausedEvidenceDialog = Boolean(
+    results && currentCaseId && results.case.case_id === currentCaseId &&
+    String(agent?.status || '').toLowerCase() === 'paused' &&
+    pausedTransactionId && pausedRequirements.length > 0,
+  );
 
   // Title chain data from agent
   const titleChain = agent?.title_chain;
@@ -1208,6 +1292,32 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
 
   return (
     <div className="ctd-root">
+      {showPausedEvidenceDialog && (
+        <div role="presentation" style={{ position: 'fixed', inset: 0, zIndex: 20000, display: 'grid', placeItems: 'center', padding: 20, background: 'rgba(15, 23, 42, 0.56)' }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="evidence-upload-title" className="card" style={{ width: 'min(600px, 100%)', maxHeight: 'min(82vh, 740px)', overflowY: 'auto', border: '1px solid #f59e0b', background: '#fffbeb', boxShadow: '0 24px 80px rgba(0,0,0,.28)', padding: 24 }}>
+            <h2 id="evidence-upload-title" style={{ margin: '0 0 8px', color: '#78350f' }}>Documents needed for {pausedTransactionId}</h2>
+            <p style={{ margin: '0 0 16px', color: '#57534e', lineHeight: 1.55 }}>Verification is paused because the available evidence is not sufficient. Upload the outstanding records to continue, or skip this transaction and leave it unverified.</p>
+            <ul style={{ margin: '0 0 20px', padding: 0, listStyle: 'none', display: 'grid', gap: 10, maxHeight: '42vh', overflowY: 'auto' }}>
+              {pausedRequirements.map((item: any, index: number) => (
+                <li key={`${item.document_type}-${item.reason}-${index}`} style={{ padding: '12px 14px', border: '1px solid #fcd34d', borderRadius: 10, background: '#fff' }}>
+                  <strong style={{ display: 'block', marginBottom: 4, color: '#292524', lineHeight: 1.4 }}>{item.document_type || 'Required document'}</strong>
+                  {item.reason && <span style={{ display: 'block', color: '#57534e', fontSize: 13, lineHeight: 1.5 }}>{item.reason}</span>}
+                </li>
+              ))}
+            </ul>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <label className="btn btn-primary" style={{ cursor: evidenceUploadBusy ? 'wait' : 'pointer' }}>
+                <Upload size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+                {evidenceUploadBusy ? 'Working…' : 'Upload requested evidence'}
+                <input type="file" accept="application/pdf,.pdf" multiple disabled={evidenceUploadBusy} onChange={uploadRequestedEvidence} style={{ display: 'none' }} />
+              </label>
+              <button className="btn" disabled={evidenceUploadBusy} onClick={() => void skipPausedTransaction()}>
+                Skip this transaction
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {/* Main Top Bar */}
       <header className={`header ${auth ? '' : 'header-guest'}`}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -1331,6 +1441,12 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                 <p className="upload-main-sub">We extract, cross-check and verify against Kaveri records. Nothing is shared.</p>
               </div>
 
+              {uploadError && (
+                <div role="alert" style={{ margin: '0 0 18px', padding: '12px 14px', border: '1px solid #fecaca', borderRadius: 10, background: '#fef2f2', color: '#991b1b', lineHeight: 1.5 }}>
+                  <strong>Upload did not start.</strong> {uploadError}
+                </div>
+              )}
+
               <div className="upload-slots-grid">
               {UPLOAD_SLOTS.map(slotCfg => {
                 const slotFiles = files.filter(f => f.slot === slotCfg.id);
@@ -1405,38 +1521,18 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
 
           {view === 'processing' && (
             <div className="card plain">
+              {pipelineStartError && (
+                <div role="alert" style={{ marginBottom: 16, padding: '12px 14px', border: '1px solid #fecaca', borderRadius: 10, background: '#fef2f2', color: '#991b1b', lineHeight: 1.5 }}>
+                  <strong>Processing has not started.</strong> {pipelineStartError}{' '}
+                  <button className="btn btn-primary" onClick={() => void retryPipelineStart()}>Try starting again</button>
+                </div>
+              )}
               <AIPipeline statusData={statusData || { status: 'processing', files: files.map((f, i) => ({ doc_id: `DOC_${String(i+1).padStart(3,'0')}`, original_name: f.file.name, status: 'uploaded', document_type: '' })) }} />
             </div>
           )}
 
           {view === 'results' && results && (
             <div className="report-main-wrap">
-              {results.agent?.status === 'paused' && results.agent.paused_transaction && pausedRequirements.length > 0 && (
-                <div role="presentation" style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'grid', placeItems: 'center', padding: 20, background: 'rgba(15, 23, 42, 0.56)' }}>
-                  <section role="dialog" aria-modal="true" aria-labelledby="evidence-upload-title" className="card" style={{ width: 'min(600px, 100%)', maxHeight: 'min(82vh, 740px)', overflowY: 'auto', border: '1px solid #f59e0b', background: '#fffbeb', boxShadow: '0 24px 80px rgba(0,0,0,.28)', padding: 24 }}>
-                    <h2 id="evidence-upload-title" style={{ margin: '0 0 8px', color: '#78350f' }}>Documents needed for {results.agent.paused_transaction}</h2>
-                    <p style={{ margin: '0 0 16px', color: '#57534e', lineHeight: 1.55 }}>Verification is paused because the available evidence is not sufficient. Upload the outstanding records to continue, or skip this transaction and leave it unverified.</p>
-                    <ul style={{ margin: '0 0 20px', padding: 0, listStyle: 'none', display: 'grid', gap: 10, maxHeight: '42vh', overflowY: 'auto' }}>
-                      {pausedRequirements.map((item: any, index: number) => (
-                        <li key={`${item.document_type}-${item.reason}-${index}`} style={{ padding: '12px 14px', border: '1px solid #fcd34d', borderRadius: 10, background: '#fff' }}>
-                          <strong style={{ display: 'block', marginBottom: 4, color: '#292524', lineHeight: 1.4 }}>{item.document_type || 'Required document'}</strong>
-                          {item.reason && <span style={{ display: 'block', color: '#57534e', fontSize: 13, lineHeight: 1.5 }}>{item.reason}</span>}
-                        </li>
-                      ))}
-                    </ul>
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                      <label className="btn btn-primary" style={{ cursor: evidenceUploadBusy ? 'wait' : 'pointer' }}>
-                        <Upload size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-                        {evidenceUploadBusy ? 'Working…' : 'Upload requested evidence'}
-                        <input type="file" accept="application/pdf,.pdf" multiple disabled={evidenceUploadBusy} onChange={uploadRequestedEvidence} style={{ display: 'none' }} />
-                      </label>
-                      <button className="btn" disabled={evidenceUploadBusy} onClick={() => void skipPausedTransaction()}>
-                        Skip this transaction
-                      </button>
-                    </div>
-                  </section>
-                </div>
-              )}
               {!auth ? (
                 <GuestReportPreview
                   results={results}
@@ -1608,6 +1704,38 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
 
                   {/* Re-run Verification + Download Report Controls */}
                   <div className="pl-actions-row" style={{ marginTop: 24, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
+                    {requiredDocumentCount > 0 ? (
+                    <button
+                      className="btn btn-secondary"
+                      onClick={async () => {
+                        const cid = currentCaseId || caseInfo?.case_id;
+                        if (!cid) return;
+                        try {
+                          const headers: Record<string, string> = {};
+                          const token = getToken();
+                          if (token) headers['Authorization'] = `Bearer ${token}`;
+                          const response = await fetch(`/api/results/${cid}/required-documents/pdf`, { headers });
+                          if (!response.ok) {
+                            const body = await response.json().catch(() => null);
+                            throw new Error(body?.detail || `Request failed (${response.status})`);
+                          }
+                          const url = URL.createObjectURL(await response.blob());
+                          const link = document.createElement('a');
+                          link.href = url;
+                          link.download = 'required-documents-checklist.pdf';
+                          document.body.appendChild(link);
+                          link.click();
+                          link.remove();
+                          URL.revokeObjectURL(url);
+                        } catch (error: any) {
+                          alert('Could not generate required-documents checklist. ' + (error?.message || ''));
+                        }
+                      }}
+                    >
+                      <Download size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+                      Download Required Documents
+                    </button>
+                    ) : null}
                     {agent?.status !== "error" && agent?.transactions?.length ? (
                     <button
                       className="btn btn-secondary"

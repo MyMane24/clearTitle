@@ -46,7 +46,12 @@ from backend.integrations.redis.state_store import (
 from backend.integrations.redis.state_store import (
     init_case as redis_init_case,
 )
-from backend.integrations.storage.file_utils import delete_case_dir, get_case_dir, save_upload
+from backend.integrations.storage.file_utils import (
+    MAX_UPLOAD_SIZE_BYTES,
+    delete_case_dir,
+    get_case_dir,
+    save_upload,
+)
 from backend.logger import get_logger
 from backend.services.auth import get_current_user, get_optional_user
 from backend.services.results import classification_action_message
@@ -150,6 +155,19 @@ async def upload_documents(
 ):
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
+
+    oversized = [
+        f.filename or "A selected PDF"
+        for f in files
+        if getattr(f, "size", None) is not None and f.size > MAX_UPLOAD_SIZE_BYTES
+    ]
+    if oversized:
+        names = ", ".join(oversized)
+        limit_mb = MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)
+        raise HTTPException(
+            status_code=413,
+            detail=f"{names} exceed the {limit_mb}MB per-file upload limit. Reduce or split the PDF and retry.",
+        )
 
     case_id = str(uuid.uuid4())[:8].upper()
     case_dir = get_case_dir(case_id)

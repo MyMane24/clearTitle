@@ -22,7 +22,7 @@ class TestTitleChainPhaseATools(unittest.TestCase):
     def test_document_manifest_includes_summary_and_processing_metadata(self):
         result = dispatch(self.ctx, "list_documents", {})
         self.assertEqual(result, {
-            "documents": [{"doc_id": "DOC_001", "filename": "private-filename.pdf", "document_type": "SALE_DEED", "status": "unknown", "summary": "Latest sale deed for Flat G-04"}]
+            "documents": [{"doc_id": "DOC_001", "filename": "private-filename.pdf", "document_type": "SALE_DEED", "status": "unknown", "summary": "Latest sale deed for Flat G-04"}],
         })
 
     def test_phase_a_instruction_always_embeds_title_chain_skill_and_all_summaries(self):

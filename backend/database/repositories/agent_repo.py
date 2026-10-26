@@ -286,8 +286,8 @@ def get_agent_result(case_id: str) -> dict | None:
         return None
     property_identity = _load(row[0]) or {}
     title_chain_graph = row[1] or ""
-    detailed_chain = _load(row[2])
-    legacy_chain = _load(row[3])
+    detailed_chain = _load(row[2]) if len(row) > 2 else None
+    legacy_chain = _load(row[3]) if len(row) > 3 else None
     if not detailed_chain and isinstance(legacy_chain, dict):
         # Older title-chain records stored the reconstructed chain directly under
         # `transactions`; adapt it in memory without rewriting or losing the row.

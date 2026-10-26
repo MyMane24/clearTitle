@@ -6,10 +6,12 @@ that any document is genuine, valid, complete, or conclusive.
 
 ## Buyer-side objective
 
-Answer whether the available documentary evidence supports the proposed seller's
-identity as the current title holder and interest in the exact property being considered, traced backward through every
-supported transfer to the earliest available mother-title/root. Test for breaks,
-overlapping or unexplained interests, authority/share problems, property-identity
+Support buyer-side due diligence by testing whether the active transaction and its
+property-specific interest are supported within the available documentary chain.
+The application has already reconstructed that chain and supplies one transaction
+at a time; do not reconstruct it again or produce a case-wide report. Test relevant
+ the active link without moving findings across transactions. Test
+for breaks, overlapping or unexplained interests, authority/share problems, property-identity
 drift, encumbrances, unpaid dues, and development/approval issues that could affect
 a purchaser. Do not reduce the work to “a deed exists” or “names match.” State the
 scope and dates of the records reviewed and the unresolved checks a buyer should
@@ -17,12 +19,58 @@ complete before purchase.
 
 ## Transaction verification: strategy by transaction type
 
-For each transaction selected by the orchestrator, use the transaction-verification
-prompt, this skill, saved document summaries for navigation, and the relevant database-stored
-`merged_ocr_text` as evidence. Structured extraction is not evidence. Examine the
-transaction in the context of the adjacent chain links and target property. Record
-what the evidence does and does not establish; never infer legal validity merely
-from registration, mutation, possession, or absence of an EC entry.
+For each active transaction, execute these steps in order:
+
+1. Read its complete supplied title-chain object (ID/sequence, type, parties,
+   dates, property/schedule, extent, consideration, registration details, related
+   events, and all other available fields). These are claims to verify, not proof.
+2. Use this and the relevant transaction-specific guidance to determine and record
+   primary and supplementary document requirements; distinguish evidence of the
+   transaction itself from evidence of related facts.
+3. Search summaries through `list_documents`; it provides all case summaries for
+   model-driven comparison. Compare them against the recorded evidence requirements
+   and the active transaction's parties, dates, registration references, and property
+   identifiers. Requirement-match hints are approximate discovery aids, not an
+   exhaustive allow-list. You decide which documents actually match the required
+   evidence; do not retrieve unrelated uploads merely because they are listed.
+4. A keyword match or filename alone is not sufficient; decide whether each
+   document's summary actually identifies needed evidence before selecting it.
+   Structured extraction is not documentary evidence.
+5. Select only matching required IDs and retrieve all chunks of each selected document's
+    database-stored `merged_ocr_text`, following continuation/pagination parameters
+    until the complete stored OCR has been read. Request `max_chars=200000` on the
+    first OCR call; if `has_more` is true, continue at `next_start_char`.
+6. Verify the transaction against full OCR and relevant supporting evidence,
+   including full instrument contents and material recitals, schedules, conditions,
+   exceptions, restrictions, corrections, cancellations, endorsements, clauses,
+   and internal inconsistencies.
+7. Produce one schema-valid result for the active transaction.
+8. Persist under its existing stable ID and update compact workflow memory through
+   the application's existing mechanisms.
+9. Request evidence only after the database search and candidate inspection: if a
+   matching uploaded document exists, inspect its complete OCR first. Request a
+   document as missing only if no matching upload exists; if an inspected candidate
+   is insufficient, request only what remains outstanding and explain the limitation.
+   Keep each requirement attached to this active transaction, then use the existing
+   pause/skip/resume workflow.
+
+Never verify using summaries alone, use structured extraction JSON as a substitute
+for documentary evidence, or claim a tool operation succeeded unless its output
+confirms success. Examine adjacent transactions or related records only as needed
+to understand the active transaction; keep its result limited to its own evidence.
+Never infer legal validity merely from registration, mutation, or possession. The
+EC is a Phase A chain-discovery source, not Phase B evidence; transaction
+verification must use the underlying instrument and relevant supporting records.
+
+Never retrieve or use another transaction's saved verification result. A source
+document may describe an earlier event; examine that source itself and determine
+its relevance to this active transaction. Do not create a finding or block this
+transaction solely because another transaction is unresolved. Keep neutral facts
+separate from adverse findings. Phase A may carry encumbrance facts forward as
+related events. In Phase B, do not cite or describe those facts as EC entries; verify
+the charge from its creation instrument and release/continuation evidence. Do not
+assume a mortgage remains outstanding or assert legal effect without supporting
+evidence.
 
 The chain is property-specific but the property can evolve. Track land, portions,
 plots, projects, buildings, flats, and undivided shares as distinct descriptions
@@ -31,14 +79,19 @@ to C does not by itself prove that a later flat conveyed by C is the same legall
 traceable interest in the original land. Look for the documentary bridge and
 surface every unsupported step.
 
-First read the transaction and this skill, then decide and record the
-transaction-specific evidence requirements. Only after that, inspect the short
-document summaries, select likely relevant document IDs, and retrieve full OCR for
-those selected documents. Never scan all case OCR to discover candidates. Check
-uploaded filenames and document summaries before requesting missing evidence. Do
-not request a document already supplied under a different name; select and inspect
-it. Do not demand certified copies when an uploaded copy can be examined; mention
-certification only as a follow-up limitation when it matters.
+Never scan all case OCR to discover candidates. Search the uploaded-document list
+and summaries/metadata for each requirement; a listed requirement is not proof that
+it is absent. Check alternate filenames before requesting missing evidence. If a
+matching summary exists, select that candidate and inspect its complete OCR before
+deciding it is missing or insufficient. Do not request a document already supplied
+under a different name; select and inspect it. Do not demand
+certified copies when an uploaded copy can be examined; mention certification only
+as a follow-up limitation when it matters.
+
+For each candidate, use available metadata and summary to confirm it is plausibly
+relevant, then use OCR to establish what the document actually says. If metadata
+retrieval, OCR retrieval, or persistence fails, treat the tool error as a failure;
+do not claim the operation succeeded or infer document contents from its summary.
 
 ### Sale, conveyance, gift, release, or other transfer
 
@@ -51,6 +104,26 @@ certification only as a follow-up limitation when it matters.
   and the transferee's acquisition. Treat consideration and payment terms as
   documentary facts, not proof by themselves of title.
 - Distinguish an inspected instrument from details only recited in another deed.
+- Compare the transaction's stated registration number, registration/execution
+  dates, registering office, and available endorsements against the instrument.
+  A registration number mentioned in a recital is not independent proof of the
+  referenced instrument's registration. State registration as unverified where the
+  available record does not establish it; do not imply a registrar/authority search.
+- Apply these explicit outcomes:
+  1. **Instrument found:** report registration particulars actually recorded in
+     the examined instrument and whether they match the title-chain transaction.
+  2. **Registration mentioned elsewhere:** report only what that inspected source
+     states; the referenced instrument/registration remains unverified if it was not
+     examined.
+  3. **Instrument found, registration uncertain:** state exactly which registration
+     status or particular the supplied evidence does not establish.
+  4. **Instrument missing:** request that specific instrument and set
+     `PENDING_NOT_VERIFIED`; absence is not evidence of invalidity.
+  5. **Conflicting particulars:** record evidence-backed conflicts in numbers,
+     dates, offices, parties, or other material registration details, citing each
+     relevant source.
+- Do not claim an authority search unless an available tool retrieves authoritative
+  registration evidence. Registration alone does not establish title or validity.
 - Inspect the deed, transferor-interest/authority evidence, parcel/share match,
   and only transaction-specific material events or encumbrances.
 - Test the chain link in both directions: whether the transferor's supported
@@ -104,22 +177,26 @@ certification only as a follow-up limitation when it matters.
   required in every case. A conversion order, plan approval, RERA record, khata,
   completion/occupancy record, or apartment declaration is not itself proof of
   ownership or of every other approval. Flag a parent-land/project/unit mapping
-  gap even if the latest flat sale deed is registered.
+   gap even if the latest flat sale deed is registered.
+   If a firm or other entity is named as transferor/developer, inspect available
+   partnership/incorporation and authority records when they bear on the entity's
+   existence, partners/signatories, or capacity to execute the active instrument.
+   A deed naming an entity does not by itself establish the signer's authority.
 
 ### Mortgage, charge, or other encumbrance
 
 - Treat it as an encumbrance, not an ownership-changing transaction.
 - Identify borrower, lender, secured property, instrument/deposit date and
-  registration/EC references, and any evidence of release or continuation.
+  registration reference from the charge instrument, and any evidence of release
+  or continuation.
 - Record date or schedule discrepancies and the effect on the title-chain
   assessment. Do not describe an encumbrance as cleared without release evidence.
 - Check the relevant creation instrument, property match, and release or
   continuation evidence where applicable.
-- For the current/proposed seller, examine the available EC and other supplied
-  lender/release/no-dues records over their stated dates and property scope. Report
-  each live, unlinked, or inadequately discharged charge as a buyer risk. Never
-  infer that no loan or lien exists solely because an EC is blank, incomplete, or
-  covers a limited period.
+- The EC is not supplied to Phase B. For the current/proposed seller, examine the
+  underlying charge instrument and supplied lender/release/no-dues records. Report
+  any charge whose creation, property match, or discharge remains unsupported as
+  unresolved; do not infer its legal status from chain-discovery data alone.
 
 ### Mutation, conversion, permission, tax, or other administrative record
 
@@ -147,21 +224,76 @@ certification only as a follow-up limitation when it matters.
 - Distinguish confirming what a recital says from inspecting the underlying
   original/certified record. Request that record if essential and absent.
 
+### Full instrument and evidence quality
+
+- Read all OCR chunks for each relevant selected instrument before making a
+  completed verification or material discrepancy finding. Inspect beyond fields
+  copied into the title chain: recitals, full schedule, conditions, exceptions,
+  restrictions, corrections, cancellations, endorsements, and other clauses that
+  could affect this transaction.
+- Identify an additional material clause only when it is present in the reviewed
+  text; explain its relevance without turning ordinary legal wording into a defect.
+- If OCR is truncated, contradictory, illegible, or ambiguous, distinguish that
+  insufficient evidence from a missing document and request a clearer/complete
+  source when necessary. Cite observed document ID and page/section locator where
+  the OCR or retrieval tool provides one. Never invent page references.
+
 ## Completion and resume discipline
 
-- Save a short result: one-sentence conclusion, 2–5 concise factual finding
-  points, sources named by their uploaded PDF filenames, and only genuinely
-  missing evidence. Do not expose internal IDs, rule IDs, OCR excerpts, or long
-  chain-of-thought in the user-facing result.
+- Save one concise, schema-valid result for the active stable transaction ID:
+  summary of what its own examined evidence establishes, material transaction-
+  specific findings with observed document IDs/page references, reviewed document
+  IDs, and only actionable outstanding requirements. Do not replace canonical
+  evidence references with filenames, or include rule IDs, long OCR excerpts, or
+  chain-of-thought.
 
 - Verify one transaction at a time. Its saved structured result is the completion
   record; do not maintain a duplicate checklist.
+- Use compact earlier-transaction checkpoints returned by the application to avoid
+  re-auditing completed links. A checkpoint is not source evidence. Do not copy an
+  earlier finding or its detailed discrepancy analysis into this transaction. When
+  a prior result materially limits the active link, state the dependency once and
+  reference its transaction ID; retrieve OCR only for a genuine dependency, new
+  evidence, or explicit re-review.
 - If essential evidence is missing, save a pending-not-verified result and the
   exact missing-document request against that transaction. Keep it resumable.
+- Do not ask the user to upload a matching document that is already in the database.
+  If an uploaded candidate is marked skipped/unprocessed, distinguish that from an
+  absent document and report that the existing upload could not be examined; do not
+  silently request a duplicate.
+- Distinguish an absent instrument from an uploaded but insufficient instrument.
+  Missing or insufficient evidence is not itself evidence of a defect. Follow the
+  existing pause/skip workflow; after upload, reload and re-examine the same
+  transaction, then upsert its existing result rather than assuming upload verifies
+  it.
 - If the user skips a request, leave that transaction pending/not verified and
   continue with other independent transactions. A later upload should resume the
   affected transaction unless new evidence materially changes another result.
+- Do not duplicate an earlier transaction's finding in a later transaction result.
+  Record only what the later transaction's own instrument establishes; where an
+  upstream dependency limits it, state that limitation in transaction-specific
+  terms without copying the prior finding.
+- Every `required_documents` entry belongs to the active transaction ID. If the
+  evidence is needed to verify a different chain transaction, leave it for that
+  transaction's own result instead of attaching it here.
 - Distinguish `VERIFIED_WITH_AVAILABLE_EVIDENCE`, `ISSUES_IDENTIFIED`,
   `INCONCLUSIVE`, and `PENDING_NOT_VERIFIED` according to the evidence. Never
   label a transaction fraudulent, forged, invalid, or title
   clear without adequate basis.
+- Do not call two registration numbers a conflict unless both records purport to
+  identify the same instrument. A declaration and a separate conveyance normally
+  have separate registration numbers. Establish the instrument relationship first;
+  report OCR ambiguity as uncertainty, not as a confirmed source-document conflict.
+- Keep the result readable: lead with the active transaction's conclusion; include
+  only material facts, precise evidence references, and actionable outstanding
+  requirements. Target 100–180 words for the ordinary narrative (summary and
+  findings), as guidance rather than a hard limit. Prefer a 1–2 sentence summary,
+  up to three findings by default, and 1–3 sentences per finding. Add
+  findings only for distinct material issues; do not omit material findings to hit
+  the target. The summary is the conclusion, findings are the only detailed issue
+  explanations, and required-document entries state the complete, specific document
+  or record needed with a brief rationale. Preserve identifying dates, parties,
+  registration references, and property identifiers needed to distinguish it.
+  Required-document text is excluded from the narrative word budget and must never
+  be abbreviated or truncated. Do not repeat a finding in the action section or
+  repeat full deed recitals/another transaction's findings.

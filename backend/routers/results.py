@@ -49,6 +49,25 @@ async def get_report_pdf(case_id: str, user: dict | None = Depends(get_optional_
     )
 
 
+@router.get("/results/{case_id}/required-documents/pdf")
+async def get_required_documents_pdf(case_id: str, user: dict | None = Depends(get_optional_user)):
+    """Download the saved transaction-specific outstanding-document checklist."""
+    _enforce_access(case_id, user)
+    try:
+        from backend.services.report import render_required_documents_pdf
+        pdf = render_required_documents_pdf(case_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Case not found")
+    except Exception as e:
+        logger.error("Required-documents PDF generation failed for %s: %s", case_id, e)
+        raise HTTPException(status_code=500, detail="Could not generate required-documents checklist")
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="required-documents-checklist.pdf"'},
+    )
+
+
 @router.post("/results/{case_id}/analyze")
 async def trigger_analysis(case_id: str, user: dict | None = Depends(get_optional_user)):
     """(Re)run or resume the ClearTitle verification agent for a case."""
