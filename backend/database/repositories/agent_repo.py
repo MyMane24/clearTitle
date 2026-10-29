@@ -22,7 +22,7 @@ def _load(value):
         return None
 
 
-# ── documents ─────────────────────────────────────────────────────────────────
+# -- documents -----------------------------------------------------------------
 
 
 def get_agent_documents(case_id: str) -> list[dict]:
@@ -96,10 +96,10 @@ def save_phase_a_result(*, case_id: str, result: dict) -> None:
         conn.commit()
 
 
-# ── case columns (agent_status / agent_memory / agent_result) ─────────────────
+# -- case columns (agent_status / agent_memory / agent_result) -----------------
 
 
-# ── case_memory: concise human-readable text, with parseable checkpoint labels ─
+# -- case_memory: concise human-readable text, with parseable checkpoint labels -
 
 
 def save_agent_memory(*, case_id: str, memory: dict) -> None:
@@ -108,9 +108,16 @@ def save_agent_memory(*, case_id: str, memory: dict) -> None:
         "current_tx_id": memory.get("current_tx_id") or memory.get("paused_transaction"),
         "current_stage": memory.get("current_stage") or memory.get("stage"),
         "status": memory.get("status") or memory.get("last_transaction_status"),
+        "paused_transaction": memory.get("paused_transaction") or (
+            memory.get("current_tx_id")
+            if (memory.get("current_stage") or memory.get("stage")) == "paused"
+            and (memory.get("status") or memory.get("last_transaction_status")) == "PENDING_NOT_VERIFIED"
+            else None
+        ),
         "result_ref": memory.get("result_ref") or memory.get("current_tx_id") or memory.get("paused_transaction"),
         "next_action": memory.get("next_action"),
         "updated_at": memory.get("updated_at"),
+        "evidence_retry_tx_id": memory.get("evidence_retry_tx_id"),
     }
     checkpoint = {key: value for key, value in checkpoint.items() if value is not None}
     skipped_tx_ids = sorted(set(memory.get("skipped_tx_ids") or []))
@@ -141,6 +148,12 @@ def get_agent_memory(case_id: str) -> dict | None:
     try:
         saved = json.loads(text)
         if isinstance(saved, dict) and saved.get("case_id"):
+            if (
+                not saved.get("paused_transaction")
+                and saved.get("current_stage") == "paused"
+                and saved.get("status") == "PENDING_NOT_VERIFIED"
+            ):
+                saved["paused_transaction"] = saved.get("current_tx_id")
             return saved
     except (TypeError, ValueError):
         pass
@@ -174,7 +187,7 @@ def get_agent_memory(case_id: str) -> dict | None:
     return result
 
 
-# ── authoritative title chain (title_chains table) ────────────────────────────
+# -- authoritative title chain (title_chains table) ----------------------------
 
 
 def save_title_chain(*, case_id: str, chain: dict, status: str = "complete") -> None:
@@ -199,7 +212,7 @@ def get_title_chain(case_id: str) -> dict | None:
     return _load(row[0]) if row else None
 
 
-# ── case_results: one row per case; transaction results append/update in JSON ──
+# -- case_results: one row per case; transaction results append/update in JSON --
 
 
 def _case_result(case_id: str) -> list[dict]:
@@ -252,7 +265,7 @@ def list_transaction_results(case_id: str) -> list[dict]:
     return _case_result(case_id)
 
 
-# ── agent status + final result ───────────────────────────────────────────────
+# -- agent status + final result -----------------------------------------------
 
 
 def set_agent_status(*, case_id: str, status: str) -> None:

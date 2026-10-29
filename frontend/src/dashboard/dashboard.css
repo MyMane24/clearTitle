@@ -39,7 +39,7 @@
     font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
   }
 
- /* ── Header ── */
+ /* -- Header -- */
   .ctd-root .header{
     background: #ffffff;
     color: #292524;
@@ -90,10 +90,10 @@
   .ctd-root .dot{ width: 8px; height: 8px; border-radius: 50%; background: #86efac; }
   .ctd-root .dot.red{ background: #fca5a5; }
 
-  /* ── Layout ── */
+  /* -- Layout -- */
   .ctd-root .main{ max-width: 1100px; margin: 28px auto; padding: 0 20px; }
 
-  /* ── Step bar ── */
+  /* -- Step bar -- */
   .ctd-root .steps{
     display: flex;
     background: var(--white);
@@ -117,7 +117,7 @@
   .ctd-root .step.active{ background: var(--blue);   color: var(--white); }
   .ctd-root .step.done{ background: var(--green);  color: var(--white); }
 
-  /* ── Cards ── */
+  /* -- Cards -- */
   .ctd-root .card{
     background: var(--white);
     border: 1px solid var(--border);
@@ -146,7 +146,7 @@
     gap: 8px;
   }
 
-  /* ── Upload zone ── */
+  /* -- Upload zone -- */
   .ctd-root .upload-zone{
     border: 2px dashed var(--border);
     border-radius: 10px;
@@ -165,7 +165,7 @@
   .ctd-root .upload-sub{ font-size: 13px; color: var(--gray); }
   .ctd-root #file-input{ display: none; }
 
-  /* ── Upload slots ── */
+  /* -- Upload slots -- */
   .ctd-root .upload-slot{
     border: 1px solid var(--border);
     border-radius: 10px;
@@ -205,7 +205,7 @@
   .ctd-root .upload-slot input[type="file"]{ display: none; }
   .ctd-root .upload-slot .file-list{ margin-top: 10px; }
 
-  /* ── File list ── */
+  /* -- File list -- */
   .ctd-root .file-list{ margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
   .ctd-root .file-item{
     display: flex;
@@ -231,7 +231,7 @@
   }
   .ctd-root .file-remove:hover{ background: var(--lred); }
 
-  /* ── Buttons ── */
+  /* -- Buttons -- */
   .ctd-root .btn{
     padding: 11px 24px;
     border-radius: 8px;
@@ -250,7 +250,7 @@
   .ctd-root .btn-danger:hover{ background: #b91c1c; }
   .ctd-root .btn-row{ display: flex; gap: 10px; margin-top: 16px; }
 
-  /* ── Progress ── */
+  /* -- Progress -- */
   .ctd-root .progress-bar-wrap{
     background: var(--lgray);
     border-radius: 999px;
@@ -266,7 +266,7 @@
   }
   .ctd-root .progress-label{ font-size: 12px; color: var(--gray); margin-bottom: 4px; }
 
-  /* ── Log box ── */
+  /* -- Log box -- */
   .ctd-root .log-box{
     background: #1c1917;
     color: #86efac;
@@ -284,7 +284,7 @@
   .ctd-root .log-box .log-ok{ color: #86efac; }
   .ctd-root .log-box .log-info{ color: #fdba74; }
 
-  /* ── Results summary ── */
+  /* -- Results summary -- */
   
   /* -- AI Pipeline -- */
   @keyframes pulse-dot{ 0%,80%,100%{ opacity:.3; transform:scale(.8); } 40%{ opacity:1; transform:scale(1.1); } }
@@ -318,6 +318,7 @@
   }
   .ctd-root .doc-pipeline-card.done{ border-color: #059669; }
   .ctd-root .doc-pipeline-card.failed{ border-color: #dc2626; }
+  .ctd-root .doc-pipeline-error{ color: #b91c1c; font-size: 12px; line-height: 1.45; margin-top: 6px; overflow-wrap: anywhere; }
 
   .ctd-root .doc-pipeline-top{
     display: flex; align-items: center; justify-content: space-between;
@@ -454,7 +455,7 @@
     box-shadow: 0 1px 2px rgba(0,0,0,0.05);
   }
 
-  /* ── JSON / text viewers ── */
+  /* -- JSON / text viewers -- */
   .ctd-root .json-viewer{
     background: #1c1917;
     color: #e2e8f0;
@@ -476,7 +477,7 @@
   .ctd-root .jn{ color: #fbbf24; }  /* number */
   .ctd-root .jb{ color: #f472b6; }  /* bool/null */
 
-  /* ── Doc info bar ── */
+  /* -- Doc info bar -- */
   .ctd-root .doc-info-bar{
     display: flex;
     gap: 10px;
@@ -490,7 +491,7 @@
   }
   .ctd-root .doc-info-bar strong{ color: var(--navy); }
 
-  /* ── Badges ── */
+  /* -- Badges -- */
   .ctd-root .badge{
     display: inline-block;
     padding: 2px 10px;
@@ -503,7 +504,7 @@
   .ctd-root .badge-blue{ background: var(--lblue);  color: var(--blue);  }
   .ctd-root .badge-amber{ background: var(--lamber); color: var(--amber); }
 
-  /* ── Error item ── */
+  /* -- Error item -- */
   .ctd-root .error-item{
     background: var(--lred);
     border: 1px solid #fca5a5;
@@ -514,7 +515,7 @@
     margin-bottom: 8px;
   }
 
-  /* ── Hidden ── */
+  /* -- Hidden -- */
   .ctd-root .hidden{ display: none !important; }
 
   /* ═══════════════════════════════════════════════════════════════════════
@@ -675,7 +676,7 @@
     color: var(--gray);
   }
 
-  /* ── History detail tabs ── */
+  /* -- History detail tabs -- */
   .ctd-root .history-tabs{
     display: flex;
     gap: 24px;
@@ -702,7 +703,7 @@
     border-bottom: 2px solid var(--blue);
   }
 
-  /* ── OCR text viewer ── */
+  /* -- OCR text viewer -- */
   .ctd-root .ocr-viewer{
     background: #1c1917;
     color: #86efac;
@@ -717,7 +718,7 @@
     word-break: break-word;
   }
 
-  /* ── File tree ── */
+  /* -- File tree -- */
   .ctd-root .file-tree{ font-family: monospace; font-size: 12px; }
   .ctd-root .file-tree-item{
     padding: 4px 8px;
@@ -732,7 +733,7 @@
   .ctd-root .file-tree-item .size{ color: var(--gray); font-size: 10px; margin-left: auto; }
   .ctd-root .file-tree-nested{ padding-left: 20px; }
 
-  /* ── Right panel ── *//* ── Sticky Navigation Sub-Tabs ── */
+  /* -- Right panel -- *//* -- Sticky Navigation Sub-Tabs -- */
 .ctd-root .vr-nav-tabs-bar{
   display: flex;
   align-items: center;
@@ -796,7 +797,7 @@
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
-/* ── Global Search and Filter Bar ── */
+/* -- Global Search and Filter Bar -- */
 .ctd-root .vr-filter-bar{
   display: flex;
   gap: 12px;
@@ -826,7 +827,7 @@
   cursor: pointer;
 }
 
-/* ── Tab Panes ── */
+/* -- Tab Panes -- */
 .ctd-root .vr-tab-pane{
   display: none;
 }
@@ -834,7 +835,7 @@
   display: block;
 }
 
-/* ── Overview Layout ── */
+/* -- Overview Layout -- */
 .ctd-root .vr-overview-grid{
   display: grid;
   grid-template-columns: 1.5fr 1fr;
@@ -876,7 +877,7 @@
   color: var(--gray);
 }
 
-/* ── Side-by-Side Evidence Differences ── */
+/* -- Side-by-Side Evidence Differences -- */
 .ctd-root .vr-evidence-split{
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -911,7 +912,7 @@
   font-weight: bold;
 }
 
-/* ── Split View for Per-Doc ── */
+/* -- Split View for Per-Doc -- */
 .ctd-root .vr-split-layout{
   display: grid;
   grid-template-columns: 240px 1fr;
@@ -961,7 +962,7 @@
   color: var(--white);
 }
 
-/* ── Issue Rows (Calm, Premium) ── */
+/* -- Issue Rows (Calm, Premium) -- */
 .ctd-root .vr-issue-row{
   display: flex;
   justify-content: space-between;
@@ -1012,7 +1013,7 @@
   background: var(--lblue);
 }
 
-/* ── Sliding Side Drawer ── */
+/* -- Sliding Side Drawer -- */
 .ctd-root .vr-drawer-overlay{
   position: fixed;
   top: 0;
@@ -1073,7 +1074,7 @@
   flex: 1;
 }
 
-/* ── Interactive Human Review ── */
+/* -- Interactive Human Review -- */
 .ctd-root .vr-review-card{
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1120,7 +1121,7 @@
   display: block;
 }
 
-/* ── Missing Documents Grid/Tiles ── */
+/* -- Missing Documents Grid/Tiles -- */
 .ctd-root .vr-missing-tile-grid{
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -1152,7 +1153,7 @@
   color: var(--red);
 }
 
-/* ── Finding Info Layout (Notion / Vercel style tags) ── */
+/* -- Finding Info Layout (Notion / Vercel style tags) -- */
 .ctd-root .vr-finding-severity{
   display: inline-flex;
   align-items: center;
@@ -1280,7 +1281,7 @@
   line-height: 1.4;
 }
 
-/* ── Property Sheet (Field Summary) ── */
+/* -- Property Sheet (Field Summary) -- */
 .ctd-root .vr-field-sheet{
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -1365,7 +1366,7 @@
   font-weight: 600;
 }
 
-/* ── Historical Case Panel ── */
+/* -- Historical Case Panel -- */
 .ctd-root #history-detail:not(.hidden){
   margin: -24px -32px;
   min-height: calc(100% + 48px);
@@ -1654,7 +1655,7 @@
 .ctd-root .auth-btn{ width:100%; margin-top:4px; }
 .ctd-root .auth-toggle{ margin-top:16px; background:none; border:none; color:var(--blue); font-size:13px; font-weight:600; cursor:pointer; }
 
-/* ── Login Page (ct-brand story split layout) ── */
+/* -- Login Page (ct-brand story split layout) -- */
 .ctd-root.auth-screen {
   height: 100vh;
   display: flex;
@@ -2431,7 +2432,7 @@
 .ctd-root .gp-footer{ justify-content:space-between; padding-top:12px; border-top:1px solid #f1f5f9; }
 @media (max-width:768px){ .ctd-root .gp-parties-grid{ grid-template-columns:1fr; } .ctd-root .gp-props-grid{ grid-template-columns:1fr 1fr; } .ctd-root .gp-footer{ flex-direction:column; text-align:center; } }
 
-/* ── Doc Extraction Card (template-matched) ── */
+/* -- Doc Extraction Card (template-matched) -- */
 .ctd-root .ds{
   display: flex;
   flex-direction: column;
@@ -2443,7 +2444,7 @@
   overflow: hidden;
 }
 
-/* ── Top Metadata Grid ── */
+/* -- Top Metadata Grid -- */
 .ctd-root .ds-meta-grid{
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -2490,7 +2491,7 @@
   width: fit-content;
 }
 
-/* ── Khata Extract ── */
+/* -- Khata Extract -- */
 .ctd-root .ds-khata-chip{
   font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
@@ -2533,7 +2534,7 @@
 }
 .ctd-root .ds-dues-ok svg{ color: #059669; }
 
-/* ── Section Blocks (stacked vertically) ── */
+/* -- Section Blocks (stacked vertically) -- */
 .ctd-root .ds-block{
   padding: 28px 32px;
   border-top: 1px solid #e7e5e4;
@@ -2560,7 +2561,7 @@
   flex-shrink: 0;
 }
 
-/* ── Parties (inside split) ── */
+/* -- Parties (inside split) -- */
 .ctd-root .ds-parties{
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2635,7 +2636,7 @@
   padding: 4px 0;
 }
 
-/* ── Property Grid (inside split-right) ── */
+/* -- Property Grid (inside split-right) -- */
 .ctd-root .ds-prop-grid{
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2668,7 +2669,7 @@
   word-break: break-word;
 }
 
-/* ── Boundaries (compass/map) ── */
+/* -- Boundaries (compass/map) -- */
 .ctd-root .ds-boundaries{
   margin-top: 20px;
   padding-top: 16px;
@@ -2759,7 +2760,7 @@
   .ctd-root .ds-compass-center span{ font-size: 8px; }
 }
 
-/* ── Financials Grid (inside split-right) ── */
+/* -- Financials Grid (inside split-right) -- */
 .ctd-root .ds-fin-grid{
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -2806,7 +2807,7 @@
   margin-top: 2px;
 }
 
-/* ── Description (inside property) ── */
+/* -- Description (inside property) -- */
 .ctd-root .ds-description{
   margin-top: 20px;
   padding-top: 16px;
@@ -2829,7 +2830,7 @@
   word-break: break-word;
 }
 
-/* ── Boundary Plot ── */
+/* -- Boundary Plot -- */
 .ctd-root .ds-plot-wrap{
   margin-top: 20px;
   padding-top: 16px;
@@ -2924,7 +2925,7 @@
 }
 .ctd-root .ds-plot-val.road svg{ flex-shrink: 0; }
 
-/* ── Footer ── */
+/* -- Footer -- */
 .ctd-root .ds-footer{
   display: flex;
   align-items: center;
@@ -2941,7 +2942,7 @@
   color: #292524;
 }
 
-/* ── Carousel (Ledger) ── */
+/* -- Carousel (Ledger) -- */
 .ctd-root .ds-car-viewport{
   width: 100%;
   overflow: hidden;
@@ -3014,7 +3015,7 @@
   width: 22px;
 }
 
-/* ── Ledger Card ── */
+/* -- Ledger Card -- */
 .ctd-root .ds-ledger-card{
   border: 1px solid #e7e5e4;
   border-radius: 8px;
@@ -3136,7 +3137,7 @@
   word-break: break-word;
 }
 
-/* ── Search Criteria (below card) ── */
+/* -- Search Criteria (below card) -- */
 .ctd-root .ds-section{
   background: #ffffff;
   border: 1px solid #e7e5e4;
@@ -3348,7 +3349,7 @@
   .ctd-root .header-newcase svg{ display: none; }
 }
 
-/* ── Modern Template Theme & Background ── */
+/* -- Modern Template Theme & Background -- */
 .ctd-root {
   background-color: #ffffff !important;
   color: #0f172a;
@@ -3358,7 +3359,7 @@
   font-family: 'JetBrains Mono', monospace;
 }
 
-/* ── Main Top Bar (matches ct-navbar design) ── */
+/* -- Main Top Bar (matches ct-navbar design) -- */
 .ctd-root .header {
   position: fixed;
   top: 0;
@@ -3618,7 +3619,7 @@
   color: #ea580c;
 }
 
-/* ── Report Section Navigation ── */
+/* -- Report Section Navigation -- */
 .ctd-root .report-nav-bar {
   background: transparent;
   border-bottom: none;
@@ -3683,7 +3684,7 @@
   letter-spacing: 0.05em;
 }
 
-/* ── Main Tab Container Layout ── */
+/* -- Main Tab Container Layout -- */
 .ctd-root .report-main-wrap {
   flex: 1;
   max-width: 75rem;
@@ -3693,7 +3694,7 @@
   box-sizing: border-box;
 }
 
-/* ── Verdict Section & Banner ── */
+/* -- Verdict Section & Banner -- */
 .ctd-root .verdict-banner {
   padding-bottom: 0;
   margin-bottom: 8px;
@@ -3874,6 +3875,15 @@
 .ctd-root .verification-finding-item > p { margin: 2px 0 0; }
 .ctd-root .verification-finding-evidence { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 5px 0 0; padding: 0; list-style: none; color: #57534e; font-size: 11px; line-height: 1.5; }
 .ctd-root .verification-finding-evidence li { min-width: 0; overflow-wrap: anywhere; }
+.ctd-root .verification-report { margin-top: 12px; }
+.ctd-root .verification-report-block { margin: 12px 0; }
+.ctd-root .verification-report-block h4 { margin: 0 0 6px; color: #44403c; font-size: 12px; font-weight: 700; letter-spacing: .01em; }
+.ctd-root .verification-report-block p { margin: 6px 0; color: #44403c; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.ctd-root .verification-report-list { margin: 6px 0; padding-left: 18px; color: #44403c; font-size: 13px; line-height: 1.6; }
+.ctd-root .verification-report-list li { margin: 3px 0; overflow-wrap: anywhere; }
+.ctd-root .verification-citation { display: inline-block; padding: 0 6px; margin: 0 2px; border-radius: 4px; background: #f5f5f4; color: #57534e; font-size: 11px; line-height: 1.6; white-space: nowrap; }
+.ctd-root .verification-cited-documents { margin-top: 14px; }
+.ctd-root .verification-cited-documents h4 { margin: 0 0 7px; color: #44403c; font-size: 12px; font-weight: 700; letter-spacing: .01em; }
 .ctd-root .verification-evidence-needed { margin-top: 14px; padding-left: 11px; border-left: 2px solid #f59e0b; color: #57534e; }
 .ctd-root .verification-evidence-needed h4 { color: #92400e; }
 .ctd-root .verification-evidence-needed ul { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
@@ -3988,7 +3998,7 @@
   line-height: 1.5;
 }
 
-/* ── Docs Extractions Tab Bar ── */
+/* -- Docs Extractions Tab Bar -- */
 .ctd-root .doc-sub-tabs {
   border-bottom: 1px solid #e7e5e4;
   display: flex;
@@ -4037,7 +4047,7 @@
   padding: 0;
 }
 
-/* ── Global Footer ── */
+/* -- Global Footer -- */
 .ctd-root .global-footer {
   border-top: 1px solid #e2e8f0;
   margin-top: auto;
@@ -4051,7 +4061,7 @@
 }
 
 
-/* ── Page Theme & Background ── */
+/* -- Page Theme & Background -- */
 .ctd-root {
   background-color: #ffffff !important;
   color: #1C1917;
@@ -4076,7 +4086,7 @@
   max-width: 100%;
 }
 
-/* ── Upload — borderless centered column ── */
+/* -- Upload — borderless centered column -- */
 .ctd-root .upload-card-full {
   background: transparent;
   border: none;
@@ -4120,7 +4130,7 @@
   max-width: 560px;
 }
 
-/* ── Uploaded Documents Table ── */
+/* -- Uploaded Documents Table -- */
 .ctd-root .doc-row {
   display: flex;
   align-items: center;
@@ -4230,7 +4240,7 @@
   color: #ea580c;
 }
 
-/* ── File Items ── */
+/* -- File Items -- */
 .ctd-root .file-item {
   background: #fafaf9;
   border: 1px solid #e7e5e4;
@@ -4263,7 +4273,7 @@
   flex-shrink: 0;
 }
 
-/* ── Action Buttons Row (Clear Files Left, Verify Title Right) ── */
+/* -- Action Buttons Row (Clear Files Left, Verify Title Right) -- */
 .ctd-root .btn-row {
   display: flex;
   align-items: center;
@@ -4325,8 +4335,8 @@
   border-bottom: none;
 }
 
-/* ── Mobile & Responsive Overrides (Screen Width <= 768px and <= 480px) ── */
-/* ── Report actions + status headline (desktop defaults) ── */
+/* -- Mobile & Responsive Overrides (Screen Width <= 768px and <= 480px) -- */
+/* -- Report actions + status headline (desktop defaults) -- */
 .ctd-root .pl-actions-row {
   justify-content: flex-end;
 }

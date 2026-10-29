@@ -211,6 +211,7 @@ def get_case_status_payload(case_id: str) -> dict:
             "saved_path": file_paths.get("raw"),
             "status": d["status"],
             "document_type": d.get("document_type") or "",
+            "error": d.get("error") or "",
         })
 
         # results element (only if status is structured)

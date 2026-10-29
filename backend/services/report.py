@@ -69,7 +69,7 @@ def _fmt_date(raw: str) -> str:
     return raw
 
 
-# ── Section extraction helpers ──────────────────────────────────────────────
+# -- Section extraction helpers ----------------------------------------------
 def _extract_sd(documents: list) -> dict:
     for d in documents:
         if d.get("document_type") == "SALE_DEED" and d.get("structured"):
@@ -259,7 +259,7 @@ def _required_docs_rows(documents: list) -> list:
     return rows
 
 
-# ── ClearTitle agent report sections ─────────────────────────────────────────
+# -- ClearTitle agent report sections -----------------------------------------
 def _agent_required_docs_rows(agent: dict) -> list:
     """Transactions whose verification needs more evidence (missing documents)."""
     rows = []
@@ -285,13 +285,19 @@ def _agent_required_docs_rows(agent: dict) -> list:
 
 
 def _agent_title_text(agent: dict) -> str:
-    story = str(((agent.get("title_chain") or {}).get("title_story")) or "").strip()
+    story = str(agent.get("title_chain_graph") or "").strip()
+    if not story:
+        chain = agent.get("title_chain")
+        if isinstance(chain, dict):
+            # Legacy/seeded results carry the narrative inside the chain object.
+            story = str(chain.get("title_story") or "").strip()
     if story:
         return story
     parts = []
     for t in agent.get("transactions") or []:
-        date = _fmt_date(t.get("date") or "")
-        desc = t.get("explanation") or t.get("type") or ""
+        metadata = t.get("transaction_metadata") or {}
+        date = _fmt_date(metadata.get("executed_date") or "")
+        desc = metadata.get("transaction_type") or ""
         if desc:
             parts.append(f"{date}: {desc}".strip(": "))
     return " ".join(parts) or "Title chain records are not yet available for this case."
@@ -306,10 +312,10 @@ def _agent_conclusion(agent: dict) -> str:
     if status:
         return f"Overall verification status: {status}."
     return ("The verification report is not yet available. Please refer to the "
-            "findings above.")
+            "transaction details above.")
 
 
-# ── PDF rendering ──────────────────────────────────────────────────────────
+# -- PDF rendering ----------------------------------------------------------
 def _logo_path() -> Path | None:
     """Locate the brand logo (repo root / frontend assets or built dist)."""
     root = Path(__file__).resolve().parents[2]
@@ -665,9 +671,9 @@ def _report_story(data: dict, st: dict) -> list:
                 Paragraph("<b>Instrument / Event</b>", st["cell"]),
                 Paragraph("<b>Parties / Effect</b>", st["cell"]),
                 Paragraph("<b>Required Documents</b>", st["cell"])]
-        data_rows = [[Paragraph(b, st["cell"]), Paragraph(c, st["cell"]),
-                      Paragraph(d, st["cell"]), Paragraph(e, st["cell"])]
-                     for a, b, c, d, e in req_rows]
+        data_rows = [[Paragraph(cells[-4], st["cell"]), Paragraph(cells[-3], st["cell"]),
+                      Paragraph(cells[-2], st["cell"]), Paragraph(cells[-1], st["cell"])]
+                     for cells in req_rows]
         t = Table([head, *data_rows],
                   colWidths=[34 * mm, 44 * mm, 44 * mm, 52 * mm], repeatRows=1)
         t.setStyle(TableStyle([

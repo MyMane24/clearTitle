@@ -115,7 +115,7 @@ class TestTitleChainPhaseATools(unittest.TestCase):
             "memory": {"stage": "phase_a_complete"},
             "case_result": [{
                 "tx_id": "PA-TC-0001", "status": "INCONCLUSIVE",
-                "findings": [{"description": "The prior link is recital-reported."}],
+                "report": "## Findings\n\nThe prior link is recital-reported.",
             }],
             "result": {
                 "property_identity": identity,
@@ -130,7 +130,7 @@ class TestTitleChainPhaseATools(unittest.TestCase):
         self.assertEqual(block["overall_status"], "INCONCLUSIVE")
         self.assertEqual(block["transactions"][0]["tx_id"], "PA-TC-0001")
         self.assertNotIn("findings", block)
-        self.assertIn("The prior link is recital-reported.", block["transactions"][0]["summary"])
+        self.assertIn("The prior link is recital-reported.", block["transactions"][0]["report"])
         self.assertNotIn("verification_plan", block)
 
 

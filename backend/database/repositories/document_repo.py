@@ -114,28 +114,6 @@ def get_case_documents(case_id: str) -> list[dict]:
         return result
 
 
-def get_case_bundle(case_id: str) -> list[dict]:
-    with _get_conn() as conn:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            "SELECT doc_id, doc_index, filename, document_type, page_count, "
-            "structured_data AS structured_json, "
-            "input_tokens, output_tokens, latency_ms, cost_usd, model_used "
-            "FROM documents WHERE case_id = %s AND status = 'structured' "
-            "ORDER BY doc_index ASC",
-            (case_id,),
-        )
-        result = []
-        for row in cursor.fetchall():
-            doc = dict(row)
-            if doc.get("structured_json") and isinstance(doc["structured_json"], str):
-                doc["structured_json"] = json.loads(doc["structured_json"])
-            if isinstance(doc.get("structured_json"), dict):
-                doc["structured_json"] = normalize_ec_structured(doc["structured_json"])
-            result.append(doc)
-        return result
-
-
 def increment_retry(*, case_id: str, doc_id: str, error: str) -> None:
     with _get_conn() as conn:
         cursor = conn.cursor()
@@ -432,18 +410,6 @@ def get_document_structured_data(case_id: str, doc_id: str) -> dict | None:
             return None
         value = json.loads(row[0]) if isinstance(row[0], str) else row[0]
         return value if isinstance(value, dict) else None
-
-
-def get_expected_type(case_id: str, doc_id: str) -> str | None:
-    """Read the slot-declared expected_type (sale_deed/ec) for a document."""
-    with _get_conn() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT expected_type FROM documents WHERE case_id = %s AND doc_id = %s",
-            (case_id, doc_id),
-        )
-        row = cursor.fetchone()
-        return row[0] if row else None
 
 
 def set_document_stage(case_id: str, doc_id: str, stage) -> None:

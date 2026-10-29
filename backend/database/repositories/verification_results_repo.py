@@ -1,4 +1,4 @@
-"""Compatibility adapter that translates old seed checks into result entries."""
+"""Compatibility adapter that translates legacy seed checks into v3.0 results."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def save_verification_results(
             result_status = normalize_status(item.get("status") or status)
             if result_status == "ISSUES_IDENTIFIED":
                 # These historical checks have no stored document/page citations,
-                # so they cannot substantiate an issue finding under v2.2.
+                # so they cannot substantiate an identified issue under schema 3.0.
                 result_status = "INCONCLUSIVE"
             terminal = result_status in {
                 "VERIFIED_WITH_AVAILABLE_EVIDENCE", "INCONCLUSIVE",
@@ -41,8 +41,12 @@ def save_verification_results(
                 "tx_id": tx_id,
                 "sequence": index,
                 "status": result_status,
-                "summary": f"Legacy verification check for {item.get('field') or 'recorded field'}: {item.get('notes') or 'No check details were recorded.'}",
-                "findings": [],
+                "report": (
+                    f"## Conclusion\n\nLegacy verification check for "
+                    f"{item.get('field') or 'recorded field'}: "
+                    f"{item.get('notes') or 'No check details were recorded.'}"
+                ),
+                "cited_documents": [],
                 "required_documents": [],
                 "reviewed_document_ids": [],
                 "verified_at": datetime.now(timezone.utc).isoformat() if terminal else None,
@@ -59,15 +63,3 @@ def save_verification_results(
             (case_id, json.dumps(result, ensure_ascii=False)),
         )
         conn.commit()
-
-
-def get_verification_results(case_id: str) -> dict | None:
-    with _get_conn() as conn:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT case_result FROM case_results WHERE case_id = %s", (case_id,))
-        row = cursor.fetchone()
-        if not row or not row[0]:
-            return None
-        raw = row[0]
-        result = json.loads(raw) if isinstance(raw, str) else raw
-        return result if isinstance(result, list) else None

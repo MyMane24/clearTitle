@@ -54,8 +54,8 @@ class TestBoundedAgentRuntime(unittest.TestCase):
         model.return_value = {"tool_calls": [
             {"id": "save", "name": "save_transaction_result", "args": {
                 "tx_id": "TX1", "sequence": 1, "status": "INCONCLUSIVE",
-                "summary": "The reviewed evidence does not support a reliable conclusion.",
-                "findings": [], "required_documents": [],
+                "report": "## Conclusion\n\nThe reviewed evidence does not support a reliable conclusion.",
+                "cited_documents": [], "required_documents": [],
             }},
             {"id": "extra", "name": "list_documents", "args": {}},
         ]}
@@ -114,6 +114,29 @@ class TestBoundedAgentRuntime(unittest.TestCase):
         self.assertTrue(ctx.additional_model_calls_used)
         self.assertEqual(ctx.stop_reason, "model_stopped_without_result")
 
+    @patch("backend.services.agent_runtime.dispatch")
+    @patch("backend.services.agent_runtime.complete_with_tools")
+    def test_evidence_validation_rejection_grants_one_bounded_recovery(self, model, dispatch):
+        ctx = self._context()
+        model.return_value = {"tool_calls": [{
+            "id": "save", "name": "save_transaction_result", "args": {},
+        }]}
+
+        def save_after_recovery(context, _name, _args):
+            if dispatch.call_count == 1:
+                return {"error": "selected document whose complete OCR was not reviewed"}
+            context.saved_results.append({"tx_id": "TX1"})
+            context.finished = True
+            return {"saved": True}
+
+        dispatch.side_effect = save_after_recovery
+        run_tool_loop(ctx=ctx, phase="verify", system="system", instruction="task", max_steps=1)
+
+        self.assertEqual(model.call_count, 2)
+        self.assertEqual(dispatch.call_count, 2)
+        self.assertTrue(ctx.additional_model_calls_used)
+        self.assertEqual(ctx.stop_reason, "persisted_result")
+
     @patch("backend.services.agent_runtime.complete_with_tools")
     def test_no_tool_result_does_not_trigger_result_nudges(self, model):
         model.return_value = {"tool_calls": [], "content": "Prose only"}
@@ -125,7 +148,7 @@ class TestBoundedAgentRuntime(unittest.TestCase):
 
     @patch("backend.services.agent_runtime.dispatch", return_value={
         "error": "invalid transaction result",
-        "issues": ["findings[0] has a supported validation issue"],
+        "issues": ["report has a supported validation issue"],
     })
     @patch("backend.services.agent_runtime.complete_with_tools")
     def test_tool_validation_rejection_is_written_to_run_logs(self, model, _dispatch):

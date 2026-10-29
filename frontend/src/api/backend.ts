@@ -54,7 +54,7 @@ export interface StatusResponse {
   results?: any[];
   errors?: any[];
   needs_action?: any[];
-  files?: { doc_id: string; original_name: string; status: string; document_type: string }[];
+  files?: { doc_id: string; original_name: string; status: string; document_type: string; error?: string }[];
 }
 
 export interface CaseListItem {
@@ -122,33 +122,6 @@ export interface TitleChainTransaction {
   inferred?: boolean;
 }
 
-export interface AgentIdentity {
-  identity?: Record<string, unknown>;
-  evidence?: { field?: string; value?: string; doc_id?: string }[];
-  summary?: string;
-  unresolved?: string[];
-}
-
-export interface AgentResult {
-  case_id?: string;
-  overall_status?: string;
-  property_identity?: AgentIdentity | null;
-  title_chain?: { transactions?: TitleChainTransaction[]; title_story?: string; unresolved?: string[] } | null;
-  transactions?: AgentTransaction[];
-  updated_at?: string;
-}
-
-export interface AgentState {
-  case_id: string;
-  status: string;
-  stage?: string | null;
-  updated_at?: string | null;
-  paused_transaction?: number | null;
-  next_action?: string | null;
-  memory?: Record<string, unknown> | null;
-  result?: AgentResult | null;
-}
-
 export interface TitleChainEntry {
   tx_id?: string;
   sequence?: number;
@@ -185,15 +158,6 @@ export interface TitleChainEntry {
   share_fraction?: string | null;
   property_identity?: string | null;
   explanation?: string | null;
-}
-
-export interface VerificationItem {
-  field?: string;
-  sd_value?: unknown;
-  ec_value?: unknown;
-  khata_value?: unknown;
-  status: "VERIFIED" | "NOT_VERIFIED" | "N/A" | string;
-  notes?: string;
 }
 
 export interface AgentReport {
@@ -291,9 +255,10 @@ export const API = {
     return request<UploadResponse>("/api/upload", { method: "POST", body: fd });
   },
 
-  async uploadMore(caseId: string, files: File[]): Promise<UploadResponse> {
+  async uploadMore(caseId: string, files: File[], transactionId?: string): Promise<UploadResponse> {
     const fd = new FormData();
     files.forEach(f => fd.append("files", f));
+    if (transactionId) fd.append("transaction_id", transactionId);
     return request<UploadResponse>(`/api/case/${caseId}/upload`, { method: "POST", body: fd });
   },
 

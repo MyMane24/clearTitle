@@ -14,14 +14,27 @@ logger = get_logger(__name__)
 
 
 @celery_app.task(ignore_result=True)
-def run_case_analysis_task(case_id: str):
-    """Build Phase A if needed and verify transactions directly from the saved chain."""
+def run_case_analysis_task(
+    case_id: str,
+    resume_paused: bool = False,
+    retry_skipped_tx_id: str | None = None,
+):
+    """Run case analysis, or resume only the saved paused transaction."""
     from backend.integrations.redis.state_store import append_log
-    from backend.services.cleartitle_agent import run_agent
+    from backend.services.cleartitle_agent import (
+        resume_paused_transaction,
+        retry_skipped_transaction,
+        run_agent,
+    )
 
     logger.info("Running ClearTitle agent for case %s", case_id)
     try:
-        outcome = run_agent(case_id)
+        if retry_skipped_tx_id:
+            outcome = retry_skipped_transaction(case_id, retry_skipped_tx_id)
+        elif resume_paused:
+            outcome = resume_paused_transaction(case_id)
+        else:
+            outcome = run_agent(case_id)
     except Exception as e:  # noqa: BLE001 - record failure, don't crash the worker
         logger.error("ClearTitle agent failed for case %s: %s", case_id, e)
         append_log(case_id, f"✗ Verification failed: {e}")

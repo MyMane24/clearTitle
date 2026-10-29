@@ -63,7 +63,7 @@ def _extract_json(raw: str) -> dict:
     raise RuntimeError("agent LLM returned non-object JSON")
 
 
-# ── tool-calling: provider-agnostic turn ──────────────────────────────────────
+# -- tool-calling: provider-agnostic turn --------------------------------------
 #
 # ``messages`` is a list of dicts:
 #   {"role": "user",      "content": str}
@@ -376,7 +376,7 @@ def _openai_complete_json(
     raise AgentLLMError(f"openai call failed for task {task}: {last_exc}")
 
 
-# ── provider registry ─────────────────────────────────────────────────────────
+# -- provider registry ---------------------------------------------------------
 
 _JSON_PROVIDERS: dict[str, Callable] = {
     "gemini": _gemini_complete_json,

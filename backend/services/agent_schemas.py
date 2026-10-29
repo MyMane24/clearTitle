@@ -15,16 +15,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-SCHEMA_VERSION = "2.3"
+SCHEMA_VERSION = "3.0"
 TITLE_CHAIN_SCHEMA_VERSION = "2.0"
 
 
-# ── controlled enums (§8, §10) ────────────────────────────────────────────────
+# -- controlled enums (§8, §10) ------------------------------------------------
 
 
 class VerificationStatus(str, Enum):
@@ -44,10 +45,10 @@ VERIFICATION_STATUS_VALUES = tuple(s.value for s in VerificationStatus)
 def normalize_status(value: Any) -> str:
     """Coerce any LLM/legacy status string to a permitted ``VerificationStatus``.
 
-    Unknown values fall back to PENDING (safe default — never silently marks a
+    Unknown values fall back to PENDING (safe default - never silently marks a
     transaction verified).
     """
-    raw = str(value or "").strip().upper().replace(" ", "_").replace("-", "_")
+    raw = str(getattr(value, "value", value) or "").strip().upper().replace(" ", "_").replace("-", "_")
     aliases = {
         "VERIFIED": VerificationStatus.VERIFIED_WITH_AVAILABLE_EVIDENCE.value,
         "VERIFIED_WITH_EVIDENCE": VerificationStatus.VERIFIED_WITH_AVAILABLE_EVIDENCE.value,
@@ -62,49 +63,16 @@ def normalize_status(value: Any) -> str:
     return raw if raw in VERIFICATION_STATUS_VALUES else VerificationStatus.PENDING.value
 
 
-# ── evidence + findings ───────────────────────────────────────────────────────
+# -- report citations ----------------------------------------------------------
 
 
-class EvidenceRef(BaseModel):
-    """A pointer to actual retrieved evidence. Never fabricated."""
+class CitedDocument(BaseModel):
+    """A document (and optional observed page range) the report relies on."""
 
     model_config = ConfigDict(extra="forbid")
 
     doc_id: str = Field(description="Existing uploaded document ID; required for traceability.")
     pages: str | None = Field(default=None, description="Observed page/range only; do not invent.")
-    passage: str | None = Field(
-        default=None,
-        description="Legacy compatibility only. Omit in new results; cite document ID and pages instead.",
-    )
-
-
-class Finding(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    title: str = Field(description="Short label for one distinct material finding.")
-    details: str = Field(description="Evidence-backed explanation, usually 1-3 sentences; do not repeat summary/actions.")
-    evidence: list[EvidenceRef] = Field(default_factory=list)
-    finding_id: str | None = Field(default=None, description="Application-assigned stable ID for dependency references.")
-    origin_tx_id: str | None = Field(default=None, description="Application-assigned transaction that owns this finding.")
-
-    @model_validator(mode="after")
-    def require_evidence(self):
-        if not self.evidence:
-            raise ValueError("findings must cite at least one evidence reference")
-        return self
-
-
-def stable_finding_id(tx_id: str, finding: dict[str, Any]) -> str:
-    evidence = sorted(
-        (str(item.get("doc_id") or ""), str(item.get("pages") or ""))
-        for item in finding.get("evidence") or [] if isinstance(item, dict)
-    )
-    identity = json.dumps(
-        [tx_id, finding.get("title") or "", evidence],
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
-    return f"{tx_id}:F-{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:16]}"
 
 
 class MissingDocument(BaseModel):
@@ -112,18 +80,20 @@ class MissingDocument(BaseModel):
 
     document_type: str = Field(
         description=(
-            "Complete, specific document/evidence needed. Preserve identifying dates, parties, "
-            "registration references, and property identifiers; never abbreviate to meet a word budget."
+            "Compact, directly readable label for the document/evidence needed: the document type "
+            "plus only the identifiers that distinguish it (parties, date or document number, "
+            "registration reference). Short, not a sentence; add a property identifier only when "
+            "needed to distinguish among similar documents."
         )
     )
     reason: str | None = Field(
         default=None,
-        description="Briefly state what evidence question this complete requested document must resolve.",
+        description="One short direct line stating the evidence question this document must resolve.",
     )
     for_transaction: str | None = None
 
 
-# ── Output A: title chain (§7, §9) ────────────────────────────────────────────
+# -- Output A: title chain (§7, §9) --------------------------------------------
 
 
 class TransactionEntry(BaseModel):
@@ -164,7 +134,7 @@ class TitleChain(BaseModel):
     schema_version: Literal["2.0"] = TITLE_CHAIN_SCHEMA_VERSION
 
 
-# ── transaction verification (§7 Output B, §9) ────────────────────────────────
+# -- transaction verification (§7 Output B, §9) --------------------------------
 
 
 class TransactionVerification(BaseModel):
@@ -176,13 +146,20 @@ class TransactionVerification(BaseModel):
     required_documents: list[MissingDocument] = Field(default_factory=list)
     reviewed_document_ids: list[str] = Field(default_factory=list)
     status: VerificationStatus
-    summary: str = Field(description="1-2 sentence conclusion for this transaction only; no finding/action recap.")
-    findings: list[Finding] = Field(default_factory=list)
+    report: str = Field(
+        description=(
+            "Markdown verification report for this transaction only: short prose "
+            "sections with inline citations of the form [doc_id] or [doc_id p.X-Y]. "
+            "Must contain an '## Upstream dependency' section whenever an earlier "
+            "chain link is unverified."
+        )
+    )
+    cited_documents: list[CitedDocument] = Field(default_factory=list)
     verified_at: str | None = None
-    schema_version: Literal["2.3"] = SCHEMA_VERSION
+    schema_version: Literal["3.0"] = SCHEMA_VERSION
 
     @model_validator(mode="after")
-    def reject_duplicate_requirements(self):
+    def check_result_invariants(self):
         seen = set()
         for item in self.required_documents:
             key = (item.document_type.strip().casefold(), (item.reason or "").strip().casefold())
@@ -191,15 +168,20 @@ class TransactionVerification(BaseModel):
             seen.add(key)
         if self.status in {VerificationStatus.PENDING, VerificationStatus.IN_PROGRESS, VerificationStatus.PENDING_NOT_VERIFIED} and self.verified_at:
             raise ValueError("verified_at must be null until verification is completed")
-        if self.status == VerificationStatus.ISSUES_IDENTIFIED and not self.findings:
-            raise ValueError("ISSUES_IDENTIFIED requires at least one evidence-backed finding")
-        for finding in self.findings:
-            if finding.origin_tx_id and finding.origin_tx_id != self.tx_id:
-                raise ValueError("finding origin_tx_id must match the result transaction")
+        if not self.report.strip():
+            raise ValueError("report must not be empty")
+        citation_keys = set()
+        for item in self.cited_documents:
+            key = (item.doc_id, item.pages or "")
+            if key in citation_keys:
+                raise ValueError("cited_documents contains a duplicate citation")
+            citation_keys.add(key)
+        if self.status == VerificationStatus.ISSUES_IDENTIFIED and not self.cited_documents:
+            raise ValueError("ISSUES_IDENTIFIED requires at least one cited document")
         return self
 
 
-# ── validation helpers ────────────────────────────────────────────────────────
+# -- validation helpers --------------------------------------------------------
 
 
 class SchemaValidationError(RuntimeError):
@@ -217,10 +199,6 @@ def _validate(model_cls, data: Any):
     except ValidationError as e:
         errors = [f"{'.'.join(str(x) for x in err['loc'])}: {err['msg']}" for err in e.errors()]
         raise SchemaValidationError(model_cls.__name__, errors) from e
-
-
-def validate_title_chain(data: Any) -> TitleChain:
-    return _validate(TitleChain, data)
 
 
 def _legacy_evidence(items: Any) -> list[dict[str, Any]]:
@@ -242,24 +220,17 @@ def _legacy_evidence(items: Any) -> list[dict[str, Any]]:
     return refs
 
 
-def normalize_transaction_verification(data: Any) -> dict[str, Any]:
-    """Deterministically adapt legacy rows to the v2.3 result contract.
+def _legacy_citation(ref: dict[str, Any]) -> str:
+    pages = str(ref.get("pages") or "").strip()
+    return f"[{ref.get('doc_id')} p.{pages}]" if pages else f"[{ref.get('doc_id')}]"
 
-    This is a read/update-boundary adapter only; it never rewrites stored rows.
-    It consolidates legacy prose into summary/findings and retains source pointers.
+
+def _legacy_report_prose(source: dict[str, Any]) -> tuple[str, list[dict[str, Any]], str]:
+    """Convert legacy summary/findings prose into one markdown report.
+
+    Returns (report, cited_documents, status). Issues identified without any
+    retained citation are downgraded to inconclusive.
     """
-    if not isinstance(data, dict):
-        raise SchemaValidationError("TransactionVerification", ["result must be an object"])
-    source = dict(data)
-    if not str(source.get("tx_id") or "").strip():
-        identity = json.dumps(source, sort_keys=True, ensure_ascii=False, default=str)
-        source["tx_id"] = f"LEGACY-{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:16]}"
-    metadata = dict(source.get("transaction_metadata") or {})
-    # Metadata used only to echo narrative/evidence already present in findings is
-    # deliberately excluded from the canonical presentation contract.
-    for key in ("summary_points", "source_refs", "related_events"):
-        metadata.pop(key, None)
-
     summaries = [str(value).strip() for value in (source.get("summary"), source.get("conclusion")) if value and str(value).strip()]
     summary = summaries[0] if summaries else ""
     for alternate in summaries[1:]:
@@ -267,9 +238,29 @@ def normalize_transaction_verification(data: Any) -> dict[str, Any]:
             summary = f"{summary} {alternate}".strip()
     supporting = _legacy_evidence(source.get("supporting_evidence"))
     contradictory = _legacy_evidence(source.get("contradictory_evidence"))
-    findings = []
-    cited = set()
-    unreferenced_details = []
+
+    cited: list[dict[str, Any]] = []
+    seen_citations: set[tuple[str, str]] = set()
+
+    def citation(ref: dict[str, Any]) -> str:
+        doc_id = str(ref.get("doc_id") or "")
+        pages = str(ref.get("pages") or "")
+        key = (doc_id, pages)
+        if doc_id and key not in seen_citations:
+            seen_citations.add(key)
+            cited.append({"doc_id": doc_id, "pages": ref.get("pages")})
+        return _legacy_citation({"doc_id": doc_id, "pages": pages})
+
+    findings_bullets: list[str] = []
+    finding_texts: list[str] = []
+    unreferenced_details: list[str] = []
+
+    def add_bullet(title: str, details: str, refs: list[dict[str, Any]]) -> None:
+        citations = " ".join(citation(ref) for ref in refs if ref.get("doc_id"))
+        label = f"**{title}** — " if title else ""
+        text = " ".join(part for part in (details.strip(), citations) if part).strip()
+        findings_bullets.append(f"- {label}{text}")
+        finding_texts.append(f"{title} {details}".strip())
 
     for old in source.get("findings") or []:
         if not isinstance(old, dict):
@@ -290,20 +281,18 @@ def normalize_transaction_verification(data: Any) -> dict[str, Any]:
         if not refs:
             unreferenced_details.extend(details)
             continue
-        findings.append({"title": title or "Evidence finding", "details": " ".join(details), "evidence": refs})
-        cited.update((r["doc_id"], r.get("pages")) for r in refs)
+        add_bullet(title or "Evidence finding", " ".join(details), refs)
 
     # Keep legacy stand-alone evidence pointers visible without repeating refs
-    # that already support a finding. Conflicts remain one finding citing both.
-    extra_support = [ref for ref in supporting if (ref["doc_id"], ref.get("pages")) not in cited]
+    # that already support a finding. Conflicts remain one bullet citing both.
+    extra_support = [ref for ref in supporting if (str(ref.get("doc_id")), str(ref.get("pages") or "")) not in seen_citations]
     if extra_support:
-        context = " ".join(ref.get("passage", "") for ref in extra_support).strip()
-        findings.append({"title": "Additional evidence reviewed", "details": context or "The cited record was reviewed for this transaction.", "evidence": extra_support})
-    if contradictory:
-        conflict_refs = [ref for ref in contradictory if (ref["doc_id"], ref.get("pages")) not in cited]
-        if conflict_refs:
-            context = " ".join(ref.get("passage", "") for ref in conflict_refs).strip()
-            findings.append({"title": "Contradictory evidence", "details": context or "The cited records contain a material contradiction requiring review.", "evidence": conflict_refs})
+        context = " ".join(str(ref.get("passage") or "") for ref in extra_support).strip()
+        add_bullet("Additional evidence reviewed", context or "The cited record was reviewed for this transaction.", extra_support)
+    conflict_refs = [ref for ref in contradictory if (str(ref.get("doc_id")), str(ref.get("pages") or "")) not in seen_citations]
+    if conflict_refs:
+        context = " ".join(str(ref.get("passage") or "") for ref in conflict_refs).strip()
+        add_bullet("Contradictory evidence", context or "The cited records contain a material contradiction requiring review.", conflict_refs)
 
     qualifiers = []
     old_requirements = [*(source.get("required_documents") or []), *(source.get("missing_documents") or [])]
@@ -321,7 +310,7 @@ def normalize_transaction_verification(data: Any) -> dict[str, Any]:
             and ("verify the original" in folded or "authenticity assessment" in folded)
         ):
             continue
-        if folded in summary.casefold() or summary.casefold() in folded or any(folded in f["details"].casefold() for f in findings):
+        if folded in summary.casefold() or summary.casefold() in folded or any(folded in prior.casefold() for prior in finding_texts):
             continue
         if any(phrase in folded or folded in phrase for phrase in requirement_phrases):
             continue
@@ -331,11 +320,63 @@ def normalize_transaction_verification(data: Any) -> dict[str, Any]:
     if unreferenced_details:
         qualifiers.extend(text for text in unreferenced_details if text and text.casefold() not in summary.casefold())
     status = normalize_status(source.get("status"))
-    if status == VerificationStatus.ISSUES_IDENTIFIED.value and not findings:
-        qualifiers.append("The legacy record marked issues identified but did not retain an evidence-backed finding; its status is therefore inconclusive under schema 2.3.")
+    if status == VerificationStatus.ISSUES_IDENTIFIED.value and not cited:
+        qualifiers.append("The legacy record marked issues identified but did not retain an evidence-backed citation; its status is therefore inconclusive under schema 3.0.")
         status = VerificationStatus.INCONCLUSIVE.value
+
+    report_sections: list[str] = []
+    if summary:
+        report_sections.append(f"## Conclusion\n\n{summary}")
+    if findings_bullets:
+        report_sections.append("## Findings\n\n" + "\n".join(findings_bullets))
     if qualifiers:
-        summary = " ".join(part for part in (summary, "Material qualifications: " + " ".join(qualifiers)) if part).strip()
+        report_sections.append("## Material qualifications\n\n" + "\n".join(f"- {qualifier}" for qualifier in qualifiers))
+    return "\n\n".join(report_sections) or "No verification report was recorded in this legacy result.", cited, status
+
+
+def normalize_transaction_verification(data: Any) -> dict[str, Any]:
+    """Deterministically adapt legacy rows to the v3.0 result contract.
+
+    This is a read/update-boundary adapter only; it never rewrites stored rows.
+    It consolidates legacy prose into one markdown ``report`` and retains source
+    pointers as ``cited_documents``.
+    """
+    if not isinstance(data, dict):
+        raise SchemaValidationError("TransactionVerification", ["result must be an object"])
+    source = dict(data)
+    if not str(source.get("tx_id") or "").strip():
+        identity = json.dumps(source, sort_keys=True, ensure_ascii=False, default=str)
+        source["tx_id"] = f"LEGACY-{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:16]}"
+    metadata = dict(source.get("transaction_metadata") or {})
+    if isinstance(metadata.get("transaction_type"), str):
+        metadata["transaction_type"] = re.sub(
+            r"\s*\(EC entry;\s*instrument not supplied\)",
+            "",
+            metadata["transaction_type"],
+            flags=re.IGNORECASE,
+        ).strip()
+    # Metadata used only to echo narrative/evidence already present in the report is
+    # deliberately excluded from the canonical presentation contract.
+    for key in ("summary_points", "source_refs", "related_events"):
+        metadata.pop(key, None)
+
+    existing_report = str(source.get("report") or "").strip()
+    if existing_report:
+        # Already stored under schema 3.0: pass the report through unchanged and
+        # retain only well-formed citations.
+        report = existing_report
+        cited = []
+        seen_citations: set[tuple[str, str]] = set()
+        for item in source.get("cited_documents") or []:
+            if not isinstance(item, dict) or not item.get("doc_id"):
+                continue
+            key = (str(item["doc_id"]), item.get("pages") or "")
+            if key not in seen_citations:
+                seen_citations.add(key)
+                cited.append({"doc_id": str(item["doc_id"]), "pages": item.get("pages")})
+        status = normalize_status(source.get("status"))
+    else:
+        report, cited, status = _legacy_report_prose(source)
 
     required = [
         *(source.get("required_documents") or []),
@@ -365,17 +406,14 @@ def normalize_transaction_verification(data: Any) -> dict[str, Any]:
         "tx_id": source.get("tx_id"),
         "sequence": source.get("sequence") or _sequence_from_id(source.get("tx_id")),
         "status": status,
-        "summary": summary or "No verification summary was recorded in this legacy result.",
-        "findings": findings,
+        "report": report,
+        "cited_documents": cited,
         "required_documents": merged_required,
         "reviewed_document_ids": list(dict.fromkeys(source.get("reviewed_document_ids") or [])),
         "transaction_metadata": metadata,
         "verified_at": (source.get("verified_at") or None) if complete else None,
         "schema_version": SCHEMA_VERSION,
     }
-    for finding in payload["findings"]:
-        finding["origin_tx_id"] = payload["tx_id"]
-        finding["finding_id"] = stable_finding_id(payload["tx_id"], finding)
     return validate_transaction_verification(payload).model_dump()
 
 

@@ -6,27 +6,8 @@ mandatory title-chain skill included in the user context. Use only stored docume
 summaries and merged OCR text retrieved through the supplied tools. Never access
 structured extraction data or infer facts from document metadata.
 
-Investigate all uploaded-document summaries, use OCR retrieval for relevant
-documents, and build the target property's chain backward from the latest sale
-deed. If no sale deed is supplied, use the latest supported conveyance as the
-provisional endpoint and state that the current-owner link is not established.
-Match EC entries to the target property schedule; do not include unrelated
-EC entries. Preserve source references and uncertainty, distinguish recital-
-reported events from original instruments inspected, and do not claim legal
-clearance or completeness unsupported by the evidence.
-
-Save the Phase A result exactly once using save_phase_a_result, then call finish.
-Do not build the verification checklist, verify transactions, request documents,
-or write a report in this phase.
-
-Keep the saved payload compact and valid JSON. The graph should show only names,
-property nodes, event types, dates, and important references; do not repeat full
-transaction details in the graph because they belong in title_chain. Store only
-the supporting document ID and filename in source_refs. Do not put references or
-filenames in summary_points; consolidate source filenames separately after the
-complete chain. Filenames are citation metadata, not evidence. Do not copy OCR
-passages into the result.
-Include relevant property events found between title transfers as separate
-related events. Keep material transaction details in concise, plain-language
-points without field labels. Keep the instrument or registration number,
-transaction type, and execution date as the only structured transaction headers.
+Build Phase A only: identify the target property and trace its ownership chain
+from the uploaded evidence. Save the Phase A result exactly once using
+save_phase_a_result, then call finish. Do not verify transactions, request
+documents, or write a report in this phase; the application derives case status
+from the saved result.

@@ -78,19 +78,19 @@ clearTitle automates Indian property due diligence end-to-end — from raw Kanna
 ## Project Structure
 
 ```
-├── src/
-│   ├── components/      # Landing-page sections (Navbar, Hero, FAQ, ...)
-│   ├── dashboard/       # Verification Dashboard — upload, results, report, history
-│   ├── api/backend.ts   # API client used by the dashboard
-│   ├── data/            # Static landing-page content
-│   ├── types.ts         # Shared TypeScript types
-│   ├── App.tsx          # Routes: homepage + /#/app dashboard
-│   └── index.css        # Tailwind + brand fonts/gradients
-├── public/              # Favicon & static assets
-├── src/assets/          # Brand assets (logo PNG)
-├── server.ts            # Express + AI audit API + Vite/static serving
-├── index.html
-└── vite.config.ts
+├-- src/
+│   ├-- components/      # Landing-page sections (Navbar, Hero, FAQ, ...)
+│   ├-- dashboard/       # Verification Dashboard — upload, results, report, history
+│   ├-- api/backend.ts   # API client used by the dashboard
+│   ├-- data/            # Static landing-page content
+│   ├-- types.ts         # Shared TypeScript types
+│   ├-- App.tsx          # Routes: homepage + /#/app dashboard
+│   └-- index.css        # Tailwind + brand fonts/gradients
+├-- public/              # Favicon & static assets
+├-- src/assets/          # Brand assets (logo PNG)
+├-- server.ts            # Express + AI audit API + Vite/static serving
+├-- index.html
+└-- vite.config.ts
 ```
 
 ## UI Design System

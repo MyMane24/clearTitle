@@ -81,6 +81,11 @@ class ClassificationFailed(Exception):
     pass
 
 
+class OcrInsufficientCredits(Exception):
+    """Non-retryable OCR provider billing/quota error."""
+    pass
+
+
 class PreprocessStage(ExtractionStage):
     name = "preprocess"
 
@@ -94,7 +99,7 @@ class PreprocessStage(ExtractionStage):
             raise ValueError(f"No raw path found for doc_id {doc_id}")
 
         pdf_path = Path(raw_path)
-        _log(case_id, f"── [{doc_id}] {pdf_path.name} ─────────────────")
+        _log(case_id, f"-- [{doc_id}] {pdf_path.name} -----------------")
         _log(case_id, f"[{doc_id}] Step 1: Preprocessing (contrast/denoise/deskew)")
         case_dir = get_case_dir(case_id)
         (case_dir / "preprocessed").mkdir(exist_ok=True)
@@ -146,6 +151,12 @@ class OcrStage(ExtractionStage):
             complete_chunks = [c for c in ocr_results if c.status == "complete"]
             failed_chunks = [c for c in ocr_results if c.status != "complete"]
             _log(case_id, f"[{doc_id}] ✓ OCR done — {len(complete_chunks)}/{len(ocr_results)} chunk(s) complete")
+
+            if any("insufficient credits" in (c.error or "").casefold() for c in failed_chunks):
+                raise OcrInsufficientCredits(
+                    "OCR unavailable: Sarvam reports insufficient credits. Add credits to the Sarvam account, "
+                    "then retry this document."
+                )
 
             if not complete_chunks:
                 failed_chunks = [c for c in ocr_results if c.status != "complete"]

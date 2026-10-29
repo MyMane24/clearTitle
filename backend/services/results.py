@@ -9,7 +9,7 @@ from backend.services.agent_schemas import (
 
 
 def _transaction_for_api(raw: dict) -> dict:
-    """Adapt historical result rows into the canonical v2.2 response shape."""
+    """Adapt historical result rows into the canonical v3.0 response shape."""
     return normalize_transaction_verification(raw)
 
 

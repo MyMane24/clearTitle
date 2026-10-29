@@ -4,31 +4,61 @@ export type RequiredDocument = {
   for_transaction?: string | null;
 };
 
-export type TransactionEvidence = {
+export type CitedDocument = {
   doc_id: string;
   pages?: string | null;
-};
-
-export type TransactionFinding = {
-  title: string;
-  details: string;
-  evidence: TransactionEvidence[];
-  finding_id?: string | null;
-  origin_tx_id?: string | null;
 };
 
 export type TransactionVerificationResult = {
   tx_id: string;
   sequence: number;
   status: string;
-  summary: string;
-  findings: TransactionFinding[];
+  report: string;
+  cited_documents: CitedDocument[];
   required_documents: RequiredDocument[];
   reviewed_document_ids: string[];
   transaction_metadata?: Record<string, unknown>;
   verified_at: string | null;
   schema_version: string;
 };
+
+export function citedDocumentsForTransaction(transaction: unknown): CitedDocument[] {
+  if (!transaction || typeof transaction !== 'object') return [];
+  const items = (transaction as { cited_documents?: unknown }).cited_documents;
+  if (!Array.isArray(items)) return [];
+  const seen = new Set<string>();
+  const result: CitedDocument[] = [];
+  for (const item of items) {
+    if (!item || typeof item !== 'object') continue;
+    const value = item as CitedDocument;
+    if (typeof value.doc_id !== 'string' || !value.doc_id.trim()) continue;
+    const doc_id = value.doc_id.trim();
+    const key = `${doc_id}|${value.pages || ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push({ ...value, doc_id });
+  }
+  return result;
+}
+
+export function reportSections(report: unknown): Array<{ heading: string; body: string }> {
+  if (typeof report !== 'string' || !report.trim()) return [];
+  const sections: Array<{ heading: string; body: string }> = [];
+  for (const part of report.split(/\n(?=##\s)/)) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const lines = trimmed.split('\n');
+    if (lines[0].startsWith('## ')) {
+      sections.push({
+        heading: lines[0].replace(/^##\s+/, '').trim(),
+        body: lines.slice(1).join('\n').trim(),
+      });
+    } else {
+      sections.push({ heading: '', body: trimmed });
+    }
+  }
+  return sections;
+}
 
 export function requiredDocumentsForTransaction(transaction: unknown): RequiredDocument[] {
   if (!transaction || typeof transaction !== 'object') return [];
@@ -69,7 +99,9 @@ export function transactionStatusLabel(status: unknown): string {
 
 export function transactionTitle(result: Pick<TransactionVerificationResult, 'sequence' | 'transaction_metadata'>): string {
   const metadata = result.transaction_metadata || {};
-  const rawType = String(metadata.transaction_type || metadata.document_type || 'Transaction').trim();
+  const rawType = String(metadata.transaction_type || metadata.document_type || 'Transaction')
+    .replace(/\s*\(EC entry;\s*instrument not supplied\)/i, '')
+    .trim();
   const type = rawType
     .replace(/[_-]+/g, ' ')
     .toLocaleLowerCase()

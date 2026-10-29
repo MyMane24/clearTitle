@@ -13,22 +13,21 @@ the property's ownership history backward through relevant uploaded documents.
 Produce a property identity and a traceable, property-specific title-chain graph
 with transaction details supported by the available evidence.
 
+Trace the chain as far back as the uploaded evidence supports. Title
+investigation practice expects roughly the last 30 years to be covered; when the
+documents do not reach that far, record the earliest supported root explicitly
+as the chain limit rather than inventing earlier links. Keep that earliest
+supported root as the first chain item and state the limitation in its summary
+points.
+
 This is a document investigation, not a legal opinion or a declaration that title
 is legally clear.
 
 ## Permitted inputs
 
-Use only the following document data retrieved from the database:
-
-- Each document's stored summary.
-- Each document's `merged_ocr_text`.
-
-Do not use structured extraction JSON as evidence or as input to chain reasoning.
-Do not assume facts that are absent from these inputs. Treat summaries as
-navigation aids; use the relevant OCR text to establish material details.
-
-Consider all uploaded files when looking for evidence, but retrieve and examine
-documents as needed rather than assuming every document is relevant.
+Use only each document's stored summary and `merged_ocr_text` retrieved from the
+database. Treat summaries as navigation aids; use the relevant OCR text to
+establish material details.
 
 ## Procedure
 
@@ -79,19 +78,12 @@ ownership history. At each link:
   approvals, plans, and other available records, and mark gaps explicitly.
 - Follow references to earlier instruments and transactions when available.
 - Include a transaction mentioned in a recital even if its original instrument
-  is not among the uploads. Mark that link as recital-reported / original deed
-  not supplied; do not present it as directly verified by the missing deed.
-- Represent each distinct recital-reported ownership transfer, succession, or
-  partition as its own title-chain item and graph step. Do not collapse those
-  links into a descriptive point on a later deed. Cite the document containing
-  the recital, mark the link `recital_reported`, and leave unavailable dates or
-  instrument numbers null.
+  is not among the uploads; mark it `recital_reported` per the task's chain
+  completeness rule rather than presenting it as directly verified.
 - Use mutations and other records as evidence or corroboration, while keeping
   their role distinct from the underlying ownership instrument where applicable.
-- Stop tracing when the available documents do not support the next link. Do not
-  invent an owner, event, date, or missing connection. Keep the last supported
-  link and its source clear in the graph and chain entries; do not add an
-  `unresolved` field to property identity or chain entries.
+- Stop tracing when the available documents do not support the next link; do not
+  invent an owner, event, date, or missing connection.
 
 ### 4. Classify events and label parties correctly
 
@@ -113,79 +105,22 @@ assign a transaction type merely to fit a predefined seller/buyer model.
 ### 5. Capture transaction details and evidence
 
 For every chain link or associated event, capture all relevant details actually
-available in supporting OCR. The transaction header contains only the
-transaction/instrument number, transaction type, and execution date. Explain the
-remaining material information as short, plain-language points, one fact per
-point; do not use extracted field labels such as "Seller:" or "Consideration:".
-Cover parties and roles, property conveyed, consideration, terms, conflicts, and
-other material facts naturally. Do not put source references or filenames in
-summary points. Keep source_refs separately at transaction/event level with the
-document ID and filename only; filenames are citation metadata, not evidence.
-Consolidate filenames in a Sources list after presenting the complete chain.
-Keep points concise, avoid repetition, and use null for a missing transaction
-number or date.
-
-Do not fabricate page references. Do not merge conflicting values into one
-apparently certain value; preserve the conflict and identify its sources.
+available in supporting OCR, following the field and style rules in the task
+instructions. Do not fabricate page references. Do not merge conflicting values
+into one apparently certain value; preserve the conflict and identify its sources.
 
 ## Result to produce
 
-Produce these user-facing parts and structured chain data for later phases:
-
-1. **Property being verified** — a concise list of the target property's
-   supported identifying details.
-2. **Title-chain graph** — a readable vertical graph ordered from the earliest
-   supported root at the top, tracing forward through owners and events toward
-   the current property owner at the bottom. Match the user's example's connected-node
-   style, including event labels and dates between owners. Attach non-transfer
-   events at the relevant point without presenting them as ownership transfers.
-3. **Title-chain list** — one item per ownership link, in exactly the same order
-   as the graph: earliest supported root first, then progressively forward, with
-   the current/latest link last. Each item must preserve the full transaction
-   details and source documents for later phases.
-
-Use a connected vertical layout like this (actual output should include the
-document-supported names, dates, references, property portions, and associated
-events):
-
-```text
-EARLIEST OWNER(S) / ROOT
-        │
-        │ Earlier documented transfer or succession
-        ▼
-PRIOR OWNER(S)
-        │
-        │ Latest Sale Deed — date / registration reference
-        ▼
-CURRENT OWNER(S) / TARGET PROPERTY
-```
-
-For every `documented_transaction`, provide `transaction_number` (the explicit
-registration/instrument reference, or null), `transaction_type`, `executed_date`
-(or null), `summary_points` (an array of plain-language sentences), and overall
-`source_refs`. Preserve all supported material details and uncertainty; do not
-invent facts. During each period between ownership links, inspect relevant
-documents for property events or developments. Put relevant non-transfer events
-in `related_events`, each with its date/type, plain-language points, and separate
-audit references. Do not include unrelated documents just to fill periods.
-
-Do not produce a separate title story or chain summary. The graph, property
-identity, and detailed title-chain list are the result; do not duplicate them in
-a prose narrative.
-
-The result must be self-contained and directly displayable by the frontend. The
-frontend should render the agent's saved result rather than infer party roles,
+Produce the structured result specified in the task instructions: the target
+property's supported identifying details, a connected vertical title-chain graph
+ordered from the earliest supported root to the current owner, and a title-chain
+list in the same order with full transaction details and source documents for
+later phases. The result must be self-contained and directly displayable by the
+frontend, which renders the saved result rather than inferring party roles,
 transaction types, or property relationships itself.
 
 ## Required safeguards
 
-- Property-schedule relevance governs whether an EC entry belongs to this chain.
-- A recital is evidence that a document reports an earlier event, not proof that
-  the original instrument was inspected.
-- A mutation, conversion, permission, development event, or mortgage must not be
-  mislabeled as a sale or other ownership transfer.
-- Preserve uncertainty and conflicting descriptions in the relevant detail and
-  evidence wording; do not add `unresolved` fields to property identity or chain
-  entries.
 - Never claim the chain is complete or title is clear solely because the supplied
-  documents contain no contrary entry.
+  documents contain no contrary entry; absence of evidence is not evidence of a
+  clean chain.

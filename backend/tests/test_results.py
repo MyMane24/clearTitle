@@ -33,10 +33,10 @@ def test_legacy_transaction_result_is_normalized_without_losing_distinct_values(
         "missing_documents": [{"document_type": "Deed", "reason": "Verify transfer"}],
         "required_documents": [], "findings": [], "reviewed_document_ids": ["DOC_001"],
     })
-    assert "Legacy summary A" in adapted["summary"]
-    assert "Legacy summary B" in adapted["summary"]
+    assert "Legacy summary A" in adapted["report"]
+    assert "Legacy summary B" in adapted["report"]
     assert adapted["required_documents"][0]["document_type"] == "Deed"
-    assert adapted["schema_version"] == "2.3"
+    assert adapted["schema_version"] == "3.0"
     assert adapted["reviewed_document_ids"] == ["DOC_001"]
 
 
@@ -46,8 +46,8 @@ def test_paused_requirements_are_derived_from_the_paused_persisted_transaction()
         "memory": {"current_tx_id": "PA-TC-0002", "current_stage": "paused", "status": "PENDING_NOT_VERIFIED"},
         "result": {},
         "case_result": [
-            {"tx_id": "PA-TC-0001", "sequence": 1, "status": "PENDING_NOT_VERIFIED", "summary": "One", "required_documents": [{"document_type": "Deed 1"}]},
-            {"tx_id": "PA-TC-0002", "sequence": 2, "status": "PENDING_NOT_VERIFIED", "summary": "Two", "required_documents": [{"document_type": "Death record"}]},
+            {"tx_id": "PA-TC-0001", "sequence": 1, "status": "PENDING_NOT_VERIFIED", "report": "One", "required_documents": [{"document_type": "Deed 1"}]},
+            {"tx_id": "PA-TC-0002", "sequence": 2, "status": "PENDING_NOT_VERIFIED", "report": "Two", "required_documents": [{"document_type": "Death record"}]},
         ],
     }):
         agent = _agent_block("CASE1")
@@ -62,8 +62,8 @@ def test_one_verified_transaction_does_not_mark_the_entire_chain_verified():
     with patch("backend.database.repositories.agent_repo.get_agent_state", return_value={
         "status": "done", "memory": {}, "result": {},
         "case_result": [
-            {"tx_id": "PA-TC-0001", "sequence": 1, "status": "VERIFIED_WITH_AVAILABLE_EVIDENCE", "summary": "First link supported."},
-            {"tx_id": "PA-TC-0002", "sequence": 2, "status": "PENDING_NOT_VERIFIED", "summary": "Second link remains open."},
+            {"tx_id": "PA-TC-0001", "sequence": 1, "status": "VERIFIED_WITH_AVAILABLE_EVIDENCE", "report": "First link supported."},
+            {"tx_id": "PA-TC-0002", "sequence": 2, "status": "PENDING_NOT_VERIFIED", "report": "Second link remains open."},
         ],
     }):
         agent = _agent_block("CASE1")

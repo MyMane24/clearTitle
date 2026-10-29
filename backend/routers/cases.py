@@ -78,13 +78,6 @@ logger = get_logger(__name__)
 _executor = ThreadPoolExecutor(max_workers=4)
 
 
-def _require_owner(case_id: str, user: dict) -> None:
-    """403 unless the case belongs to the authenticated user."""
-    owner = get_case_owner(case_id)
-    if owner and owner != user["id"]:
-        raise HTTPException(status_code=403, detail="Not your case")
-
-
 def _enforce_access(case_id: str, user: dict | None) -> None:
     """Anonymous cases (user_id NULL) are open to anyone with the case id;
     owned cases require the owner to be authenticated."""
@@ -366,7 +359,7 @@ async def link_case(case_id: str, user: dict = Depends(get_current_user)):
             return {"case_id": case_id, "linked": True, "already": True}
         raise HTTPException(status_code=403, detail="Case is linked to another account")
     set_case_owner(case_id=case_id, user_id=user["id"])
-    append_log(case_id, "── Case linked to account ──")
+    append_log(case_id, "-- Case linked to account --")
     return {"case_id": case_id, "linked": True, "already": False}
 
 
@@ -374,6 +367,7 @@ async def link_case(case_id: str, user: dict = Depends(get_current_user)):
 async def upload_more_documents(
     case_id: str,
     files: list[UploadFile] = File(...),
+    transaction_id: str | None = Form(None),
     user: dict | None = Depends(get_optional_user),
 ):
     if not files:
@@ -381,6 +375,22 @@ async def upload_more_documents(
     if not redis_case_exists(case_id):
         raise HTTPException(status_code=404, detail="Case not found")
     _enforce_access(case_id, user)
+
+    if transaction_id:
+        from backend.database.repositories import agent_repo
+        from backend.services.agent_schemas import normalize_status
+
+        memory = agent_repo.get_agent_memory(case_id) or {}
+        if transaction_id not in set(memory.get("skipped_tx_ids") or []):
+            raise HTTPException(status_code=409, detail="Evidence retry is only available for a skipped transaction")
+        phase_a = agent_repo.get_agent_result(case_id) or {}
+        from backend.services.cleartitle_agent import _phase_a_transactions
+        chain_tx_ids = {item.get("tx_id") for item in _phase_a_transactions(phase_a)}
+        if transaction_id not in chain_tx_ids:
+            raise HTTPException(status_code=404, detail="Transaction not found in the saved title chain")
+        previous = agent_repo.get_transaction_result(case_id, transaction_id) or {}
+        if normalize_status(previous.get("status")) != "PENDING_NOT_VERIFIED":
+            raise HTTPException(status_code=409, detail="Only pending skipped transactions can be retried")
 
     if any(not (f.filename or "").lower().endswith(".pdf") for f in files):
         raise HTTPException(status_code=400, detail="Only PDF documents can be uploaded")
@@ -439,12 +449,33 @@ async def upload_more_documents(
     add_files_to_case(case_id, saved)
     append_log(case_id, f"Uploaded {len(saved)} additional file(s) — total docs is now {new_total}")
 
+    # Carry an explicit user-selected skipped transaction through document
+    # processing so finalization can queue a transaction-scoped retry.
+    if transaction_id:
+        from backend.database.repositories import agent_repo
+        memory = agent_repo.get_agent_memory(case_id) or {}
+        memory["evidence_retry_tx_id"] = transaction_id
+        agent_repo.save_agent_memory(case_id=case_id, memory=memory)
+    else:
+        from backend.database.repositories import agent_repo
+        memory = agent_repo.get_agent_memory(case_id) or {}
+        if memory.pop("evidence_retry_tx_id", None):
+            agent_repo.save_agent_memory(case_id=case_id, memory=memory)
+
     set_case_status(case_id, STATUS_PROCESSING)
     try:
         start_case_pipeline(case_id)
     except Exception as e:
         if pipeline_lock:
             pipeline_lock.release()
+        if transaction_id:
+            try:
+                from backend.database.repositories import agent_repo
+                memory = agent_repo.get_agent_memory(case_id) or {}
+                memory.pop("evidence_retry_tx_id", None)
+                agent_repo.save_agent_memory(case_id=case_id, memory=memory)
+            except Exception as clear_error:
+                logger.warning("Failed to clear transaction retry marker for %s: %s", case_id, clear_error)
         set_case_status(case_id, STATUS_FAILED)
         append_log(case_id, f"FATAL: Failed to start uploaded-document pipeline — {e}")
         raise HTTPException(status_code=500, detail="Could not process the uploaded document")
@@ -501,7 +532,7 @@ async def skip_document_endpoint(
         if d.get("status") in ("failed", "classification_failed")
     ]
     if not unresolved:
-        append_log(case_id, "── All documents resolved — OCR and extraction phase complete ──")
+        append_log(case_id, "-- All documents resolved — OCR and extraction phase complete --")
 
     return {"case_id": case_id, "doc_id": doc_id, "status": "skipped"}
 

@@ -27,5 +27,5 @@ line-ending = "auto"
 convention = "google"
 
 [tool.pyright]
-extraPaths = [".", "sarvam_extract_probe"]
+extraPaths = ["."]
 

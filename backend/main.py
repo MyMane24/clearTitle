@@ -26,10 +26,10 @@ from backend.routers import results as results_router
 
 logger = get_logger(__name__)
 
-# ── Ensure required directories exist ─────────────────────────────────────────
+# -- Ensure required directories exist -----------------------------------------
 Path("uploads").mkdir(parents=True, exist_ok=True)
 
-# ── Lifespan (replaces deprecated @app.on_event) ─────────────────────────────
+# -- Lifespan (replaces deprecated @app.on_event) -----------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: init DB tables once
@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-# ── App ────────────────────────────────────────────────────────────────────────
+# -- App ------------------------------------------------------------------------
 app = FastAPI(
     title="ClearTitle Property Verification Engine",
     description="Sarvam OCR + LLM structuring + title-chain verification for property documents",
@@ -57,7 +57,7 @@ app.add_middleware(
     allow_credentials=True,
 )
 
-# ── API routes ─────────────────────────────────────────────────────────────────
+# -- API routes -----------------------------------------------------------------
 app.include_router(auth_router.router, prefix="/api")
 app.include_router(cases_router.router, prefix="/api")
 app.include_router(results_router.router, prefix="/api")
@@ -86,7 +86,7 @@ async def health():
     }
 
 
-# ── Serve frontend ─────────────────────────────────────────────────────────────
+# -- Serve frontend -------------------------------------------------------------
 FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
 SPA_DIST = FRONTEND / "dist"
 

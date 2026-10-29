@@ -19,6 +19,29 @@ from backend.services.agent_tools import ToolContext, dispatch, tools_for
 logger = get_logger(__name__)
 
 
+_RECOVERABLE_EVIDENCE_ERRORS = (
+    "whose complete ocr was not reviewed",
+    "must be read for every selected supporting document",
+)
+
+
+def _grant_recovery_budget(ctx: ToolContext, phase: str, tool_name: str, result: object) -> None:
+    """Reserve one bounded continuation for evidence-validation recovery."""
+    if phase != "verify" or tool_name not in {"save_transaction_result", "request_missing_documents"}:
+        return
+    if ctx.additional_model_calls_used or not isinstance(result, dict) or not result.get("error"):
+        return
+    error_text = str(result["error"]).casefold()
+    if not any(marker in error_text for marker in _RECOVERABLE_EVIDENCE_ERRORS):
+        return
+    ctx.additional_model_calls_used = True
+    ctx.additional_model_calls = 8
+    logger.warning(
+        "agent_validation_recovery_budget_granted run_id=%s tx_id=%s extra_calls=8 reason=%s",
+        ctx.run_id, ctx.current_tx_id, error_text[:240],
+    )
+
+
 def run_tool_loop(
     *,
     ctx: ToolContext,
@@ -59,6 +82,7 @@ def run_tool_loop(
                 break
             repeated_before = ctx.repeated_tool_calls
             result = dispatch(ctx, call["name"], call.get("args") or {})
+            _grant_recovery_budget(ctx, phase, call["name"], result)
             if ctx.repeated_tool_calls > repeated_before and isinstance(result, dict):
                 # Cached tool output is safe to reuse, but repeating it is not a
                 # reason to abort the transaction. Tell the model to move on and

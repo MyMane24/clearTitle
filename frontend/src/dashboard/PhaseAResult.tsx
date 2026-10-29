@@ -48,57 +48,6 @@ function ValueView({ value }: { value: unknown }): React.ReactNode {
   return <span className="phase-a-value-text">{String(value)}</span>;
 }
 
-function IdentitySection({ identity }: { identity: unknown }) {
-  const identityRecord = identity && typeof identity === 'object' && !Array.isArray(identity)
-    ? identity as Record<string, unknown>
-    : null;
-  const details = identityRecord?.details;
-  const additionalIdentity = identityRecord
-    ? Object.fromEntries(Object.entries(identityRecord).filter(([key]) => key !== 'details'))
-    : identity;
-
-  return (
-    <section className="phase-a-identity" aria-labelledby="phase-a-identity-title">
-      <div className="phase-a-section-heading">
-        <span className="phase-a-section-index">01</span>
-        <div>
-          <h2 id="phase-a-identity-title">Property being verified</h2>
-          <p>Identifiers and descriptions recorded in the uploaded documents.</p>
-        </div>
-      </div>
-      {Array.isArray(details) && details.length ? (
-        <div className="phase-a-identity-grid">
-          {details.map((detail, index) => {
-            const item: Record<string, unknown> = detail && typeof detail === 'object'
-              ? detail as Record<string, unknown>
-              : { label: `Detail ${index + 1}`, value: detail };
-            return (
-              <article className="phase-a-identity-item" key={`${String(item.label || 'detail')}-${index}`}>
-                <h3>{String(item.label || `Detail ${index + 1}`)}</h3>
-                <ValueView value={item.value} />
-                {Array.isArray(item.source_refs) && item.source_refs.length > 0 && (
-                  <details className="phase-a-sources">
-                    <summary>Evidence · {item.source_refs.length}</summary>
-                    <ValueView value={item.source_refs} />
-                  </details>
-                )}
-              </article>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="phase-a-identity-item">
-          <ValueView value={identity} />
-        </div>
-      )}
-      {additionalIdentity && typeof additionalIdentity === 'object' && !Array.isArray(additionalIdentity) &&
-        Object.keys(additionalIdentity as Record<string, unknown>).length > 0 && (
-          <div className="phase-a-identity-extra"><ValueView value={additionalIdentity} /></div>
-        )}
-    </section>
-  );
-}
-
 function GraphSection({ graph }: { graph: string }) {
   return (
     <section className="phase-a-graph" aria-labelledby="phase-a-graph-title">
@@ -230,30 +179,6 @@ function ChainDetails({ chain }: {
     <section className="phase-a-chain-list" aria-label="Detailed title chain">
       {chain.map((entry, index) => <ChainEntry key={index} entry={entry} index={index} />)}
     </section>
-  );
-}
-
-export function PhaseAOverview({
-  result,
-  onOpenChain,
-}: {
-  result: PhaseAResultData;
-  onOpenChain: () => void;
-}) {
-  return (
-    <main className="phase-a-result">
-      <header className="phase-a-page-heading">
-        <span className="phase-a-eyebrow">PROPERTY INVESTIGATION</span>
-        <h1>Property identity &amp; title chain</h1>
-        <p>Built from the uploaded documents and their recorded evidence.</p>
-      </header>
-      <IdentitySection identity={result.property_identity} />
-      <GraphSection graph={result.title_chain_graph || ''} />
-      <div className="phase-a-overview-action">
-        <span>{Array.isArray(result.title_chain) ? `${result.title_chain.length} linked records` : 'Detailed chain'}</span>
-        <button type="button" onClick={onOpenChain}>Explore transaction details <span aria-hidden="true">→</span></button>
-      </div>
-    </main>
   );
 }
 

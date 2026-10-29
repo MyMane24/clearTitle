@@ -19,7 +19,7 @@ from backend.config import (
 )
 from backend.integrations.redis.client import get_redis as _get_redis
 
-# ── Rate limit config ─────────────────────────────────────────────────────────
+# -- Rate limit config ---------------------------------------------------------
 
 @dataclass
 class RateLimitConfig:
@@ -33,7 +33,7 @@ GEMINI_LIMITS = RateLimitConfig(
     burst_size=GEMINI_BURST,
 )
 
-# ── Lua script for atomic token-bucket acquire ────────────────────────────────
+# -- Lua script for atomic token-bucket acquire --------------------------------
 #
 # All three pipeline calls in the old _try_acquire (TIME, read-state,
 # write-state) are collapsed into ONE Lua script that Redis executes
@@ -82,7 +82,7 @@ redis.call('SET', KEYS[3], tostring(now))
 return 1
 """
 
-# ── Rate limiter class ────────────────────────────────────────────────────────
+# -- Rate limiter class --------------------------------------------------------
 
 class TokenBucketRateLimiter:
     """Redis-based token bucket limiter shared across workers."""
@@ -99,9 +99,6 @@ class TokenBucketRateLimiter:
 
     def _request_key(self) -> str:
         return f"ratelimit:{self.prefix}:requests"
-
-    def _window_key(self) -> str:
-        return f"ratelimit:{self.prefix}:window"
 
     def acquire(self, tokens: int = 1, timeout: float = 30.0) -> bool:
         """
@@ -160,4 +157,4 @@ class TokenBucketRateLimiter:
 
 gemini_limiter = TokenBucketRateLimiter("gemini", GEMINI_LIMITS)
 
-# ── LLM call tracker ─────────────────────────────────────────────────────────
+# -- LLM call tracker ---------------------------------------------------------

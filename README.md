@@ -378,87 +378,87 @@ The dashboard polls `/api/status/{case_id}` through the analysis phase and only 
 
 ```
 clearTitle/
-├── backend/                        # FastAPI + Celery
-│   ├── main.py                     # FastAPI entrypoint (API + React SPA)
-│   ├── celery_app.py               # Celery config (acks_late, timeouts, retries)
-│   ├── config.py                   # ALL env vars in one place
-│   ├── logger.py                   # Logging utility
+├-- backend/                        # FastAPI + Celery
+│   ├-- main.py                     # FastAPI entrypoint (API + React SPA)
+│   ├-- celery_app.py               # Celery config (acks_late, timeouts, retries)
+│   ├-- config.py                   # ALL env vars in one place
+│   ├-- logger.py                   # Logging utility
 │   │
-│   ├── prompts/                    # Versioned LLM prompts (editable .txt files)
-│   │   ├── loader.py               #   load_prompt() helper
-│   │   ├── agent_system.txt        #   Shared agent reasoning and tool policy
-│   │   ├── agent_summary.txt       #   Document navigation summaries
-│   │   ├── agent_chain_task.txt    #   Property identity + title chain
-│   │   ├── agent_verify_task.txt   #   Per-transaction verification
-│   │   └── agent_final.txt         #   Consolidated report
+│   ├-- prompts/                    # Versioned LLM prompts (editable .txt files)
+│   │   ├-- loader.py               #   load_prompt() helper
+│   │   ├-- agent_system.txt        #   Shared agent reasoning and tool policy
+│   │   ├-- agent_summary.txt       #   Document navigation summaries
+│   │   ├-- agent_chain_task.txt    #   Property identity + title chain
+│   │   ├-- agent_verify_task.txt   #   Per-transaction verification
+│   │   └-- agent_final.txt         #   Consolidated report
 │   │
-│   ├── routers/                    # HTTP layer (thin: validate -> call service)
-│   │   ├── auth.py                 #   /register, /login, /me
-│   │   ├── cases.py                #   upload, process, status, retry, replace, skip, delete
-│   │   └── results.py              #   /results/{id}, /results/{id}/analyze
+│   ├-- routers/                    # HTTP layer (thin: validate -> call service)
+│   │   ├-- auth.py                 #   /register, /login, /me
+│   │   ├-- cases.py                #   upload, process, status, retry, replace, skip, delete
+│   │   └-- results.py              #   /results/{id}, /results/{id}/analyze
 │   │
-│   ├── services/                   # Business logic (no HTTP, no Celery)
-│   │   ├── orchestrator.py         #   builds Celery chains + chords
-│   │   ├── document_processor.py   #   classification + full-text extraction
-│   │   ├── cleartitle_agent.py     #   tool-using title-chain + verification workflow
-│   │   ├── extract.py              #   OCR retry + structured output paths
-│   │   ├── report.py               #   PDF title verification report renderer
-│   │   ├── results.py              #   assemble /api/results payload
-│   │   ├── auth.py                 #   JWT + bcrypt helpers
-│   │   └── schemas/                #   per-doc-type JSON extraction schemas
-│   │       ├── static.py           #     17 hand-written JSON schemas
-│   │       └── generic.py          #     fallback schema for unknown types
+│   ├-- services/                   # Business logic (no HTTP, no Celery)
+│   │   ├-- orchestrator.py         #   builds Celery chains + chords
+│   │   ├-- document_processor.py   #   classification + full-text extraction
+│   │   ├-- cleartitle_agent.py     #   tool-using title-chain + verification workflow
+│   │   ├-- extract.py              #   OCR retry + structured output paths
+│   │   ├-- report.py               #   PDF title verification report renderer
+│   │   ├-- results.py              #   assemble /api/results payload
+│   │   ├-- auth.py                 #   JWT + bcrypt helpers
+│   │   └-- schemas/                #   per-doc-type JSON extraction schemas
+│   │       ├-- static.py           #     17 hand-written JSON schemas
+│   │       └-- generic.py          #     fallback schema for unknown types
 │   │
-│   ├── workers/                    # Celery layer (thin task wrappers)
-│   │   ├── tasks.py                #   6 idempotent stage tasks
-│   │   ├── stages.py               #   the actual stage logic (preprocess->persist)
-│   │   ├── stage_adapter.py        #   task -> stage.invoke adapter
-│   │   ├── idempotency.py          #   skip-already-done guard
-│   │   ├── finalize.py             #   chord callback: recompute status + queue analysis
-│   │   ├── title_chain_tasks.py    #   queues the ClearTitle agent task
-│   │   └── context.py              #   StageContext (dependencies handed to stages)
+│   ├-- workers/                    # Celery layer (thin task wrappers)
+│   │   ├-- tasks.py                #   6 idempotent stage tasks
+│   │   ├-- stages.py               #   the actual stage logic (preprocess->persist)
+│   │   ├-- stage_adapter.py        #   task -> stage.invoke adapter
+│   │   ├-- idempotency.py          #   skip-already-done guard
+│   │   ├-- finalize.py             #   chord callback: recompute status + queue analysis
+│   │   ├-- title_chain_tasks.py    #   queues the ClearTitle agent task
+│   │   └-- context.py              #   StageContext (dependencies handed to stages)
 │   │
-│   ├── domain/state_machine.py     # Stage enum + status->stage mapping (pure logic)
+│   ├-- domain/state_machine.py     # Stage enum + status->stage mapping (pure logic)
 │   │
-│   ├── integrations/               # Adapters to external/plumbing systems
-│   │   ├── llm/                    #   provider-agnostic agent LLM + optional Gemini limiter
-│   │   ├── ocr/                    #   sarvam_client, ocr_merger, preprocessor
-│   │   ├── redis/                  #   client, state_store, lock
-│   │   └── storage/                #   file_utils, file_service
+│   ├-- integrations/               # Adapters to external/plumbing systems
+│   │   ├-- llm/                    #   provider-agnostic agent LLM + optional Gemini limiter
+│   │   ├-- ocr/                    #   sarvam_client, ocr_merger, preprocessor
+│   │   ├-- redis/                  #   client, state_store, lock
+│   │   └-- storage/                #   file_utils, file_service
 │   │
-│   ├── database/
-│   │   ├── connection.py           #  MySQL connection helper
-│   │   ├── migrations.py           #  DDL bootstrap (runs at startup)
-│   │   └── repositories/           #  SQL access (case, document, title_chain,
+│   ├-- database/
+│   │   ├-- connection.py           #  MySQL connection helper
+│   │   ├-- migrations.py           #  DDL bootstrap (runs at startup)
+│   │   └-- repositories/           #  SQL access (case, document, title_chain,
 │   │                               #  verification, verification_results, user)
 │   │
-│   ├── shared/constants.py         # doc-type + status string constants
-│   ├── shared/ec_ledger.py         # EC page-split row recombinator (read-boundary fix)
-│   └── tests/                      # pytest suite
+│   ├-- shared/constants.py         # doc-type + status string constants
+│   ├-- shared/ec_ledger.py         # EC page-split row recombinator (read-boundary fix)
+│   └-- tests/                      # pytest suite
 │
-├── frontend/                       # React SPA (Vite)
-│   ├── src/
-│   │   ├── components/             # Landing-page sections (Navbar, Hero, FAQ, ...)
-│   │   ├── dashboard/              # Verification dashboard (upload, report, history, auth)
-│   │   │   ├── VerificationDashboard.tsx  # Main dashboard with AI pipeline view
-│   │   │   └── dashboard.css       #  All dashboard styles + pipeline animations
-│   │   ├── api/backend.ts          # API client (JWT auth, typed responses)
-│   │   ├── data/                   # Landing content
-│   │   ├── App.tsx                 # Route: homepage / + dashboard /#/app
-│   │   ├── index.css               # Tailwind theme + brand fonts
-│   │   └── main.tsx
-│   ├── public/                     # Favicon, static assets
-│   ├── server.ts                   # Dev server (Express + Vite middleware)
-│   └── index.html
+├-- frontend/                       # React SPA (Vite)
+│   ├-- src/
+│   │   ├-- components/             # Landing-page sections (Navbar, Hero, FAQ, ...)
+│   │   ├-- dashboard/              # Verification dashboard (upload, report, history, auth)
+│   │   │   ├-- VerificationDashboard.tsx  # Main dashboard with AI pipeline view
+│   │   │   └-- dashboard.css       #  All dashboard styles + pipeline animations
+│   │   ├-- api/backend.ts          # API client (JWT auth, typed responses)
+│   │   ├-- data/                   # Landing content
+│   │   ├-- App.tsx                 # Route: homepage / + dashboard /#/app
+│   │   ├-- index.css               # Tailwind theme + brand fonts
+│   │   └-- main.tsx
+│   ├-- public/                     # Favicon, static assets
+│   ├-- server.ts                   # Dev server (Express + Vite middleware)
+│   └-- index.html
 │
-├── outputs/                        # PDFs + structured outputs (bind-mounted, persists across restarts, NOT in git)
-├── uploads/                        # Original uploaded PDFs (bind-mounted, NOT in git)
-├── backups/                        # Local mysqldump snapshots (NOT in git)
-├── docs/                           # Local-only design notes (gitignored — not in a fresh clone)
-├── docker-compose.yml              # 5 services: api, worker, mysql, redis, phpmyadmin
-├── Dockerfile                      # Multi-stage build (Node 20 builds SPA → Python 3.11 runtime)
-├── requirements.txt                # Python dependencies
-└── .env                            # Environment variables (not committed)
+├-- outputs/                        # PDFs + structured outputs (bind-mounted, persists across restarts, NOT in git)
+├-- uploads/                        # Original uploaded PDFs (bind-mounted, NOT in git)
+├-- backups/                        # Local mysqldump snapshots (NOT in git)
+├-- docs/                           # Local-only design notes (gitignored — not in a fresh clone)
+├-- docker-compose.yml              # 5 services: api, worker, mysql, redis, phpmyadmin
+├-- Dockerfile                      # Multi-stage build (Node 20 builds SPA → Python 3.11 runtime)
+├-- requirements.txt                # Python dependencies
+└-- .env                            # Environment variables (not committed)
 ```
 
 ---

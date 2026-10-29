@@ -15,6 +15,13 @@ def test_finalizer_resumes_a_pending_verification_after_document_processing():
     )
 
 
+def test_finalizer_starts_a_selected_skipped_transaction_retry():
+    assert _should_start_agent(
+        [{"doc_id": "DOC_002", "status": "structured"}],
+        {"evidence_retry_tx_id": "PA-TC-0002"},
+    )
+
+
 def test_finalizer_does_not_start_agent_without_structured_or_pending_work():
     assert not _should_start_agent(
         [{"doc_id": "DOC_001", "status": "classification_failed"}],

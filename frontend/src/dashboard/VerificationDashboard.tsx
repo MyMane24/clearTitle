@@ -45,12 +45,12 @@ function profileInitials(u: AuthUser): string {
 function logClass(line: string): string {
   if (line.includes("✗") || line.toLowerCase().includes("failed")) return "log-err";
   if (line.includes("✓") || line.toLowerCase().includes("complete")) return "log-ok";
-  if (line.includes("Step") || line.includes("──")) return "log-info";
+  if (line.includes("Step") || line.includes("--")) return "log-info";
   if (line.includes("⚠")) return "log-warn";
   return "";
 }
 
-function docStageInfo(docStatus: string): { label: string; pct: number; state: 'waiting' | 'active' | 'done' | 'failed' } {
+function docStageInfo(docStatus: string, error = ''): { label: string; pct: number; state: 'waiting' | 'active' | 'done' | 'failed' } {
   const map: Record<string, { label: string; pct: number; state: 'waiting' | 'active' | 'done' | 'failed' }> = {
     uploaded:            { label: 'Waiting to process...',   pct: 0,   state: 'waiting' },
     preprocessing:       { label: 'Reading and understanding...', pct: 15, state: 'active' },
@@ -69,15 +69,25 @@ function docStageInfo(docStatus: string): { label: string; pct: number; state: '
     classification_failed:{ label: 'Unrecognized document', pct: 0, state: 'failed' },
     pending_retry:       { label: 'Waiting to retry...',  pct: 0,   state: 'waiting' },
   };
+  if (error.toLowerCase().includes('insufficient credits')) {
+    return { label: 'Insufficient OCR credits', pct: 0, state: 'failed' };
+  }
   return map[docStatus] || { label: docStatus, pct: 0, state: 'waiting' };
+}
+
+function documentErrorMessage(error = ''): string {
+  if (error.toLowerCase().includes('insufficient credits')) {
+    return 'OCR stopped: Sarvam has insufficient credits. Add credits to the Sarvam account, then retry this document.';
+  }
+  return error;
 }
 
 function AiDots() {
   return <span className="ai-dots"><span /><span /><span /></span>;
 }
 
-function DocPipelineCard({ doc, compact }: { doc: { doc_id: string; original_name: string; status: string; document_type: string }; compact?: boolean }) {
-  const info = docStageInfo(doc.status);
+function DocPipelineCard({ doc, compact }: { doc: { doc_id: string; original_name: string; status: string; document_type: string; error?: string }; compact?: boolean }) {
+  const info = docStageInfo(doc.status, doc.error);
   const cardClass = `doc-pipeline-card ${info.state === 'active' ? 'active' : info.state === 'done' ? 'done' : info.state === 'failed' ? 'failed' : ''}`;
 
   if (compact && info.state === 'done') {
@@ -95,7 +105,7 @@ function DocPipelineCard({ doc, compact }: { doc: { doc_id: string; original_nam
   }
 
   return (
-    <div className={cardClass}>
+      <div className={cardClass}>
       <div className="doc-pipeline-top">
         <div className="doc-pipeline-name">
           {info.state === 'done' ? (
@@ -112,6 +122,9 @@ function DocPipelineCard({ doc, compact }: { doc: { doc_id: string; original_nam
           {info.label}
         </div>
       </div>
+      {info.state === 'failed' && doc.error && (
+        <div className="doc-pipeline-error" role="alert">{documentErrorMessage(doc.error)}</div>
+      )}
       {info.state !== 'done' && info.state !== 'failed' && (
         <div className="doc-pipeline-bar-wrap">
           <div className={`doc-pipeline-bar ${info.state}`} style={{ width: `${info.pct}%` }} />
@@ -122,14 +135,16 @@ function DocPipelineCard({ doc, compact }: { doc: { doc_id: string; original_nam
 }
 function AIPipeline({ statusData }: { statusData: StatusResponse }) {
   const files = statusData.files || [];
-  const terminal = (status: string) => ['structured', 'skipped', 'failed', 'classification_failed'].includes(status);
-  const allDone = files.length > 0 && files.every(f => terminal(f.status));
-  const anyActive = files.some(f => f.status !== 'uploaded' && !terminal(f.status));
+  const terminal = (file: typeof files[number]) =>
+    ['structured', 'skipped', 'failed', 'classification_failed'].includes(file.status) ||
+    Boolean(file.error?.toLowerCase().includes('insufficient credits'));
+  const allDone = files.length > 0 && files.every(terminal);
+  const anyActive = files.some(f => f.status !== 'uploaded' && !terminal(f));
   const hasFiles = files.length > 0;
 
   const showAnalysis = allDone && hasFiles;
   const allComplete = allDone && statusData.status !== 'processing';
-  const activeDocCount = files.filter(f => f.status !== 'uploaded' && !terminal(f.status)).length;
+  const activeDocCount = files.filter(f => f.status !== 'uploaded' && !terminal(f)).length;
   const doneDocCount = files.filter(f => f.status === 'structured' || f.status === 'skipped').length;
 
   return (
@@ -660,6 +675,7 @@ export function VerificationDashboard() {
   const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [evidenceUploadBusy, setEvidenceUploadBusy] = useState(false);
+  const [evidenceUploadTxId, setEvidenceUploadTxId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [pipelineStartError, setPipelineStartError] = useState<string | null>(null);
   const [cases, setCases] = useState<CaseListItem[]>([]);
@@ -684,7 +700,7 @@ export function VerificationDashboard() {
     }
   }, []);
 
-  // ── Auth bootstrap ──
+  // -- Auth bootstrap --
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -794,7 +810,7 @@ export function VerificationDashboard() {
     navigate(linkCaseId ? `/login?link=${encodeURIComponent(linkCaseId)}` : '/login');
   };
 
-  // ── Health check ──
+  // -- Health check --
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -817,7 +833,7 @@ export function VerificationDashboard() {
           !health.agent_provider_key && `${health.agent_provider} agent provider`,
         ].filter(Boolean).join(", ")}`;
 
-  // ── Sidebar: load cases ──
+  // -- Sidebar: load cases --
   const loadCases = useCallback(async () => {
     try {
       const data = await API.listCases();
@@ -829,7 +845,7 @@ export function VerificationDashboard() {
     if (auth) loadCases();
   }, [auth, loadCases]);
 
-  // ── Resume last guest scan after a page refresh ──
+  // -- Resume last guest scan after a page refresh --
   useEffect(() => {
     if (authLoading || auth) return;
     const caseId = sessionStorage.getItem("currentCaseId");
@@ -854,7 +870,7 @@ export function VerificationDashboard() {
     })();
   }, [authLoading, auth]);
 
-  // ── Files ──
+  // -- Files --
   const slotCount = (slot: UploadSlot) => files.filter(f => f.slot === slot).length;
 
   const addFilesToSlot = (slot: UploadSlot, incoming: File[]) => {
@@ -889,7 +905,7 @@ export function VerificationDashboard() {
     setUploadError(null);
   };
 
-  // ── Processing ──
+  // -- Processing --
   const startProcessing = async () => {
     if (slotCount('sale_deed') < 1 || slotCount('ec') < 1) return;
     const maxSizeMb = health?.max_upload_size_mb ?? 50;
@@ -1004,7 +1020,7 @@ export function VerificationDashboard() {
     }
   };
 
-  // ── Link a case after signing in via /login?link=<caseId> ──
+  // -- Link a case after signing in via /login?link=<caseId> --
   useEffect(() => {
     const linkCase = searchParams.get('link');
     if (!linkCase || authLoading) return;
@@ -1019,7 +1035,7 @@ export function VerificationDashboard() {
     })();
   }, [searchParams, auth, authLoading]);
 
-  // ── Auto-link guest case on login (no ?link= param) ──
+  // -- Auto-link guest case on login (no ?link= param) --
   useEffect(() => {
     if (authLoading || !auth) return;
     const caseId = sessionStorage.getItem("currentCaseId");
@@ -1077,7 +1093,7 @@ export function VerificationDashboard() {
     await tick();
   };
 
-  // ── Results actions ──
+  // -- Results actions --
   const skipDoc = async (docId: string) => {
     if (!currentCaseId) return;
     try {
@@ -1136,6 +1152,23 @@ export function VerificationDashboard() {
     }
   };
 
+  const uploadEvidenceForSkippedTransaction = async (txId: string, selected: File[]) => {
+    if (!currentCaseId || !selected.length || evidenceUploadBusy) return;
+    setEvidenceUploadBusy(true);
+    setEvidenceUploadTxId(txId);
+    try {
+      await API.uploadMore(currentCaseId, selected, txId);
+      addLog(`Uploaded evidence for skipped transaction ${txId}; verification will retry only this transaction after processing.`, "log-info");
+      setView('processing');
+      startPolling(currentCaseId);
+    } catch (error: any) {
+      addLog(`✗ Evidence upload for ${txId} failed: ${error?.message || 'Upload failed'}`, "log-err");
+    } finally {
+      setEvidenceUploadBusy(false);
+      setEvidenceUploadTxId(null);
+    }
+  };
+
   const skipPausedTransaction = async () => {
     const txId = results?.agent?.paused_transaction;
     if (!currentCaseId || !txId) return;
@@ -1191,7 +1224,7 @@ export function VerificationDashboard() {
     }
   };
 
-  // ── History ──
+  // -- History --
   const deleteCase = async (caseId: string) => {
     if (!confirm(`Delete case ${caseId} and all associated data? This cannot be undone.`)) return;
     try {
@@ -1691,6 +1724,10 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                           transaction={item}
                           documents={results.documents}
                           skipped={skippedTxIds.has(item.tx_id)}
+                          onUploadEvidence={skippedTxIds.has(item.tx_id)
+                            ? uploadEvidenceForSkippedTransaction
+                            : undefined}
+                          evidenceUploadBusy={evidenceUploadBusy && evidenceUploadTxId === item.tx_id}
                         />
                       ))
                     ) : (

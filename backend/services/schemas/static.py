@@ -1,5 +1,5 @@
 ﻿"""Per-document JSON schemas keyed by document type (extraction-only)."""
-# ── Schema definitions ─────────────────────────────────────────────────────
+# -- Schema definitions -----------------------------------------------------
 
 
 SALE_DEED_SCHEMA = {

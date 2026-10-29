@@ -26,42 +26,41 @@ def _scrub_dead_proxies() -> None:
 
 _scrub_dead_proxies()
 
-# ── Redis ──────────────────────────────────────────────────────────────────────
+# -- Redis ----------------------------------------------------------------------
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-# ── MySQL ──────────────────────────────────────────────────────────────────────
+# -- MySQL ----------------------------------------------------------------------
 MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")
 MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
 MYSQL_USER = os.getenv("MYSQL_USER", "root")
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "password")
 MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", os.getenv("MYSQL_DATABASE_V2", "property_ocr_v2"))
 
-# ── API keys ───────────────────────────────────────────────────────────────────
+# -- API keys -------------------------------------------------------------------
 SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "")
-BODHAN_API_KEY = os.getenv("BODHAN_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
-# ── Optional Gemini verification-agent rate limits ──────────────────────────────
+# -- Optional Gemini verification-agent rate limits ------------------------------
 GEMINI_RPM = int(os.getenv("GEMINI_RPM", "30"))
 GEMINI_TPM = int(os.getenv("GEMINI_TPM", "4000000"))
 GEMINI_BURST = int(os.getenv("GEMINI_BURST", "5"))
 
-# ── Uploads ────────────────────────────────────────────────────────────────────
+# -- Uploads --------------------------------------------------------------------
 MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "100"))
 
-# ── Auth / JWT ─────────────────────────────────────────────────────────────────
+# -- Auth / JWT -----------------------------------------------------------------
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "cleartitle-secret-key-production-change-me-12345")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "10080"))
 
-# ── Google OAuth ───────────────────────────────────────────────────────────────
+# -- Google OAuth ---------------------------------------------------------------
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
 GOOGLE_FRONTEND_REDIRECT_URI = os.getenv("GOOGLE_FRONTEND_REDIRECT_URI", "http://localhost:8000/login")
 
-# ── ClearTitle agent ───────────────────────────────────────────────────────────
+# -- ClearTitle agent -----------------------------------------------------------
 # The single ClearTitle agent is provider-agnostic. Production uses GPT-6 Luna via OpenAI.
 CLEARTITLE_AGENT_PROVIDER = os.getenv("CLEARTITLE_AGENT_PROVIDER", "openai")
 CLEARTITLE_AGENT_MODEL = os.getenv("CLEARTITLE_AGENT_MODEL", "GPT-6 Luna")
@@ -80,7 +79,7 @@ DOCUMENT_CLASSIFICATION_TOKEN_BUDGET = int(os.getenv("DOCUMENT_CLASSIFICATION_TO
 OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "")
 OPENAI_API_VERSION = os.getenv("OPENAI_API_VERSION", "2024-02-15-preview")
 
-# ── API / app ──────────────────────────────────────────────────────────────────
+# -- API / app ------------------------------------------------------------------
 CORS_ORIGINS = os.getenv(
     "CORS_ORIGINS",
     "http://localhost:8000,http://127.0.0.1:8000,http://localhost:3000,http://127.0.0.1:3000",

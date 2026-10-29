@@ -85,7 +85,7 @@ async def me(user: dict = Depends(get_current_user)):
     return {"user": user}
 
 
-# ── Google OAuth (Authorization Code flow) ─────────────────────────────────────
+# -- Google OAuth (Authorization Code flow) -------------------------------------
 
 google_router = APIRouter(prefix="/auth/google", tags=["auth"])
 
