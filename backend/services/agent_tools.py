@@ -656,8 +656,12 @@ def _upstream_chain_context(case_id: str, phase_a_chain: list[dict], sequence: i
     return {"upstream_unverified": unverified}
 
 
-DEPENDENCY_SECTION_HEADING = "## Upstream dependency"
-_DEPENDENCY_SECTION_PATTERN = re.compile(r"(?ims)^##\s+upstream dependency\s*$\n?(.*?)(?=^##\s|\Z)")
+DEPENDENCY_SECTION_HEADING = "## Earlier transactions"
+# Legacy saved reports may still carry the old jargon heading; both match so the
+# refresh flow finds and migrates them.
+_DEPENDENCY_SECTION_PATTERN = re.compile(
+    r"(?ims)^##\s+(?:earlier transactions|upstream dependency)\s*$\n?(.*?)(?=^##\s|\Z)"
+)
 
 
 def _has_dependency_section(report: str) -> bool:
@@ -679,6 +683,129 @@ def _with_dependency_section(report: str, body: str) -> str:
     base, _ = _split_dependency_section(report)
     section = f"{DEPENDENCY_SECTION_HEADING}\n\n{str(body or '').strip()}".strip()
     return f"{base}\n\n{section}".strip() if base else section
+
+
+def _normalize_request_label(value) -> str:
+    return " ".join(str(value or "").split()).casefold()
+
+
+# Words any two different documents may share; only a name outside this set
+# (an authority, project or place) makes two differently worded requests
+# comparable.
+_GENERIC_REQUEST_WORDS = frozenset(
+    "sale deed agreement partition gift release mutation extract record certificate "
+    "approval layout plan khata tax receipt succession will power attorney "
+    "encumbrance conversion order deposit memorandum family tree map survey "
+    "subdivision correlation card possession occupancy completion entry register "
+    "index no of the for and or to with".split()
+)
+
+# A "Doc. No. X" value is a registered-instrument identifier; two requests
+# carrying different values are different documents even when everything else
+# matches.
+_DOC_NUMBER = re.compile(r"doc(?:ument)?\s*no\.?\s*[:#]?\s*([a-z0-9/-]+)")
+
+
+def _kind_head(label: str) -> list[str]:
+    """Leading words before the first identifier token, e.g. ['buda', 'layout']."""
+    head = []
+    for token in re.findall(r"[a-z0-9]+", label.casefold()):
+        if any(ch.isdigit() for ch in token):
+            break
+        head.append(token)
+    return head
+
+
+def _digit_tokens(label: str) -> set[str]:
+    return {t for t in re.findall(r"[a-z0-9]+", label) if any(c.isdigit() for c in t)}
+
+
+def _requests_match(submitted: str, earlier: str) -> bool:
+    """True when a submitted request names a document an earlier link already requested.
+
+    Exact after case/whitespace normalization; otherwise the same distinctive
+    document kind with a shared identifier (a re-worded 'BUDA layout approval'
+    that adds the approval number), or two shared identifiers plus a shared
+    distinctive word such as the survey numbers and the village name in two
+    wordings of one survey-correlation request. Generic kind heads ('sale
+    deed') never fuzzy-match because two different sale deeds share those
+    words, and conflicting document numbers defeat the match (same-day deeds
+    with consecutive registration numbers stay separate).
+    """
+    left, right = _normalize_request_label(submitted), _normalize_request_label(earlier)
+    if left == right:
+        return True
+    doc_numbers_left = set(_DOC_NUMBER.findall(left))
+    doc_numbers_right = set(_DOC_NUMBER.findall(right))
+    if doc_numbers_left and doc_numbers_right and doc_numbers_left.isdisjoint(doc_numbers_right):
+        return False
+    head_left, head_right = _kind_head(left), _kind_head(right)
+    distinctive = (set(head_left) | set(head_right)) - _GENERIC_REQUEST_WORDS
+    digits = _digit_tokens(left) & _digit_tokens(right)
+    if len(head_left) >= 2 and len(head_right) >= 2 and head_left[:2] == head_right[:2] and distinctive and digits:
+        return True
+    shared_word = any(
+        len(word) >= 4 and word not in _GENERIC_REQUEST_WORDS
+        for word in set(re.findall(r"[a-z]+", left)) & set(re.findall(r"[a-z]+", right))
+    )
+    return len(digits) >= 2 and shared_word
+
+
+def _earlier_requests(case_id: str, sequence: int) -> list[tuple[str, str, str]]:
+    """(label, normalized label, requester tx id) for every earlier link's request.
+
+    The model re-files an earlier link's outstanding request even when the
+    upstream context lists it verbatim; the tool refuses the duplicate so the
+    model itself removes it and states reliance in the report instead.
+    """
+    requests: list[tuple[str, str, str]] = []
+    if sequence <= 1:
+        return requests
+    for item in repo.list_transaction_results(case_id):
+        result_sequence = int(item.get("sequence") or 0)
+        if not result_sequence or result_sequence >= sequence:
+            continue
+        tx_id = str(item.get("tx_id") or "")
+        for requirement in item.get("required_documents") or []:
+            label = str(requirement.get("document_type") or "").strip()
+            if label and tx_id:
+                requests.append((label, _normalize_request_label(label), tx_id))
+    return requests
+
+
+def _available_document_request_errors(ctx: ToolContext, requirements: list[dict]) -> list[str]:
+    """Refuse requests for records the case already holds, matched by identifier.
+
+    Under duplicate-refusal pressure the model padded its request list with the
+    deed it had just read; a registration/transaction number is a unique
+    identifier, so a request label containing one that belongs to a case
+    document is a request for that document.
+    """
+    identifiers: dict[str, str] = {}
+    for entry in ctx.phase_a_chain or []:
+        transaction = entry.get("documented_transaction") or {}
+        refs = [
+            str(ref.get("filename") or ref.get("doc_id") or "")
+            for ref in (transaction.get("source_refs") or []) if isinstance(ref, dict)
+        ]
+        holder = ", ".join(filter(None, refs)) or "the case documents"
+        for key in ("transaction_number", "registration_number", "document_number"):
+            value = _normalize_request_label(transaction.get(key))
+            if value:
+                identifiers.setdefault(value, holder)
+    errors = []
+    for requirement in requirements:
+        label = _normalize_request_label(requirement.get("document_type"))
+        for identifier, holder in identifiers.items():
+            if identifier in label:
+                errors.append(
+                    "%s is already available in the case (%s); never request an available "
+                    "document — assess it directly instead" % (
+                        requirement.get("document_type"), holder,
+                    )
+                )
+                break
+    return errors
 
 
 def _canonical_verification(ctx: ToolContext, args: dict, *, force_pending: bool = False) -> dict:
@@ -722,7 +849,7 @@ def _canonical_verification(ctx: ToolContext, args: dict, *, force_pending: bool
         if chain_context.get("upstream_unverified") and not _has_dependency_section(str(payload.get("report") or "")):
             raise SchemaValidationError(
                 "TransactionVerification",
-                ["report must contain an '## Upstream dependency' section while an earlier chain link is unverified"],
+                ["report must contain an '## Earlier transactions' section while an earlier chain link is unverified"],
             )
     payload["reviewed_document_ids"] = sorted(
         doc_id for doc_id in (
@@ -746,6 +873,23 @@ def _canonical_verification(ctx: ToolContext, args: dict, *, force_pending: bool
                 "TransactionVerification",
                 [f"required_documents entry belongs to {owner_tx_id}, not active transaction {tx_id}"],
             )
+    if isinstance(payload.get("required_documents"), list):
+        earlier_requests = _earlier_requests(ctx.case_id, expected_sequence)
+        duplicate_request_errors = []
+        for requirement in payload["required_documents"]:
+            label = str(requirement.get("document_type") or "")
+            owners = sorted({tx for _, earlier_label, tx in earlier_requests if _requests_match(label, earlier_label)})
+            if owners:
+                duplicate_request_errors.append(
+                    "%s is already requested by earlier transaction(s) %s; remove it from "
+                    "required_documents and state in the report that this transaction relies "
+                    "on that earlier request" % (label, ", ".join(owners))
+                )
+        if duplicate_request_errors:
+            raise SchemaValidationError("TransactionVerification", duplicate_request_errors)
+        available_errors = _available_document_request_errors(ctx, payload["required_documents"])
+        if available_errors:
+            raise SchemaValidationError("TransactionVerification", available_errors)
     if isinstance(payload.get("cited_documents"), list):
         prior_citations = {
             (ref.get("doc_id"), ref.get("pages"))
@@ -841,10 +985,13 @@ def _h_save_transaction_result(ctx: ToolContext, args: dict) -> dict:
                 return {"error": ctx.result_error, "unread_document_ids": unread}
         payload = _canonical_verification(ctx, args)
         if payload["status"] == "PENDING_NOT_VERIFIED" and not payload.get("required_documents"):
-            return {
-                "error": "PENDING_NOT_VERIFIED requires at least one specific required_documents entry; "
-                "use INCONCLUSIVE if no user-uploadable evidence request is known",
-            }
+            # Reliance on an earlier link's outstanding requests is a valid
+            # pending state; only demand an own request when none is outstanding.
+            if not _earlier_requests(ctx.case_id, int(payload.get("sequence") or 0)):
+                return {
+                    "error": "PENDING_NOT_VERIFIED requires at least one specific required_documents entry; "
+                    "use INCONCLUSIVE if no user-uploadable evidence request is known",
+                }
         compactness_errors = _result_compactness_errors(payload)
         if compactness_errors:
             raise SchemaValidationError("TransactionVerification", compactness_errors)
@@ -891,7 +1038,12 @@ def _h_request_missing(ctx: ToolContext, args: dict) -> dict:
     if not tx_id:
         return {"error": "no transaction under investigation"}
     if not isinstance(args.get("required_documents"), list) or not args["required_documents"]:
-        return {"error": "provide at least one specific required_documents entry to pause and ask the user"}
+        return {
+            "error": "provide at least one specific required_documents entry to pause and ask the user; "
+            "if this transaction only relies on documents already requested by earlier "
+            "transactions, use save_transaction_result with status PENDING_NOT_VERIFIED "
+            "and no required_documents instead",
+        }
     canonical_args = dict(args)
     canonical_args["status"] = "PENDING_NOT_VERIFIED"
     try:

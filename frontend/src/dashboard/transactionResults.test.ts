@@ -25,13 +25,25 @@ test('empty or absent canonical requirements remain empty', () => {
   assert.deepEqual(requiredDocumentsForTransaction({ missing_documents: [{ document_type: 'Legacy' }] }), []);
 });
 
-test('paused modal requirements come only from the matching persisted transaction result', () => {
+test('paused modal requirements come from the paused transaction, or from earlier links it relies on', () => {
   const transactions = [
     { tx_id: 'PA-TC-0001', required_documents: [{ document_type: 'Sale deed', reason: 'Verify transfer' }] },
     { tx_id: 'PA-TC-0002', required_documents: [{ document_type: 'Mutation', reason: 'Verify entry' }] },
+    { tx_id: 'PA-TC-0003', required_documents: [] },
   ];
   assert.deepEqual(requirementsForPausedTransaction(transactions, 'PA-TC-0002').map(item => item.document_type), ['Mutation']);
-  assert.deepEqual(requirementsForPausedTransaction(transactions, 'PA-TC-0003'), []);
+  // A paused transaction with no request of its own falls back to the
+  // outstanding requests of the earlier links it relies on.
+  assert.deepEqual(requirementsForPausedTransaction(transactions, 'PA-TC-0003').map(item => item.document_type), ['Sale deed', 'Mutation']);
+});
+
+test('own requests take priority over relied-upon earlier requests', () => {
+  const transactions = [
+    { tx_id: 'PA-TC-0001', required_documents: [{ document_type: 'Sale deed', reason: 'Verify transfer' }] },
+    { tx_id: 'PA-TC-0002', required_documents: [{ document_type: 'Khata', reason: 'Verify parcel records' }] },
+  ];
+  assert.deepEqual(requirementsForPausedTransaction(transactions, 'PA-TC-0002').map(item => item.document_type), ['Khata']);
+  assert.deepEqual(requirementsForPausedTransaction(transactions, 'PA-TC-9999'), []);
 });
 
 test('canonical verification statuses render with distinct labels', () => {
@@ -54,16 +66,16 @@ test('report sections split on markdown headings and keep bodies intact', () => 
     '',
     'The inspected deed supports the transfer.',
     '',
-    '## Upstream dependency',
+    '## Earlier transactions',
     '',
-    'PA-TC-0002 is unverified; this assessment rests on this transaction\'s own evidence.',
+    'The earlier sale has not been verified yet; this assessment rests on this transaction\'s own evidence.',
     'It spans two lines.',
   ].join('\n');
   assert.deepEqual(reportSections(report), [
     { heading: 'Conclusion', body: 'The inspected deed supports the transfer.' },
     {
-      heading: 'Upstream dependency',
-      body: 'PA-TC-0002 is unverified; this assessment rests on this transaction\'s own evidence.\nIt spans two lines.',
+      heading: 'Earlier transactions',
+      body: 'The earlier sale has not been verified yet; this assessment rests on this transaction\'s own evidence.\nIt spans two lines.',
     },
   ]);
 });

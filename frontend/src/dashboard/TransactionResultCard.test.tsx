@@ -44,7 +44,7 @@ test('report renders as titled sections with resolved citation chips and no raw 
   assert.match(html, /Conclusion/);
   assert.match(html, /The inspected deed supports the transfer/);
   assert.match(html, /Sale Deed — sale-2009\.pdf · pages 2-4/);
-  assert.match(html, /Documents cited/);
+  assert.doesNotMatch(html, /Documents cited/);
   assert.doesNotMatch(html, /DOC_019/);
   assert.doesNotMatch(html, /Evidence needed/);
 });
@@ -59,9 +59,30 @@ test('report bullets render as list items and bold labels stay intact', () => {
       '- **Schedule matches** — Extent and boundaries agree.',
     ].join('\n'),
   });
-  assert.match(html, /<ul class="verification-report-list"/);
+  assert.match(html, /<ul class="verification-report-list/);
   assert.match(html, /<strong>Preceding title link supported<\/strong>/);
   assert.match(html, /Extent and boundaries agree/);
+});
+
+test('findings render as titled blocks with evidence chips and risk findings highlighted', () => {
+  const html = render({
+    ...base,
+    report: [
+      '## Findings',
+      '',
+      '- **Instrument parties and registration particulars** — The deed names the recorded parties and the endorsement records the registration [DOC_019 p.1-2].',
+      '- **Unreconciled area notation in the schedule** — The schedule states a different extent than the CTS record, so the conveyed area should be confirmed [DOC_019 p.5].',
+      '- **Underlying seller-interest basis is partly recited** — The deed does not independently document the sellers\u0027 own acquisition [DOC_019 p.2].',
+    ].join('\n'),
+  });
+  // Each finding: its own bold title line, description below, inline source badges.
+  assert.match(html, /<strong>Instrument parties and registration particulars<\/strong>/);
+  assert.match(html, /<strong>Unreconciled area notation in the schedule<\/strong>/);
+  assert.match(html, /verification-finding-risk/);
+  // Citation renders as a compact badge whose hover tooltip carries the document label.
+  assert.match(html, /<span class="verification-doc-ref" title="Sale Deed — sale-2009\.pdf · pages 1-2"[^>]*>[\s\S]*PDF<\/span>/);
+  // Citations no longer glue into the prose paragraphs.
+  assert.doesNotMatch(html, /records the registration <span class="verification-citation"/);
 });
 
 test('legacy summary and findings fields are not rendered', () => {
@@ -97,21 +118,41 @@ test('pending result renders each actionable requirement and never claims verifi
   assert.doesNotMatch(html, /Documents cited/);
 });
 
-test('only skipped transactions show a targeted evidence upload action', () => {
+test('only skipped transactions show the evidence upload action', () => {
   const skippedHtml = renderToStaticMarkup(
     <TransactionResultCard
       transaction={{ ...base, status: 'PENDING_NOT_VERIFIED' }}
       skipped
-      onUploadEvidence={() => {}}
+      onOpenUpload={() => {}}
     />,
   );
   const completedHtml = renderToStaticMarkup(
-    <TransactionResultCard transaction={base} onUploadEvidence={() => {}} />,
+    <TransactionResultCard transaction={base} onOpenUpload={() => {}} />,
   );
 
-  assert.match(skippedHtml, /Add evidence and retry this transaction/);
-  assert.match(skippedHtml, /Upload evidence for Transaction 5/);
-  assert.doesNotMatch(completedHtml, /Add evidence and retry this transaction/);
+  assert.match(skippedHtml, /Upload evidence/);
+  assert.doesNotMatch(completedHtml, /Upload evidence/);
+});
+
+test('requirements render read-only; uploading happens through the dialog', () => {
+  const html = renderToStaticMarkup(
+    <TransactionResultCard
+      transaction={{
+        ...base,
+        status: 'PENDING_NOT_VERIFIED',
+        required_documents: [
+          { document_type: 'Sale deed 27-03-1985, Doc No. 4966', reason: "Establishes the vendors' recited title." },
+          { document_type: 'Will 26-11-1996', reason: 'Establishes the recited devolution.' },
+        ],
+      }}
+      skipped
+      onOpenUpload={() => {}}
+    />,
+  );
+  assert.equal((html.match(/type="file"/g) || []).length, 0);
+  assert.match(html, /Sale deed 27-03-1985, Doc No\. 4966/);
+  assert.match(html, /Will 26-11-1996/);
+  assert.match(html, /Upload evidence/);
 });
 
 test('action section renders the saved model rationale without UI-side rewriting', () => {
@@ -172,9 +213,9 @@ test('skipped result retains its actual report, citations, and outstanding requi
       '',
       'The transfer remains unverified because the original deed was not supplied.',
       '',
-      '## Upstream dependency',
+      '## Earlier transactions',
       '',
-      'PA-TC-0002 is unverified; this assessment rests on this transaction\'s own evidence.',
+      'The earlier sale has not been verified yet; this assessment rests on this transaction\'s own evidence.',
     ].join('\n'),
     cited_documents: [{ doc_id: 'DOC_019', pages: '2-4' }, { doc_id: 'DOC_020', pages: '1' }],
     required_documents: [
@@ -184,9 +225,7 @@ test('skipped result retains its actual report, citations, and outstanding requi
   }, true);
   assert.match(html, /Skipped · not verified/);
   assert.match(html, /The transfer remains unverified/);
-  assert.match(html, /Upstream dependency/);
-  assert.match(html, /Sale Deed — sale-2009\.pdf · pages 2-4/);
-  assert.match(html, /page 1/);
+  assert.match(html, /Earlier transactions/);
   assert.doesNotMatch(html, /DOC_019|DOC_020/);
   assert.match(html, /Original registered deed/);
   assert.match(html, /Survey subdivision map/);

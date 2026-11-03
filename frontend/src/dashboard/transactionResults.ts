@@ -79,7 +79,22 @@ export function requiredDocumentsForTransaction(transaction: unknown): RequiredD
 export function requirementsForPausedTransaction(transactions: unknown, txId: unknown): RequiredDocument[] {
   if (!Array.isArray(transactions) || typeof txId !== 'string' || !txId) return [];
   const transaction = transactions.find((item: any) => item?.tx_id === txId);
-  return requiredDocumentsForTransaction(transaction);
+  const own = requiredDocumentsForTransaction(transaction);
+  if (own.length || !transaction) return own;
+  // A pending transaction may carry no request of its own and rely on an
+  // earlier link's outstanding request instead (the tool refuses duplicate
+  // requests case-wide). Surface those earlier requests so the dialog offers
+  // the upload that unblocks this transaction.
+  const earlier = (transactions as any[]).slice(0, transactions.indexOf(transaction));
+  const seen = new Set<string>();
+  return earlier
+    .flatMap((item) => requiredDocumentsForTransaction(item))
+    .filter((item) => {
+      const key = `${item.document_type.trim().toLocaleLowerCase()}|${String(item.reason || '').trim().toLocaleLowerCase()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 export function transactionStatusLabel(status: unknown): string {

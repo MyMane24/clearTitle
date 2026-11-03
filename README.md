@@ -124,7 +124,7 @@ Each transaction is verified in its own agent session, in a fixed order:
 - **Pause** — the transaction saves `PENDING_NOT_VERIFIED` with `required_documents` (compact, identifier-dense labels such as `POA — Manohar & Prakash Kalkundrikar → Girish Siddappa Nemagoudar, ref BEL-1-07200-2007-08`, each with a one-line reason). The dashboard shows the requests; the user uploads the documents.
 - **Resume** — re-running analysis (`POST /api/results/{case_id}/analyze`) continues from the paused transaction with the new evidence. Citations retained from the prior result do not need re-reading; new ones do.
 - **Skip** — the user can explicitly skip a paused transaction (`POST /api/results/{case_id}/agent/skip/{tx_ref}`, by `tx_id` or sequence). Skipping is navigation state only — it never rewrites the verification result.
-- **Downstream refresh** — when an upstream link's state changes, downstream reports get their `## Upstream dependency` section rewritten (one small model call, no OCR reads); when every upstream link is verified, the stale section is removed deterministically.
+- **Downstream refresh** - when an upstream link's state changes, downstream reports get their `## Earlier transactions` section rewritten (one small model call, no OCR reads); when every upstream link is verified, the stale section is removed deterministically.
 
 ### Result contract (schema v3.0)
 
@@ -355,7 +355,7 @@ clearTitle/
 │   │   ├-- agent_system.txt        #   Phase B: shared verification-agent instructions
 │   │   ├-- agent_verify_task.txt   #   Phase B: per-transaction workflow + result contract
 │   │   ├-- agent_summary.txt       #   Per-document navigation summaries
-│   │   └-- agent_dependency_refresh.txt  # Downstream "## Upstream dependency" rewrite
+│   │   └-- agent_dependency_refresh.txt  # Downstream "## Earlier transactions" rewrite
 │   │
 │   ├-- skills/                     # Procedural playbooks the agent loads on demand
 │   │   ├-- title_chain/skill.md    #   Chain construction rules
@@ -451,7 +451,7 @@ Prompts are versioned text files in `backend/prompts/`; procedural playbooks liv
 | `agent_system.txt` | B | Shared verification-agent reasoning and tool policy |
 | `agent_verify_task.txt` | B | Per-transaction workflow, SELECTION SCOPE, and the v3.0 result contract |
 | `agent_summary.txt` | A/B | Per-document navigation summaries |
-| `agent_dependency_refresh.txt` | post-B | Rewrites a downstream report's `## Upstream dependency` section after an upstream state change |
+| `agent_dependency_refresh.txt` | post-B | Rewrites a downstream report's `## Earlier transactions` section after an upstream state change |
 | `skills/title_chain/skill.md` | A | Chain-construction playbook (loaded on demand) |
 | `skills/transaction_verification/skill.md` | B | Evidence-quality and "verify, do not transcribe" playbook |
 

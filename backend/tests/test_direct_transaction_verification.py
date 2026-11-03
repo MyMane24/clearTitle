@@ -95,6 +95,7 @@ class TestDirectTransactionVerification(unittest.TestCase):
         with patch("backend.services.agent_tools.repo.get_transaction_result", return_value=None):
             canonical = _canonical_verification(ctx, {
                 "tx_id": "PA-TC-0002", "sequence": 2, "status": "INCONCLUSIVE",
+                # Legacy heading on purpose: the splitter must keep matching old reports.
                 "report": (
                     "The active transaction was assessed on its evidence.\n\n"
                     "## Upstream dependency\n\nPA-TC-0001 is unverified; this assessment "
@@ -312,28 +313,34 @@ class TestDirectTransactionVerification(unittest.TestCase):
             "every OCR chunk",
             "never ask the user to upload a document that is already available",
             "the system adds no candidate suggestions",
-            "not a digest of the instrument",
-            "which claims the evidence confirms",
-            "never retell the instrument",
+            "never a digest of the instrument",
+            "state only what changes the buyer's decision",
+            "never retell what the instrument",
             "do not narrate selection decisions in the report",
             "in the same request rather than pausing repeatedly",
             "max_chars=200000",
             "complete stored OCR has been read",
             "REPORT CONTRACT",
-            "usually 100–200 words is enough",
-            "never omit a material fact for brevity and never pad the report",
+            "Keep the report clean and neat",
+            "without padding or omitting material facts",
+            "Requests are case-wide, not per-transaction",
+            "never request payment mechanics",
+            "rely on it, say so in the report, and request nothing for it",
+            "requested by exactly one transaction in the case",
             "compact, directly readable label",
             "Establishes the attorney's authority for",
             "Never mark an unresolved transaction verified or completed",
         ):
             self.assertIn(normalized(phrase), task_n)
         # The exact anchor heading and citation syntax are contract-critical.
-        self.assertIn("## Upstream dependency", task)
+        self.assertIn("## Earlier transactions", task)
+        self.assertNotIn("## Upstream dependency", task)
         self.assertIn("[doc_id] or [doc_id p.X-Y]", task)
         # Selection scope: only this transaction's evidence is read; upstream
         # links are trusted from their saved results, never re-read.
         self.assertIn("SELECTION SCOPE", task)
         self.assertIn(normalized("no verified upstream result already establishes"), task_n)
+        self.assertIn(normalized("never re-read the documents its report cites"), task_n)
         self.assertIn(normalized("Never select or read the upstream instrument"), task_n)
         self.assertIn(normalized("At a root transaction there is no upstream link"), task_n)
         self.assertNotIn("do not silently omit", task_n)
@@ -497,6 +504,208 @@ class TestDirectTransactionVerification(unittest.TestCase):
             save.assert_called_once()
         self.assertEqual(get_text.call_count, 1)
         self.assertTrue(ctx.finished)
+
+    @patch("backend.services.agent_tools.repo.save_transaction_result")
+    @patch("backend.services.agent_tools.repo.get_transaction_result", return_value=None)
+    def test_save_rejects_a_request_an_earlier_transaction_already_made(self, _prior, save):
+        tx = _phase_a_transactions(self.phase_a)[1]
+        docs = [{"doc_id": "DOC1", "filename": "deed.pdf", "status": "structured", "summary": "Deed"}]
+        ctx = ToolContext("CASE1", docs, chain={"transactions": [tx]}, current_tx_id=tx["tx_id"])
+        earlier = [{
+            "tx_id": "PA-TC-0001", "sequence": 1, "status": "PENDING_NOT_VERIFIED",
+            "required_documents": [{"document_type": "Survey correlation record", "reason": "Resolve parcel identity."}],
+        }]
+        with patch("backend.services.agent_tools.repo.list_transaction_results", return_value=earlier):
+            response = dispatch(ctx, "save_transaction_result", {
+                "tx_id": tx["tx_id"], "sequence": 2, "status": "PENDING_NOT_VERIFIED",
+                "report": "The deed is assessed on its own evidence.",
+                "cited_documents": [],
+                # Case/wording differences do not escape the case-wide rule.
+                "required_documents": [
+                    {"document_type": "survey correlation record", "reason": "Resolve parcel identity."},
+                ],
+            })
+
+        self.assertIn("already requested by earlier transaction", response["error"])
+        self.assertIn("PA-TC-0001", response["error"])
+        save.assert_not_called()
+
+    @patch("backend.services.agent_tools.repo.save_transaction_result")
+    @patch("backend.services.agent_tools.repo.get_transaction_result", return_value=None)
+    def test_save_rejects_a_reworded_request_for_the_same_distinctive_document(self, _prior, save):
+        tx = _phase_a_transactions(self.phase_a)[1]
+        docs = [{"doc_id": "DOC1", "filename": "deed.pdf", "status": "structured", "summary": "Deed"}]
+        ctx = ToolContext("CASE1", docs, chain={"transactions": [tx]}, current_tx_id=tx["tx_id"])
+        earlier = [{
+            "tx_id": "PA-TC-0001", "sequence": 1, "status": "PENDING_NOT_VERIFIED",
+            "required_documents": [{"document_type": "BUDA layout approval — July 2009, R.S. No. 699A/15", "reason": "Confirms the layout."}],
+        }]
+        with patch("backend.services.agent_tools.repo.list_transaction_results", return_value=earlier):
+            response = dispatch(ctx, "save_transaction_result", {
+                "tx_id": tx["tx_id"], "sequence": 2, "status": "PENDING_NOT_VERIFIED",
+                "report": "The deed is assessed on its own evidence.",
+                "cited_documents": [],
+                # Same approval, re-worded with the approval number from the deed.
+                "required_documents": [
+                    {"document_type": "BUDA layout approval No. BUDA/PLN/LAY/CR-20/1329/2009-10 — 12-07-2009", "reason": "Confirms the layout."},
+                ],
+            })
+
+        self.assertIn("already requested by earlier transaction", response["error"])
+        save.assert_not_called()
+
+    @patch("backend.services.agent_tools.repo.get_document_raw_text", return_value="Complete deed OCR text")
+    @patch("backend.services.agent_tools.repo.save_transaction_result")
+    @patch("backend.services.agent_tools.repo.get_transaction_result", return_value=None)
+    def test_save_allows_two_different_documents_with_a_generic_kind(self, _prior, save, _get_text):
+        tx = _phase_a_transactions(self.phase_a)[1]
+        docs = [{"doc_id": "DOC1", "filename": "deed.pdf", "status": "structured", "summary": "Deed"}]
+        ctx = ToolContext("CASE1", docs, chain={"transactions": [tx]}, current_tx_id=tx["tx_id"])
+        earlier = [{
+            "tx_id": "PA-TC-0001", "sequence": 1, "status": "PENDING_NOT_VERIFIED",
+            "required_documents": [{"document_type": "Sale deed 27-03-1985, Doc No. 4966, Sub-Registrar Belgaum", "reason": "Prior title."}],
+        }]
+        dispatch(ctx, "record_evidence_requirements", {"requirements": [
+            {"document_type": "Sale deed 12-05-1996, Doc No. 5555", "reason": "A different prior title."},
+        ]})
+        dispatch(ctx, "list_documents", {})
+        with patch("backend.services.agent_tools.repo.list_transaction_results", return_value=earlier):
+            response = dispatch(ctx, "save_transaction_result", {
+                "tx_id": tx["tx_id"], "sequence": 2, "status": "PENDING_NOT_VERIFIED",
+                "report": "The deed is assessed on its own evidence.",
+                "cited_documents": [],
+                # A different sale deed shares the generic kind words but not the identifiers.
+                "required_documents": [
+                    {"document_type": "Sale deed 12-05-1996, Doc No. 5555", "reason": "A different prior title."},
+                ],
+            })
+
+        self.assertTrue(response["saved"])
+        save.assert_called_once()
+
+    @patch("backend.services.agent_tools.repo.save_transaction_result")
+    @patch("backend.services.agent_tools.repo.get_transaction_result", return_value=None)
+    def test_save_rejects_a_survey_record_reworded_across_links(self, _prior, save):
+        tx = _phase_a_transactions(self.phase_a)[1]
+        docs = [{"doc_id": "DOC1", "filename": "deed.pdf", "status": "structured", "summary": "Deed"}]
+        ctx = ToolContext("CASE1", docs, chain={"transactions": [tx]}, current_tx_id=tx["tx_id"])
+        earlier = [{
+            "tx_id": "PA-TC-0001", "sequence": 1, "status": "PENDING_NOT_VERIFIED",
+            "required_documents": [{
+                "document_type": "Official survey/subdivision record — R.S. No. 699-A/14 to 699A/15, Angol, Prashant 17 gunthas",
+                "reason": "Resolve the parcel identity.",
+            }],
+        }]
+        with patch("backend.services.agent_tools.repo.list_transaction_results", return_value=earlier):
+            response = dispatch(ctx, "save_transaction_result", {
+                "tx_id": tx["tx_id"], "sequence": 2, "status": "PENDING_NOT_VERIFIED",
+                "report": "The deed is assessed on its own evidence.",
+                "cited_documents": [],
+                # The same survey-correlation record under a different kind head.
+                "required_documents": [
+                    {"document_type": "Survey/subdivision correlation record — R.S. No. 699-A/14 to 699A/15, Angol", "reason": "Resolve the parcel identity."},
+                ],
+            })
+
+        self.assertIn("already requested by earlier transaction", response["error"])
+        self.assertIn("PA-TC-0001", response["error"])
+        save.assert_not_called()
+
+    @patch("backend.services.agent_tools.repo.save_transaction_result")
+    @patch("backend.services.agent_tools.repo.get_transaction_result", return_value=None)
+    def test_save_allows_same_day_deeds_with_consecutive_document_numbers(self, _prior, save):
+        tx = _phase_a_transactions(self.phase_a)[1]
+        docs = [{"doc_id": "DOC1", "filename": "deed.pdf", "status": "structured", "summary": "Deed"}]
+        ctx = ToolContext("CASE1", docs, chain={"transactions": [tx]}, current_tx_id=tx["tx_id"])
+        earlier = [{
+            "tx_id": "PA-TC-0001", "sequence": 1, "status": "PENDING_NOT_VERIFIED",
+            "required_documents": [{
+                "document_type": "Sale deed 27-03-1985, Document No. 4966, Sub-Registrar Belgaum",
+                "reason": "Prior title.",
+            }],
+        }]
+        with patch("backend.services.agent_tools.repo.list_transaction_results", return_value=earlier):
+            dispatch(ctx, "record_evidence_requirements", {"requirements": [
+                {"document_type": "Sale deed 27-03-1985, Document No. 4967, Sub-Registrar Belgaum", "reason": "A different conveyance."},
+            ]})
+            dispatch(ctx, "list_documents", {})
+            response = dispatch(ctx, "save_transaction_result", {
+                "tx_id": tx["tx_id"], "sequence": 2, "status": "PENDING_NOT_VERIFIED",
+                "report": "The deed is assessed on its own evidence.",
+                "cited_documents": [],
+                # A different deed registered the same day: consecutive numbers.
+                "required_documents": [
+                    {"document_type": "Sale deed 27-03-1985, Document No. 4967, Sub-Registrar Belgaum", "reason": "A different conveyance."},
+                ],
+            })
+
+        self.assertTrue(response["saved"])
+        save.assert_called_once()
+
+    @patch("backend.services.agent_tools.repo.save_transaction_result")
+    @patch("backend.services.agent_tools.repo.get_transaction_result", return_value=None)
+    def test_pending_result_may_rely_on_earlier_requests_without_its_own(self, _prior, save):
+        tx = _phase_a_transactions(self.phase_a)[1]
+        docs = [{"doc_id": "DOC1", "filename": "deed.pdf", "status": "structured", "summary": "Deed"}]
+        ctx = ToolContext("CASE1", docs, chain={"transactions": [tx]}, current_tx_id=tx["tx_id"])
+        earlier = [{
+            "tx_id": "PA-TC-0001", "sequence": 1, "status": "PENDING_NOT_VERIFIED",
+            "required_documents": [{"document_type": "Survey correlation record", "reason": "Resolve parcel identity."}],
+        }]
+        with patch("backend.services.agent_tools.repo.list_transaction_results", return_value=earlier):
+            response = dispatch(ctx, "save_transaction_result", {
+                "tx_id": tx["tx_id"], "sequence": 2, "status": "PENDING_NOT_VERIFIED",
+                "report": (
+                    "The deed is assessed on its own evidence; the outstanding survey "
+                    "record is pursued through the earlier transaction's request."
+                ),
+                "cited_documents": [],
+                "required_documents": [],
+            })
+
+        self.assertTrue(response["saved"])
+        save.assert_called_once()
+
+    @patch("backend.services.agent_tools.repo.get_transaction_result", return_value=None)
+    def test_pending_result_without_any_outstanding_request_is_rejected(self, _prior):
+        tx = _phase_a_transactions(self.phase_a)[1]
+        docs = [{"doc_id": "DOC1", "filename": "deed.pdf", "status": "structured", "summary": "Deed"}]
+        ctx = ToolContext("CASE1", docs, chain={"transactions": [tx]}, current_tx_id=tx["tx_id"])
+        with patch("backend.services.agent_tools.repo.list_transaction_results", return_value=[]):
+            response = dispatch(ctx, "save_transaction_result", {
+                "tx_id": tx["tx_id"], "sequence": 2, "status": "PENDING_NOT_VERIFIED",
+                "report": "The deed is assessed on its own evidence.",
+                "cited_documents": [],
+                "required_documents": [],
+            })
+
+        self.assertIn("requires at least one specific required_documents entry", response["error"])
+
+    def test_save_rejects_a_request_for_a_document_the_case_already_holds(self):
+        tx = _phase_a_transactions(self.phase_a)[1]
+        docs = [{"doc_id": "DOC1", "filename": "deed.pdf", "status": "structured", "summary": "Deed"}]
+        chain_entry = {
+            "chain_position": 2,
+            "documented_transaction": {
+                "transaction_type": "Sale",
+                "transaction_number": "BEL-1-03678-2010-11",
+                "source_refs": [{"doc_id": "DOC_DEED", "filename": "SaleDeed 2010.pdf"}],
+            },
+        }
+        ctx = ToolContext(
+            "CASE1", docs, current_tx_id=tx["tx_id"], phase_a_chain=[chain_entry],
+        )
+        response = dispatch(ctx, "save_transaction_result", {
+            "tx_id": tx["tx_id"], "sequence": 2, "status": "PENDING_NOT_VERIFIED",
+            "report": "The deed is assessed on its own evidence.",
+            "cited_documents": [],
+            "required_documents": [
+                {"document_type": "Sale deed 2010 — Prashant to Gundappa, BEL-1-03678-2010-11", "reason": "x"},
+            ],
+        })
+
+        self.assertIn("already available in the case", response["error"])
+        self.assertIn("SaleDeed 2010.pdf", response["error"])
 
     @patch("backend.services.agent_tools.repo.get_document_raw_text", return_value="abcdefghij")
     def test_ocr_is_loaded_once_and_overlapping_ranges_are_rejected(self, get_text):
@@ -1134,7 +1343,27 @@ class TestDirectTransactionVerification(unittest.TestCase):
         self.assertEqual(saved_memory["skipped_tx_ids"], ["PA-TC-0001"])
         self.assertNotIn("evidence_retry_tx_id", saved_memory)
         run.assert_called_once_with(
-            "CASE1", skip_tx_ids={"PA-TC-0001"}, transaction_ids={"PA-TC-0002"},
+            "CASE1", skip_tx_ids={"PA-TC-0001"}, fresh_reverification=False,
+            transaction_ids={"PA-TC-0002"},
+        )
+
+    @patch("backend.services.cleartitle_agent.PIPELINE_LOCK_ENABLED", False)
+    @patch("backend.services.cleartitle_agent._run", return_value={"status": "done"})
+    @patch("backend.services.cleartitle_agent.repo")
+    def test_issues_identified_retry_reruns_fresh_without_skip_changes(self, repo, run):
+        repo.get_agent_memory.return_value = {"skipped_tx_ids": ["PA-TC-0001"]}
+        repo.get_agent_result.return_value = self.phase_a
+        repo.get_transaction_result.return_value = {"tx_id": "PA-TC-0002", "status": "ISSUES_IDENTIFIED"}
+
+        outcome = retry_skipped_transaction("CASE1", "PA-TC-0002")
+
+        self.assertEqual(outcome["status"], "done")
+        saved_memory = repo.save_agent_memory.call_args.kwargs["memory"]
+        self.assertEqual(saved_memory["skipped_tx_ids"], ["PA-TC-0001"])
+        self.assertNotIn("evidence_retry_tx_id", saved_memory)
+        run.assert_called_once_with(
+            "CASE1", skip_tx_ids={"PA-TC-0001"}, fresh_reverification=True,
+            transaction_ids={"PA-TC-0002"},
         )
 
     @patch("backend.services.cleartitle_agent.PIPELINE_LOCK_ENABLED", False)
@@ -1196,14 +1425,40 @@ class TestDirectTransactionVerification(unittest.TestCase):
         self.assertEqual([entry["tx_id"] for entry in context], ["PA-TC-0001", "PA-TC-0002"])
         self.assertEqual(context[0]["status"], "VERIFIED_WITH_AVAILABLE_EVIDENCE")
         self.assertNotIn("outstanding_required_documents", context[0])
+        # An earlier resolved link carries status only — its facts reach the
+        # active session through the previous link's report.
+        self.assertNotIn("report", context[0])
+        self.assertNotIn("report_excerpt", context[0])
         self.assertEqual(context[1]["status"], "PENDING_NOT_VERIFIED")
-        self.assertIn("unavailable", context[1]["report_excerpt"])
+        # The immediately previous link's full report is supplied as memory.
+        self.assertIn("unavailable", context[1]["report"])
+        self.assertNotIn("report_excerpt", context[1])
         self.assertEqual(
             context[1]["outstanding_required_documents"][0]["document_type"],
             "Registered sale deed B to C",
         )
         # The root transaction has no upstream links to compile.
         self.assertEqual(_build_upstream_context("CASE1", phase_a, 1), [])
+
+    @patch("backend.services.cleartitle_agent.repo")
+    def test_upstream_context_supplies_previous_link_report_in_full(self, repo):
+        # The previous link's report is the active session's memory of what
+        # that verification established: it must arrive untruncated, however
+        # long, so inherited facts are never re-read from source documents.
+        phase_a = self._three_link_chain()
+        long_report = "## What was verified\n\n" + ("Established fact about the parcel. " * 40)
+        repo.get_transaction_result.side_effect = lambda case_id, tx_id: {
+            "PA-TC-0001": {
+                "tx_id": "PA-TC-0001", "sequence": 1,
+                "status": "ISSUES_IDENTIFIED",
+                "report": long_report,
+            },
+        }.get(tx_id)
+
+        context = _build_upstream_context("CASE1", phase_a, 2)
+
+        self.assertEqual(context[0]["report"], long_report)
+        self.assertNotIn("report_excerpt", context[0])
 
     def test_verify_instruction_includes_upstream_chain_context_block(self):
         phase_a = self._three_link_chain()
@@ -1221,6 +1476,56 @@ class TestDirectTransactionVerification(unittest.TestCase):
         # Without supplied context the instruction carries only the active
         # transaction (the task prompt mentions the block's name but no data).
         self.assertNotIn("PA-TC-0001", _verify_instruction(tx))
+
+    def test_verify_instruction_lists_documents_already_requested(self):
+        phase_a = self._three_link_chain()
+        tx = _phase_a_transactions(phase_a)[2]
+        context = [
+            {
+                "tx_id": "PA-TC-0001", "sequence": 1,
+                "status": "PENDING_NOT_VERIFIED",
+                "outstanding_required_documents": [
+                    {"document_type": "Sale deed 27-03-1985, Doc No. 4966",
+                     "reason": "Establishes the vendors' acquisition."},
+                ],
+            },
+            {
+                "tx_id": "PA-TC-0002", "sequence": 2,
+                "status": "PENDING_NOT_VERIFIED",
+                "outstanding_required_documents": [
+                    {"document_type": "Sale deed 27-03-1985, Doc No. 4966",
+                     "reason": "The same record requested again."},
+                    {"document_type": "BUDA layout approval — July 2009",
+                     "reason": "Confirms the approved layout."},
+                ],
+            },
+        ]
+
+        instruction = _verify_instruction(tx, upstream_context=context)
+
+        self.assertIn("DOCUMENTS ALREADY REQUESTED BY EARLIER TRANSACTIONS", instruction)
+        self.assertIn(
+            "- Sale deed 27-03-1985, Doc No. 4966 — requested by PA-TC-0001: "
+            "Establishes the vendors' acquisition.",
+            instruction,
+        )
+        self.assertIn("- BUDA layout approval — July 2009", instruction)
+        # The register teaches purpose matching, not label matching.
+        self.assertIn("even under a different name", instruction)
+        # An exact duplicate requested by two links is listed once.
+        self.assertEqual(instruction.count("- Sale deed 27-03-1985, Doc No. 4966"), 1)
+
+    def test_verify_instruction_omits_already_requested_list_without_requests(self):
+        phase_a = self._three_link_chain()
+        tx = _phase_a_transactions(phase_a)[2]
+        context = [{
+            "tx_id": "PA-TC-0001", "sequence": 1,
+            "status": "VERIFIED_WITH_AVAILABLE_EVIDENCE",
+        }]
+
+        instruction = _verify_instruction(tx, upstream_context=context)
+
+        self.assertNotIn("DOCUMENTS ALREADY REQUESTED", instruction)
 
     @patch("backend.services.agent_tools.repo.get_transaction_result")
     def test_canonical_result_records_upstream_unverified_chain_context(self, get_result):
@@ -1255,7 +1560,8 @@ class TestDirectTransactionVerification(unittest.TestCase):
             "tx_id": later["tx_id"], "sequence": 3, "status": "INCONCLUSIVE",
             "report": (
                 "## What the documents show\n\nThe C-to-D conveyance is assessed on its own evidence.\n\n"
-                "## Upstream dependency\n\nPA-TC-0002 is unverified; this assessment rests on "
+                "## Earlier transactions\n\nThe earlier sale has not been verified yet because its "
+                "documents are still outstanding; this assessment rests on "
                 "this transaction's own evidence."
             ),
             "cited_documents": [], "required_documents": [],
@@ -1291,7 +1597,7 @@ class TestDirectTransactionVerification(unittest.TestCase):
                 "report": "The C-to-D conveyance is assessed on its own evidence.",
                 "cited_documents": [], "required_documents": [],
             })
-        self.assertIn("## Upstream dependency", str(error.exception))
+        self.assertIn("## Earlier transactions", str(error.exception))
 
     @patch("backend.services.agent_tools.repo.get_transaction_result", return_value=None)
     def test_root_transaction_result_carries_no_chain_context(self, _get_result):
@@ -1384,11 +1690,13 @@ class TestDirectTransactionVerification(unittest.TestCase):
         }
         self.assertEqual(sorted(saved), ["PA-TC-0002", "PA-TC-0003"])
         self.assertNotIn("Upstream dependency", saved["PA-TC-0002"]["report"])
+        self.assertNotIn("Earlier transactions", saved["PA-TC-0002"]["report"])
         self.assertIn("supports the recorded transfer", saved["PA-TC-0002"]["report"])
         self.assertEqual(saved["PA-TC-0002"]["transaction_metadata"]["chain_context"]["upstream_unverified"], [])
         # Report statements, citations, status, and verified_at are untouched.
         self.assertIn("boundary mismatch", saved["PA-TC-0003"]["report"])
         self.assertNotIn("Upstream dependency", saved["PA-TC-0003"]["report"])
+        self.assertNotIn("Earlier transactions", saved["PA-TC-0003"]["report"])
         self.assertEqual(saved["PA-TC-0003"]["cited_documents"], [{"doc_id": "DOC3", "pages": "2"}])
         self.assertEqual(saved["PA-TC-0003"]["status"], "ISSUES_IDENTIFIED")
         self.assertIsNotNone(saved["PA-TC-0003"]["verified_at"])
@@ -1445,8 +1753,8 @@ class TestDirectTransactionVerification(unittest.TestCase):
         repo.get_transaction_result.side_effect = fake_result
         complete_json.return_value = {
             "dependency_section": (
-                "PA-TC-0002 is unverified because its required documents are outstanding; "
-                "this assessment rests on this transaction's own evidence."
+                "The earlier sale has not been verified because its required documents "
+                "are outstanding; this assessment rests on this transaction's own evidence."
             )
         }
         repo.save_transaction_result.side_effect = lambda **kwargs: None
@@ -1461,8 +1769,10 @@ class TestDirectTransactionVerification(unittest.TestCase):
         self.assertIn("CURRENT SAVED REPORT", complete_json.call_args.args[0])
         repo.get_document_raw_text.assert_not_called()
         saved = repo.save_transaction_result.call_args.kwargs["verification"]
-        self.assertIn("## Upstream dependency", saved["report"])
-        self.assertIn("PA-TC-0002 is unverified", saved["report"])
+        # The rewrite migrates the legacy heading to the plain-language one.
+        self.assertIn("## Earlier transactions", saved["report"])
+        self.assertNotIn("Upstream dependency", saved["report"])
+        self.assertIn("The earlier sale has not been verified", saved["report"])
         self.assertNotIn("PA-TC-0001 was not verified", saved["report"])
         self.assertIn("boundary mismatch", saved["report"])
         self.assertEqual(saved["cited_documents"], [{"doc_id": "DOC3", "pages": "2"}])
@@ -1591,7 +1901,7 @@ class TestDirectTransactionVerification(unittest.TestCase):
             "report": (
                 "## What the documents show\n\nThe examined C-to-D deed supports the "
                 "recorded transfer.\n\n"
-                "## Upstream dependency\n\nPA-TC-0002 is not verified because its required "
+                "## Earlier transactions\n\nPA-TC-0002 is not verified because its required "
                 "documents are outstanding; this assessment rests on this transaction's own evidence."
             ),
             "required_documents": [],
@@ -1636,7 +1946,7 @@ class TestDirectTransactionVerification(unittest.TestCase):
         )
         refresh_prompt = normalized(load_prompt("agent_dependency_refresh"))
         self.assertIn(
-            normalized("Rewrite ONLY the body of the '## Upstream dependency' section"),
+            normalized("Rewrite ONLY the body of the '## Earlier transactions' section"),
             refresh_prompt,
         )
         self.assertIn(normalized("Never add findings, evidence, or document requests"), refresh_prompt)

@@ -36,41 +36,6 @@ export const OLD_WAY_VS_CLEARTITLE = {
   ],
 };
 
-export const SAMPLE_DOCUMENTS = [
-  {
-    id: 'sale-deed',
-    title: 'Sale Deed — Residential Plot',
-    type: 'SALE_DEED',
-    city: 'Belagavi',
-    previewText:
-      'Registered Sale Deed No. 4029 of 2021. This Deed of Sale is made on this 15th day of March, 2021 at Belagavi. Between: Smt. Kamalabai W/o Shri Ramesh M. G., aged about 58 years, occupier of property bearing CTS No. 4XX/A-1, situated at Sadashiv Nagar, Belagavi (hereinafter called the VENDOR) of the ONE PART... Property measuring 1,450 sq. ft. built-up area, residential apartment on 2nd floor of "Ganesh Enclave", bearing CTS No. 4XX/A-1, Survey No. 663/1, Block No. 12, Unit No. 7, Sadashiv Nagar, Belagavi 590001. Consideration of Rs. 45,00,000 (Rupees Forty-Five Lakhs Only) paid by cheque.',
-  },
-  {
-    id: 'ec',
-    title: 'Encumbrance Certificate',
-    type: 'ENCUMBRANCE_CERTIFICATE',
-    city: 'Belagavi',
-    previewText:
-      'Encumbrance Certificate for Property bearing CTS No. 4XX/A-1, Survey No. 663/1, Block 12, Sadashiv Nagar, Belagavi. Period of search: 01/01/2000 to 31/12/2024. Transaction 1: Registered Sale Deed No. 10492 dated 22/06/2012 between Shri Prakash Mallappa and Smt. Kamalabai. Transaction 2: Registered Sale Deed No. 4029 dated 15/03/2021 between Smt. Kamalabai and Shri Prajwal R. G. Transaction 3: Home Loan Mortgage with Canara Bank, Charge Created 10/08/2018, Rs. 35,00,000. Total Transactions Found: 3.',
-  },
-  {
-    id: 'rtc',
-    title: 'RTC Extract (Pahani)',
-    type: 'RTC_PAHANI',
-    city: 'Belagavi',
-    previewText:
-      'Rights, Tenancy and Crops (RTC) Extract — Khata No. 12/45, Survey No. 663/1, Village: Sadashiv Nagar, Hobli: Belagavi, Taluk: Belagavi, District: Belagavi. Land Type: Non-Agricultural (NA). Classification: Residential. Extent: 1,450 sq. ft. (0.033 acres). Owner of Record: Smt. Kamalabai w/o Shri Ramesh M. G. Land is in single possession. No encumbrance noted in revenue records. Latest Property Tax paid: FY 2025-26, Receipt No. PT/2025/44821.',
-  },
-  {
-    id: 'khata',
-    title: 'Khata Certificate',
-    type: 'KHATA',
-    city: 'Belagavi',
-    previewText:
-      'Municipal Khata Certificate — BBMP/Belagavi City Corporation. Khata No. 12/45, Ward No. 32, Property Address: No. 7, Ganesh Enclave, Sadashiv Nagar, Belagavi 590001. CTS No. 4XX/A-1, Survey No. 663/1. Owner: Prajwal R. G. (Transferred from Kamalabai w/o Ramesh M. G. on 15/03/2021). Property Type: Residential Apartment. Built-up Area: 1,450 sq. ft. Annual Value: Rs. 1,80,000. Tax Paid Up To: 2025-26. Outstanding: Nil.',
-  },
-];
-
 export const FAQ_ITEMS = [
   {
     question: 'What is clearTitle?',

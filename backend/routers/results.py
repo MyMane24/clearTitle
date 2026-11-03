@@ -30,25 +30,6 @@ async def get_results(case_id: str, user: dict | None = Depends(get_optional_use
         raise HTTPException(status_code=404, detail="Case not found")
 
 
-@router.get("/results/{case_id}/report/pdf")
-async def get_report_pdf(case_id: str, user: dict | None = Depends(get_optional_user)):
-    """Download a PDF Title Verification Report for a case."""
-    _enforce_access(case_id, user)
-    try:
-        from backend.services.report import render_report_pdf
-        pdf = render_report_pdf(case_id)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Case not found")
-    except Exception as e:
-        logger.error("Report generation failed for %s: %s", case_id, e)
-        raise HTTPException(status_code=500, detail="Could not generate report")
-    return Response(
-        content=pdf,
-        media_type="application/pdf",
-        headers={"Content-Disposition": 'attachment; filename="title-report-{case_id}.pdf"'},
-    )
-
-
 @router.get("/results/{case_id}/required-documents/pdf")
 async def get_required_documents_pdf(case_id: str, user: dict | None = Depends(get_optional_user)):
     """Download the saved transaction-specific outstanding-document checklist."""

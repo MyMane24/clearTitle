@@ -104,7 +104,9 @@ if SPA_DIST.exists():
         candidate = (SPA_DIST / full_path).resolve()
         if candidate.is_relative_to(SPA_DIST.resolve()) and candidate.is_file():
             return candidate
-        return FileResponse(SPA_DIST / "index.html")
+        # index.html must revalidate on every load, or browsers keep serving a
+        # stale bundle after each deploy.
+        return FileResponse(SPA_DIST / "index.html", headers={"Cache-Control": "no-cache"})
 else:
     @app.get("/", response_class=FileResponse)
     async def serve_ui():

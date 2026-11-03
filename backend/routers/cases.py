@@ -380,17 +380,19 @@ async def upload_more_documents(
         from backend.database.repositories import agent_repo
         from backend.services.agent_schemas import normalize_status
 
-        memory = agent_repo.get_agent_memory(case_id) or {}
-        if transaction_id not in set(memory.get("skipped_tx_ids") or []):
-            raise HTTPException(status_code=409, detail="Evidence retry is only available for a skipped transaction")
         phase_a = agent_repo.get_agent_result(case_id) or {}
         from backend.services.cleartitle_agent import _phase_a_transactions
         chain_tx_ids = {item.get("tx_id") for item in _phase_a_transactions(phase_a)}
         if transaction_id not in chain_tx_ids:
             raise HTTPException(status_code=404, detail="Transaction not found in the saved title chain")
         previous = agent_repo.get_transaction_result(case_id, transaction_id) or {}
-        if normalize_status(previous.get("status")) != "PENDING_NOT_VERIFIED":
-            raise HTTPException(status_code=409, detail="Only pending skipped transactions can be retried")
+        previous_status = normalize_status(previous.get("status"))
+        if previous_status == "PENDING_NOT_VERIFIED":
+            memory = agent_repo.get_agent_memory(case_id) or {}
+            if transaction_id not in set(memory.get("skipped_tx_ids") or []):
+                raise HTTPException(status_code=409, detail="Evidence retry is only available for a skipped transaction")
+        elif previous_status != "ISSUES_IDENTIFIED":
+            raise HTTPException(status_code=409, detail="Evidence retry is only available for a pending or issues-identified transaction")
 
     if any(not (f.filename or "").lower().endswith(".pdf") for f in files):
         raise HTTPException(status_code=400, detail="Only PDF documents can be uploaded")
@@ -407,7 +409,12 @@ async def upload_more_documents(
             pipeline_lock.release()
         raise HTTPException(status_code=409, detail="Document pipeline is already processing")
     existing_files = meta.get("files", [])
-    start_idx = len(existing_files)
+    # Next doc_id follows the highest existing number, not the list length:
+    # gaps from removed documents must never collide with surviving doc_ids.
+    start_idx = max(
+        (int(str(f.get("doc_id", "DOC_000")).split("_")[1]) for f in existing_files),
+        default=0,
+    )
 
     case_dir = get_case_dir(case_id)
 

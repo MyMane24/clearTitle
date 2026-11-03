@@ -10,6 +10,7 @@ import { DocSummary } from './utils';
 import { PhaseAChainView } from './PhaseAResult';
 import { requirementsForPausedTransaction } from './transactionResults';
 import { TransactionResultCard } from './TransactionResultCard';
+import { EvidenceRequestDialog } from './EvidenceRequestDialog';
 import {
   AlertTriangle, ArrowLeft, Check, CheckCircle2,
   ChevronDown, ChevronUp, FileText, FileUp,
@@ -675,7 +676,9 @@ export function VerificationDashboard() {
   const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [evidenceUploadBusy, setEvidenceUploadBusy] = useState(false);
-  const [evidenceUploadTxId, setEvidenceUploadTxId] = useState<string | null>(null);
+  const [manualUploadTxId, setManualUploadTxId] = useState<string | null>(null);
+  const [evidenceUploads, setEvidenceUploads] = useState<Record<number, File | undefined>>({});
+  const [dismissedPauseKey, setDismissedPauseKey] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [pipelineStartError, setPipelineStartError] = useState<string | null>(null);
   const [cases, setCases] = useState<CaseListItem[]>([]);
@@ -688,6 +691,12 @@ export function VerificationDashboard() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const analysisTimerRef = useRef<number | null>(null);
   const uploadedForPausedTxRef = useRef<{ txId: string; updatedAt: string | null } | null>(null);
+
+  // A new pause (next transaction, or the same one re-pausing after a resume)
+  // starts with empty upload slots. Must live above the authLoading early
+  // return so the hook count never changes between renders.
+  const pausedTxKey = `${String(results?.agent?.paused_transaction || '')}:${String(results?.agent?.updated_at || '')}`;
+  useEffect(() => { setEvidenceUploads({}); }, [pausedTxKey]);
 
   const addLog = useCallback((msg: string, cls = 'log-info') => {
     setLogs(prev => [...prev.slice(-200), { text: msg, cls }]);
@@ -1133,47 +1142,48 @@ export function VerificationDashboard() {
     addLog('⚠ Verification is taking longer than expected; refresh results to check its status.', 'log-warn');
   };
 
-  const uploadRequestedEvidence = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = Array.from(event.target.files || []);
-    event.target.value = '';
-    if (!currentCaseId || !selected.length) return;
+  const submitEvidence = async () => {
+    const txId = manualUploadTxId || pausedTransactionId;
+    const reqs = manualUploadTxId
+      ? requirementsForPausedTransaction(rawTx, manualUploadTxId)
+      : pausedRequirements;
+    // Mirror the dialog's fallback slot so a transaction with no listed
+    // requirement can still receive a supporting document.
+    const slots = reqs.length ? reqs : [{ document_type: 'Supporting document' }];
+    const selected = slots
+      .map((_: unknown, i: number) => evidenceUploads[i])
+      .filter((f): f is File => !!f);
+    if (!currentCaseId || !txId || !selected.length) return;
     setEvidenceUploadBusy(true);
     try {
-      const pausedTx = results?.agent?.paused_transaction;
-      uploadedForPausedTxRef.current = pausedTx ? { txId: pausedTx, updatedAt: results?.agent?.updated_at || null } : null;
-      await API.uploadMore(currentCaseId, selected);
-      addLog(`Uploaded ${selected.length} requested document(s); OCR processing started. Verification will resume when processing finishes.`, "log-info");
+      if (txId === pausedTransactionId) {
+        uploadedForPausedTxRef.current = { txId, updatedAt: results?.agent?.updated_at || null };
+        setDismissedPauseKey(`${txId}:${String(results?.agent?.updated_at || '')}`);
+        await API.uploadMore(currentCaseId, selected);
+        addLog(`Submitted ${selected.length} document(s); OCR processing started. Verification resumes automatically when processing finishes.`, "log-info");
+      } else {
+        await API.uploadMore(currentCaseId, selected, txId);
+        addLog(`Submitted ${selected.length} document(s) for ${txId}; OCR processing started. Verification will retry only this transaction when processing finishes.`, "log-info");
+      }
+      setManualUploadTxId(null);
+      setEvidenceUploads({});
       setView('processing');
       startPolling(currentCaseId);
     } catch (e: any) {
       addLog(`✗ Evidence upload failed: ${e.message}`, "log-err");
+      if (txId !== pausedTransactionId) setDismissedPauseKey(null);
     } finally {
       setEvidenceUploadBusy(false);
-    }
-  };
-
-  const uploadEvidenceForSkippedTransaction = async (txId: string, selected: File[]) => {
-    if (!currentCaseId || !selected.length || evidenceUploadBusy) return;
-    setEvidenceUploadBusy(true);
-    setEvidenceUploadTxId(txId);
-    try {
-      await API.uploadMore(currentCaseId, selected, txId);
-      addLog(`Uploaded evidence for skipped transaction ${txId}; verification will retry only this transaction after processing.`, "log-info");
-      setView('processing');
-      startPolling(currentCaseId);
-    } catch (error: any) {
-      addLog(`✗ Evidence upload for ${txId} failed: ${error?.message || 'Upload failed'}`, "log-err");
-    } finally {
-      setEvidenceUploadBusy(false);
-      setEvidenceUploadTxId(null);
     }
   };
 
   const skipPausedTransaction = async () => {
     const txId = results?.agent?.paused_transaction;
     if (!currentCaseId || !txId) return;
+    if (!window.confirm(`Skip ${txId} without verifying? It stays pending and verification continues with the next transaction.`)) return;
     const previousUpdatedAt = results?.agent?.updated_at || null;
     setEvidenceUploadBusy(true);
+    setDismissedPauseKey(`${txId}:${String(previousUpdatedAt)}`);
     try {
       await API.skipAgentTransaction(currentCaseId, txId);
       addLog(`Skipped ${txId}; it remains pending and verification will continue with the next transaction.`, "log-warn");
@@ -1194,6 +1204,7 @@ export function VerificationDashboard() {
       void poll(Date.now());
     } catch (e: any) {
       addLog(`✗ Skip failed: ${e.message}`, "log-err");
+      setDismissedPauseKey(null);
     } finally {
       setEvidenceUploadBusy(false);
     }
@@ -1292,11 +1303,19 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
   const pendingCount = Math.max(0, rawTx.length - verifiedCount - issueCount - skippedCount);
   const pausedRequirements = requirementsForPausedTransaction(rawTx, agent?.paused_transaction);
   const pausedTransactionId = String(agent?.paused_transaction || '').trim();
+  const pauseKey = `${pausedTransactionId}:${String(agent?.updated_at || '')}`;
   const showPausedEvidenceDialog = Boolean(
     results && currentCaseId && results.case.case_id === currentCaseId &&
     String(agent?.status || '').toLowerCase() === 'paused' &&
-    pausedTransactionId && pausedRequirements.length > 0,
+    pausedTransactionId && pausedRequirements.length > 0 &&
+    dismissedPauseKey !== pauseKey,
   );
+  // One dialog serves both flows: the automatic pause dialog and an upload
+  // opened from any eligible transaction card. Manual open wins.
+  const dialogTxId = manualUploadTxId || (showPausedEvidenceDialog ? pausedTransactionId : '');
+  const dialogRequirements = dialogTxId
+    ? requirementsForPausedTransaction(rawTx, dialogTxId)
+    : [];
 
   // Title chain data from agent
   const titleChain = agent?.title_chain;
@@ -1325,31 +1344,22 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
 
   return (
     <div className="ctd-root">
-      {showPausedEvidenceDialog && (
-        <div role="presentation" style={{ position: 'fixed', inset: 0, zIndex: 20000, display: 'grid', placeItems: 'center', padding: 20, background: 'rgba(15, 23, 42, 0.56)' }}>
-          <section role="dialog" aria-modal="true" aria-labelledby="evidence-upload-title" className="card" style={{ width: 'min(600px, 100%)', maxHeight: 'min(82vh, 740px)', overflowY: 'auto', border: '1px solid #f59e0b', background: '#fffbeb', boxShadow: '0 24px 80px rgba(0,0,0,.28)', padding: 24 }}>
-            <h2 id="evidence-upload-title" style={{ margin: '0 0 8px', color: '#78350f' }}>Documents needed for {pausedTransactionId}</h2>
-            <p style={{ margin: '0 0 16px', color: '#57534e', lineHeight: 1.55 }}>Verification is paused because the available evidence is not sufficient. Upload the outstanding records to continue, or skip this transaction and leave it unverified.</p>
-            <ul style={{ margin: '0 0 20px', padding: 0, listStyle: 'none', display: 'grid', gap: 10, maxHeight: '42vh', overflowY: 'auto' }}>
-              {pausedRequirements.map((item: any, index: number) => (
-                <li key={`${item.document_type}-${item.reason}-${index}`} style={{ padding: '12px 14px', border: '1px solid #fcd34d', borderRadius: 10, background: '#fff' }}>
-                  <strong style={{ display: 'block', marginBottom: 4, color: '#292524', lineHeight: 1.4 }}>{item.document_type || 'Required document'}</strong>
-                  {item.reason && <span style={{ display: 'block', color: '#57534e', fontSize: 13, lineHeight: 1.5 }}>{item.reason}</span>}
-                </li>
-              ))}
-            </ul>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <label className="btn btn-primary" style={{ cursor: evidenceUploadBusy ? 'wait' : 'pointer' }}>
-                <Upload size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-                {evidenceUploadBusy ? 'Working…' : 'Upload requested evidence'}
-                <input type="file" accept="application/pdf,.pdf" multiple disabled={evidenceUploadBusy} onChange={uploadRequestedEvidence} style={{ display: 'none' }} />
-              </label>
-              <button className="btn" disabled={evidenceUploadBusy} onClick={() => void skipPausedTransaction()}>
-                Skip this transaction
-              </button>
-            </div>
-          </section>
-        </div>
+      {dialogTxId && (
+        <EvidenceRequestDialog
+          transactionId={dialogTxId}
+          requirements={dialogRequirements}
+          uploads={evidenceUploads}
+          busy={evidenceUploadBusy}
+          onPick={(index, file) => setEvidenceUploads((prev) => ({ ...prev, [index]: file }))}
+          onSubmit={() => void submitEvidence()}
+          onSkip={
+            manualUploadTxId
+              ? () => { setManualUploadTxId(null); setEvidenceUploads({}); }
+              : () => void skipPausedTransaction()
+          }
+          skipLabel={manualUploadTxId ? 'Close' : undefined}
+          submitLabel={manualUploadTxId ? 'Submit & retry verification' : undefined}
+        />
       )}
       {/* Main Top Bar */}
       <header className={`header ${auth ? '' : 'header-guest'}`}>
@@ -1640,20 +1650,13 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                         </div>
                       </div>
                       <div className="verification-verdict-line">
-                        <span className="verification-verdict-icon" aria-hidden="true">
-                          {String(agent?.overall_status || '').toUpperCase().includes('VERIFIED')
-                            ? <ShieldCheck size={24} />
-                            : <AlertTriangle size={24} />}
-                        </span>
                         <p className="vr-status-line" style={{ fontWeight: 800, letterSpacing: '.01em', lineHeight: 1.3, margin: 0, textTransform: 'uppercase',
                           color: '#1c1917' }}>
                           {agent?.status === "error"
                             ? "VERIFICATION COULD NOT BE COMPLETED, PLEASE RETRY"
                             : agent?.status === "running" || agent?.status === "idle"
                             ? "VERIFICATION IN PROGRESS…"
-                            : agent?.overall_status
-                            ? `TRANSACTION REVIEW ${agent.overall_status}`
-                            : 'VERIFICATION NOT COMPLETED YET'}
+                            : null}
                         </p>
                       </div>
                     </div>
@@ -1724,10 +1727,12 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                           transaction={item}
                           documents={results.documents}
                           skipped={skippedTxIds.has(item.tx_id)}
-                          onUploadEvidence={skippedTxIds.has(item.tx_id)
-                            ? uploadEvidenceForSkippedTransaction
-                            : undefined}
-                          evidenceUploadBusy={evidenceUploadBusy && evidenceUploadTxId === item.tx_id}
+                          onOpenUpload={
+                            skippedTxIds.has(item.tx_id)
+                            || String(item.status || '').toUpperCase() === 'ISSUES_IDENTIFIED'
+                              ? (txId) => { setEvidenceUploads({}); setManualUploadTxId(txId); }
+                              : undefined}
+                          evidenceUploadBusy={evidenceUploadBusy}
                         />
                       ))
                     ) : (
@@ -1739,7 +1744,7 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                     )}
                   </div>
 
-                  {/* Re-run Verification + Download Report Controls */}
+                  {/* Re-run Verification + Actions Controls */}
                   <div className="pl-actions-row" style={{ marginTop: 24, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
                     {requiredDocumentCount > 0 ? (
                     <button
@@ -1771,37 +1776,6 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                     >
                       <Download size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
                       Download Required Documents
-                    </button>
-                    ) : null}
-                    {agent?.status !== "error" && agent?.transactions?.length ? (
-                    <button
-                      className="btn btn-secondary"
-                      disabled={!allComplete}
-                      onClick={async () => {
-                        const cid = currentCaseId || caseInfo?.case_id;
-                        if (!cid) return;
-                        try {
-                          const headers: Record<string, string> = {};
-                          const token = getToken();
-                          if (token) headers['Authorization'] = `Bearer ${token}`;
-                          const r = await fetch(`/api/results/${cid}/report/pdf`, { headers });
-                          if (!r.ok) throw new Error('Failed to generate report');
-                          const blob = await r.blob();
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = `title-report-${cid}.pdf`;
-                          document.body.appendChild(a);
-                          a.click();
-                          a.remove();
-                          URL.revokeObjectURL(url);
-                        } catch (e: any) {
-                          alert('Could not generate report. ' + (e.message || ''));
-                        }
-                      }}
-                    >
-                      <Download size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-                      Download Report
                     </button>
                     ) : null}
                     <button

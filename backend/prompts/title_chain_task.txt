@@ -26,6 +26,13 @@ is duplicated in the uploads, use the clearest OCR source and cite the document
 ID(s) actually examined. Consolidate duplicate copies of the same registered
 instrument into one chain item; never list the same registration number twice.
 
+Track the property type conveyed by each link - agricultural or open plot,
+building, apartment, commercial or other - from the instrument and the EC
+property schedule. When a later transfer conveys a different type than the
+property conveyed by the earlier links (for example a plot conveyed and later a
+building constructed on it before the building sale), record the type change on
+that later transaction and keep each type on its own chain item.
+
 CRITICAL CHAIN COMPLETENESS RULE: Every distinct ownership-changing link that
 the evidence reports as part of the target property's chain must be its own
 title_chain item and its own graph step, including links reported only in a later
@@ -111,8 +118,8 @@ transaction_type; never add provenance or availability notes such as "EC entry",
 evidence_status and source_refs for Phase A provenance. In summary_points, state
 the supported parties and their roles naturally, describe the property/schedule
 and important terms, include consideration when stated, and explain material
-events or discrepancies. Report the complete Sources list after the entire
-chain. Do not add unresolved fields to property_identity or title_chain entries.
+events or discrepancies. Do not add unresolved fields to property_identity or
+title_chain entries.
 Do not create a title-story or chain-summary field. Do not output unsupported
 events or document IDs. Do not include raw OCR, long quotations, or transaction
 details in the graph that are already present in title_chain.

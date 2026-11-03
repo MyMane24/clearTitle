@@ -22,7 +22,6 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 SCHEMA_VERSION = "3.0"
-TITLE_CHAIN_SCHEMA_VERSION = "2.0"
 
 
 # -- controlled enums (§8, §10) ------------------------------------------------
@@ -93,47 +92,6 @@ class MissingDocument(BaseModel):
     for_transaction: str | None = None
 
 
-# -- Output A: title chain (§7, §9) --------------------------------------------
-
-
-class TransactionEntry(BaseModel):
-    """One ownership transaction in the chronological chain.
-
-    ``tx_id`` is the stable internal identifier the frontend links results to;
-    it must not change across report updates.
-    """
-
-    tx_id: str
-    sequence: int
-    document_type: str | None = None
-    transaction_type: str | None = None
-    executed_date: str | None = None
-    registration_number: str | None = None
-    registration_date: str | None = None
-    vendors: list[str] = Field(default_factory=list)
-    purchasers: list[str] = Field(default_factory=list)
-    party_locations: list[str] = Field(default_factory=list)
-    survey_number: str | None = None
-    plot_number: str | None = None
-    site_flat_number: str | None = None
-    property_location: str | None = None
-    market_value: str | None = None
-    consideration: str | None = None
-    schedule_property: str | None = None
-    conveyed_portion: str | None = None
-    source_doc_ids: list[str] = Field(default_factory=list)
-    inferred: bool = False
-    uncertainty: list[str] = Field(default_factory=list)
-
-
-class TitleChain(BaseModel):
-    property_identity: dict[str, Any] = Field(default_factory=dict)
-    transactions: list[TransactionEntry] = Field(default_factory=list)
-    title_story: str = ""
-    unresolved: list[str] = Field(default_factory=list)
-    schema_version: Literal["2.0"] = TITLE_CHAIN_SCHEMA_VERSION
-
-
 # -- transaction verification (§7 Output B, §9) --------------------------------
 
 
@@ -148,9 +106,12 @@ class TransactionVerification(BaseModel):
     status: VerificationStatus
     report: str = Field(
         description=(
-            "Markdown verification report for this transaction only: short prose "
-            "sections with inline citations of the form [doc_id] or [doc_id p.X-Y]. "
-            "Must contain an '## Upstream dependency' section whenever an earlier "
+            "Markdown verification report for this transaction only: open with a "
+            "bold one-line verdict, then short markdown sections named for what "
+            "this transaction turned on - bullets for enumerable facts, prose "
+            "for reasoning, bold decisive facts, inline citations of the form "
+            "[doc_id] or [doc_id p.X-Y]. "
+            "Must contain an '## Earlier transactions' section whenever an earlier "
             "chain link is unverified."
         )
     )

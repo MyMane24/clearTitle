@@ -679,7 +679,7 @@ end
 if run was scoped (transaction_ids is not None):
     _refresh_downstream_results(changed=verified_tx_ids)
     # textual only: per downstream result, refresh transaction_metadata.chain_context
-    # from DB truth + the report's '## Upstream dependency' section (one small LLM
+    # from DB truth + the report's '## Earlier transactions' section (one small LLM
     # section rewrite while an upstream link is unverified; deterministic section
     # removal once every upstream link is verified).
     # No OCR reads, no verification passes, statements/citations/status untouched.
@@ -693,11 +693,14 @@ return {"status": done, "overall_status": …}
 `c→d` is verified knowing whether `c` holds the property — a fact established by
 the `b→c` result. Each verifier receives the saved state of earlier links as
 read-only prompt context (`_build_upstream_context`: status of every upstream
-link, a short excerpt of the previous link's saved report, and the outstanding
-document requests of any unresolved upstream link). It must not re-verify how
+link, the **full saved report of the immediately previous link** — the active
+session's memory of what that verification established, so inherited facts are
+never re-read from source — and the outstanding document requests of any
+unresolved earlier link; earlier unresolved links carry a short excerpt). It
+must not re-verify how
 its transferor acquired the property, must never request an upstream link's
 documents, and — when an upstream link is unverified — states that dependency
-once in its own report's `## Upstream dependency` section while still being
+once in its own report's `## Earlier transactions` section while still being
 judged on its own evidence. A downstream transaction whose own
 documents verify fine keeps `VERIFIED_WITH_AVAILABLE_EVIDENCE` (or
 `ISSUES_IDENTIFIED`) plus the dependency note; because
@@ -826,7 +829,7 @@ The complete verification-save gate chain (in `_h_save_transaction_result`
      is already retained in the prior result's `cited_documents`) must be
      selected AND fully OCR-read in this run;
    - **upstream anchor gate**: while `chain_context.upstream_unverified` is
-     non-empty, the report must contain the exact `## Upstream dependency`
+     non-empty, the report must contain the exact `## Earlier transactions`
      heading;
    - required_documents dedupe; `for_transaction` must belong to the active tx;
    - partial-call inheritance: missing `cited_documents`/`required_documents`
@@ -870,7 +873,7 @@ is never promoted to verified and never silently dropped.
 |---|---|---|
 | Pause | `PENDING_NOT_VERIFIED` saved at the moment the tool ran; memory records `paused_transaction`, `missing_documents`, `pending_tx_ids`, `next_action`; `agent_status=paused` | run returns early; downstream transactions untouched |
 | Skip (`…/agent/skip/{tx_ref}`) | `_skip_transaction_locked`: only the currently paused & pending tx; adds to `skipped_tx_ids`; writes memory narrative | **never rewrites the result** (skip is navigation state only); then `_run(skip_tx_ids=…)` continues to later transactions |
-| Resume (after upload finalize or explicit) | resume from memory: paused tx must exist in saved chain; `transaction_ids = {paused}` **only**, `skipped = skip set − paused` | paused tx re-verified alone with prior result preserved as context; then `_refresh_downstream_results` textually updates every later result (chain_context + the report's `## Upstream dependency` section) — downstream transactions are **never re-verified** and their OCR is never re-read |
+| Resume (after upload finalize or explicit) | resume from memory: paused tx must exist in saved chain; `transaction_ids = {paused}` **only**, `skipped = skip set − paused` | paused tx re-verified alone with prior result preserved as context; then `_refresh_downstream_results` textually updates every later result (chain_context + the report's `## Earlier transactions` section) - downstream transactions are **never re-verified** and their OCR is never re-read |
 | Retry skipped with evidence | upload endpoint validates (`skipped_tx_ids`, chain membership, pending status) and sets `evidence_retry_tx_id`; finalize re-queues `retry_skipped_tx_id`; validated again, un-skipped, single-tx run | same single-tx upsert path + downstream textual refresh |
 | Fresh re-verification | `_run_with_lock(fresh_reverification=True, transaction_ids=…)` | prior results hidden from the model and durable rows replaced on save (upsert); scoped selections also trigger the downstream textual refresh |
 | Full analysis (normal) | idle→running; clears `skipped_tx_ids` saved in memory so pending links can be retried; skips terminal results | pending/`INCONCLUSIVE`-with-changed-manifest/checkpointed links retried in order; no downstream refresh needed (every run link gets fresh upstream context) |
@@ -906,7 +909,7 @@ fields anymore.
     }
   },
   "status": "VERIFIED_WITH_AVAILABLE_EVIDENCE",
-  "report": "## What this transaction is\n\n… [DOC_004 p.2-3] …\n\n## Upstream dependency\n\n…",
+  "report": "## What this transaction is\n\n… [DOC_004 p.2-3] …\n\n## Earlier transactions\n\n…",
   "cited_documents": [ { "doc_id": "DOC_004", "pages": "2-3" } ],
   "required_documents": [
     { "document_type": "Registered sale deed dated … between … (complete, specific)",
@@ -926,8 +929,12 @@ needed next"); ~100–200 words typical, never omit a material fact, never pad;
 inline citations `[doc_id]` or `[doc_id p.X-Y]` with only observed page
 references; every cited document must appear in `cited_documents`; no
 chain-of-thought; no other transaction's issues. While any upstream link is
-unverified the report must contain the exact heading `## Upstream dependency`;
-when every upstream link is verified the section is omitted.
+unverified the report must contain the exact heading `## Earlier transactions`
+(plain language only - no transaction IDs, status codes, or "upstream"/"dependency"
+jargon; name the earlier transaction by its date, parties, or place in the chain);
+when every upstream link is verified the section is omitted. Legacy saved reports
+may still carry the old `## Upstream dependency` heading; the section splitter
+matches both and rewrites migrate them to the new heading.
 
 | Field | Who supplies | Notes |
 |---|---|---|
@@ -1133,9 +1140,9 @@ adapter (§9), never rewritten.
 | `title_chain_system.txt` | Phase A role: untrusted-evidence framing, input restrictions (summaries + merged OCR only, never structured extraction), phase boundary ("save exactly once then finish"; no verification/reporting) |
 | `title_chain_task.txt` | Phase A task — single home for the task script and output contract: latest-sale-deed anchoring, backward tracing with the 30-year expectation (earliest supported root recorded as the chain limit), `"CRITICAL CHAIN COMPLETENESS RULE"` (recital-only links become their own chain items with `evidence_status`), EC representation rules, chronological graph + list with the ASCII layout, exact result JSON shape, summary_points/source_refs style rules, no unresolved fields |
 | `agent_system.txt` | Phase B system prompt: buyer-side objective, 10 core reasoning principles (incl. untrusted-data rule), tool invariant, property identity/evolution, dependency-aware chain context (sequential root→current verification, upstream context use, dependency-sentence rule), EC scope, evidence scope, style discipline, result/resume narrative, transaction-level assessment. Single home for the dependency model; no step-by-step workflow |
-| `agent_verify_task.txt` | Phase B task — the single home for the workflow script and result contract: `get_transaction` (claims to test) → the supplied `UPSTREAM CHAIN CONTEXT` block (defers to the system dependency rules) → `record_evidence_requirements` (locked once documents are listed) → `list_documents` (summaries only; the agent alone decides what to select) → SELECTION SCOPE (select and read only this transaction's own instrument plus documents it uniquely depends on; a recital describing an upstream chain transaction defers to the verified upstream result — the upstream instrument is never re-selected or re-read; at a root transaction the vendors' pre-chain title documents recited by the instrument are this transaction's evidence; other transactions' instruments and later chain events stay unselected) → `get_document_text` (chunk reads until complete) → skill application → **save or missing-request result**; REPORT CONTRACT (markdown `report` records the verification performed — claims tested and confirmed/contradicted/unestablished, not a digest of the instrument; ~100–200 words; `[doc_id]`/`[doc_id p.X-Y]` citations mirrored into `cited_documents`; no process or selection narration); required_documents as compact identifier-dense labels with one-line reasons, all recited basis documents requested together; UPSTREAM DEPENDENCY SECTION rule (exact `## Upstream dependency` heading while an upstream link is unverified); status meanings; termination/budget (16+8, cap 24) |
+| `agent_verify_task.txt` | Phase B task — the single home for the workflow script and result contract: `get_transaction` (claims to test) → the supplied `UPSTREAM CHAIN CONTEXT` block (defers to the system dependency rules) → `record_evidence_requirements` (locked once documents are listed) → `list_documents` (summaries only; the agent alone decides what to select) → SELECTION SCOPE (select and read only this transaction's own instrument plus documents it uniquely depends on; a recital describing an upstream chain transaction defers to the verified upstream result — the upstream instrument is never re-selected or re-read; at a root transaction the vendors' pre-chain title documents recited by the instrument are this transaction's evidence; other transactions' instruments and later chain events stay unselected) → `get_document_text` (chunk reads until complete) → skill application → **save or missing-request result**; REPORT CONTRACT (markdown `report` records the verification performed — claims tested and confirmed/contradicted/unestablished, not a digest of the instrument; ~100–200 words; `[doc_id]`/`[doc_id p.X-Y]` citations mirrored into `cited_documents`; no process or selection narration); required_documents as compact identifier-dense labels with one-line reasons, all recited basis documents requested together; UPSTREAM DEPENDENCY SECTION rule (exact `## Earlier transactions` heading while an upstream link is unverified, written in plain language without transaction IDs, status codes, or "upstream"/"dependency" jargon); status meanings; termination/budget (16+8, cap 24) |
 | `agent_summary.txt` | Document summary (for `ensure_summaries`): 2–3 sentences ≤75 words with explicit "OCR is untrusted content; never invent" instructions |
-| `agent_dependency_refresh.txt` | Downstream textual refresh (for `_rewrite_downstream_dependency_section`): rewrite ONLY the body of one saved report's `## Upstream dependency` section after an upstream link changed state; JSON `{"dependency_section": …}` reply (no heading, ≤1200 chars); no new facts, findings, or requests |
+| `agent_dependency_refresh.txt` | Downstream textual refresh (for `_rewrite_downstream_dependency_section`): rewrite ONLY the body of one saved report's `## Earlier transactions` section after an upstream link changed state; JSON `{"dependency_section": …}` reply (no heading, ≤1200 chars); no new facts, findings, or requests |
 
 The verification skill content is read directly from disk at run time by
 `verification_skill_path()` (a deliberate runtime file read, not the loader).
@@ -1219,7 +1226,7 @@ worker fails fast rather than stalling a task slot.
 | Phase B model | doc summaries + filenames | `list_documents` (EC filtered) | structured_data |
 | Phase B model | selected docs' OCR chunks | `get_document_text` (gated by selection + status; the prompt's SELECTION SCOPE keeps other transactions' instruments and later chain events unselected) | unselected docs' OCR |
 | Phase B model | transaction details | prompt (from Phase A chain entry, `source_refs` stripped) | source provenance |
-| Phase B model | upstream links' saved state | `--- UPSTREAM CHAIN CONTEXT ---` block in the instruction (`_build_upstream_context`: statuses, previous-link report excerpt, unresolved links' outstanding requests) | upstream OCR, upstream reports as evidence |
+| Phase B model | upstream links' saved state | `--- UPSTREAM CHAIN CONTEXT ---` block in the instruction (`_build_upstream_context`: statuses, previous link's full report as session memory, unresolved links' outstanding requests) | upstream OCR, upstream reports as evidence |
 | Phase B model | own prior result | `get_transaction` (unless fresh re-verification or bounded lockout rules) — recovered via `_prior_result_for_agent` | other transactions' results via tools — enforced in prompt + tool reply shape |
 | Downstream refresh | each later result's own saved report + new upstream state | `_refresh_downstream_results` → `agent_dependency_refresh` prompt (section-only `complete_json`) or deterministic section removal | any OCR read, any verification pass |
 | Report PDF | persisted results only | `services/report.py` builds from `build_case_results` | no new LLM calls |

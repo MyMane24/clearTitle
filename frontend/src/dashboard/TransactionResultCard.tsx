@@ -1,7 +1,7 @@
 import React from 'react';
+import { Upload } from 'lucide-react';
 
 import {
-  citedDocumentsForTransaction,
   reportSections,
   requiredDocumentsForTransaction,
   transactionMetadataItems,
@@ -17,7 +17,7 @@ type Props = {
   transaction: TransactionVerificationResult;
   documents?: DocumentLabel[];
   skipped?: boolean;
-  onUploadEvidence?: (txId: string, files: File[]) => void;
+  onOpenUpload?: (txId: string) => void;
   evidenceUploadBusy?: boolean;
 };
 
@@ -56,6 +56,51 @@ function parseCitation(inner: string): CitedDocument | null {
   return { doc_id: match[1].toUpperCase(), pages: match[2]?.trim() || undefined };
 }
 
+const RISK_PATTERN = /(discrepan|unverifi|unestablish|uncertain|unresolved|mismatch|outstanding|missing|does not|cannot|not independently|not documented|not reconcil|limits confirmation|gap)/i;
+
+function splitFinding(line: string): { title: string; text: string } {
+  const match = line.match(/^\*\*([^*]+)\*\*\s*(?:[—–-]|:)?\s*(.*)$/);
+  if (match) return { title: match[1].trim(), text: match[2].trim() };
+  return { title: '', text: line };
+}
+
+function DocRef({ citation, documents }: { citation: CitedDocument; documents: DocumentLabel[] }) {
+  const label = evidenceLabel(citation, documents) || 'Cited document';
+  return (
+    <span
+      className="verification-doc-ref"
+      title={label}
+      aria-label={`Source: ${label}`}
+    >
+      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <path d="M14 2v6h6" />
+      </svg>
+      PDF
+    </span>
+  );
+}
+
+function renderInline(text: string, documents: DocumentLabel[], keyPrefix: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  let cursor = 0;
+  let index = 0;
+  for (const match of text.matchAll(citationPattern)) {
+    const start = match.index ?? 0;
+    if (start > cursor) nodes.push(...renderBold(text.slice(cursor, start), documents, `${keyPrefix}-t${index}`));
+    const citation = parseCitation(match[1]);
+    if (citation) {
+      nodes.push(<DocRef key={`${keyPrefix}-c${index}`} citation={citation} documents={documents} />);
+    } else {
+      nodes.push(...renderBold(match[0], documents, `${keyPrefix}-t${index}`));
+    }
+    index += 1;
+    cursor = start + match[0].length;
+  }
+  if (cursor < text.length) nodes.push(...renderBold(text.slice(cursor), documents, `${keyPrefix}-t${index}`));
+  return nodes;
+}
+
 function renderBold(text: string, documents: DocumentLabel[], keyPrefix: string): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
   let cursor = 0;
@@ -70,30 +115,6 @@ function renderBold(text: string, documents: DocumentLabel[], keyPrefix: string)
   return nodes;
 }
 
-function renderInlineText(text: string, documents: DocumentLabel[], keyPrefix: string): React.ReactNode[] {
-  const nodes: React.ReactNode[] = [];
-  let cursor = 0;
-  let index = 0;
-  for (const match of text.matchAll(citationPattern)) {
-    const start = match.index ?? 0;
-    if (start > cursor) nodes.push(...renderBold(text.slice(cursor, start), documents, `${keyPrefix}-t${index}`));
-    const citation = parseCitation(match[1]);
-    if (citation) {
-      nodes.push(
-        <span className="verification-citation" key={`${keyPrefix}-c${index++}`}>
-          {evidenceLabel(citation, documents) || match[1]}
-        </span>,
-      );
-    } else {
-      nodes.push(...renderBold(match[0], documents, `${keyPrefix}-t${index}`));
-    }
-    index += 1;
-    cursor = start + match[0].length;
-  }
-  if (cursor < text.length) nodes.push(...renderBold(text.slice(cursor), documents, `${keyPrefix}-t${index}`));
-  return nodes;
-}
-
 function ReportBody({ body, documents }: { body: string; documents: DocumentLabel[] }) {
   const blocks = body.split(/\n{2,}/).map(block => block.trim()).filter(Boolean);
   return (
@@ -102,16 +123,25 @@ function ReportBody({ body, documents }: { body: string; documents: DocumentLabe
         const lines = block.split('\n').map(line => line.trim());
         if (lines.length > 0 && lines.every(line => line.startsWith('-'))) {
           return (
-            <ul key={blockIndex} className="verification-report-list">
-              {lines.map((line, lineIndex) => (
-                <li key={lineIndex}>
-                  {renderInlineText(line.replace(/^-\s*/, ''), documents, `${blockIndex}-${lineIndex}`)}
-                </li>
-              ))}
+            <ul key={blockIndex} className="verification-report-list verification-findings-list">
+              {lines.map((line, lineIndex) => {
+                const { title, text } = splitFinding(line.replace(/^-\s*/, ''));
+                const risky = RISK_PATTERN.test(title) || RISK_PATTERN.test(text);
+                return (
+                  <li key={lineIndex} className={`verification-finding-item${risky ? ' verification-finding-risk' : ''}`}>
+                    {title && <strong>{title}</strong>}
+                    {text && <p>{renderInline(text, documents, `${blockIndex}-${lineIndex}`)}</p>}
+                  </li>
+                );
+              })}
             </ul>
           );
         }
-        return <p key={blockIndex}>{renderInlineText(block, documents, `p${blockIndex}`)}</p>;
+        return (
+          <div key={blockIndex} className="verification-report-paragraph">
+            <p>{renderInline(block, documents, `p${blockIndex}`)}</p>
+          </div>
+        );
       })}
     </>
   );
@@ -121,14 +151,15 @@ export function TransactionResultCard({
   transaction,
   documents = [],
   skipped = false,
-  onUploadEvidence,
+  onOpenUpload,
   evidenceUploadBusy = false,
 }: Props) {
   const requirements = requiredDocumentsForTransaction(transaction);
-  const citations = citedDocumentsForTransaction(transaction);
   const metadata = transaction.transaction_metadata || {};
   const metadataItems = transactionMetadataItems(metadata);
   const skippedStatus = skipped || ['SKIPPED', 'SKIPPED_BY_USER'].includes(String(transaction.status).toUpperCase());
+  const issuesStatus = String(transaction.status).toUpperCase() === 'ISSUES_IDENTIFIED';
+  const canUpload = Boolean(onOpenUpload && transaction.tx_id) && (skippedStatus || issuesStatus);
   const status = skippedStatus ? transactionStatusLabel('SKIPPED') : transactionStatusLabel(transaction.status);
   const statusClass = skippedStatus ? 'status-skipped' : `status-${String(transaction.status || 'PENDING').toLowerCase()}`;
   const report = typeof transaction.report === 'string' ? transaction.report.trim() : '';
@@ -163,7 +194,11 @@ export function TransactionResultCard({
         <section aria-label="Verification report" className="verification-report">
           {sections.map((section, index) => (
             <div className="verification-report-block" key={index}>
-              {section.heading && <h4>{section.heading}</h4>}
+              {section.heading && (
+                <h4 className={RISK_PATTERN.test(section.heading) ? 'verification-report-heading-risk' : undefined}>
+                  {section.heading}
+                </h4>
+              )}
               <ReportBody body={section.body} documents={documents} />
             </div>
           ))}
@@ -172,26 +207,13 @@ export function TransactionResultCard({
         <p className="verification-result-summary">No report was recorded for this transaction.</p>
       )}
 
-      {citations.length > 0 && (
-        <section className="verification-cited-documents" aria-label="Documents cited">
-          <h4>Documents cited</h4>
-          <ul className="verification-finding-evidence">
-            {citations.map((reference, index) => (
-              <li key={`${reference.doc_id}-${reference.pages || ''}-${index}`}>
-                {evidenceLabel(reference, documents)}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
       {requirements.length > 0 && (
         <section className="verification-evidence-needed" aria-label="Evidence still needed">
           <h4>Evidence needed</h4>
           <ul>
             {requirements.map((item, index) => (
               <li key={`${item.document_type}-${index}`}>
-                <strong>{item.document_type}</strong>
+                <strong style={{ lineHeight: 1.4 }}>{item.document_type}</strong>
                 {item.reason && <p>{resolveDocumentRefs(item.reason, documents)}</p>}
               </li>
             ))}
@@ -199,24 +221,17 @@ export function TransactionResultCard({
         </section>
       )}
 
-      {skippedStatus && onUploadEvidence && transaction.tx_id && (
-        <label className="btn btn-secondary" style={{ display: 'inline-block', cursor: evidenceUploadBusy ? 'wait' : 'pointer' }}>
-          {evidenceUploadBusy ? 'Uploading…' : 'Add evidence and retry this transaction'}
-          <input
-            type="file"
-            accept="application/pdf,.pdf"
-            multiple
+      {canUpload && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+          <button
+            className="verification-upload-btn"
             disabled={evidenceUploadBusy}
-            aria-label={`Upload evidence for ${transactionTitle(transaction)}`}
-            onChange={event => {
-              const input = event.currentTarget;
-              const files = Array.from(input.files || []);
-              input.value = '';
-              if (files.length) onUploadEvidence(transaction.tx_id, files);
-            }}
-            style={{ display: 'none' }}
-          />
-        </label>
+            onClick={() => onOpenUpload!(transaction.tx_id!)}
+          >
+            <Upload size={13} />
+            {evidenceUploadBusy ? 'Uploading…' : 'Upload evidence'}
+          </button>
+        </div>
       )}
     </article>
   );
