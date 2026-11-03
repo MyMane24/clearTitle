@@ -63,7 +63,9 @@ def set_case_status(*, case_id: str, status: str) -> None:
 
 
 def upload_docs_reset(*, case_id: str, new_total: int) -> None:
-    """Bump total_docs and invalidate title-chain/verification when more docs are uploaded."""
+    """Bump total_docs and reset case status when more docs are uploaded.
+    Preserves existing title_chains and verification_results so the agent can resume.
+    """
     with _get_conn() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -71,9 +73,8 @@ def upload_docs_reset(*, case_id: str, new_total: int) -> None:
             "verification_status = NULL, verdict = NULL WHERE id = %s",
             (new_total, case_id)
         )
-        cursor.execute("DELETE FROM title_chains WHERE case_id = %s", (case_id,))
-        cursor.execute("DELETE FROM verification_results WHERE case_id = %s", (case_id,))
         conn.commit()
+
 
 
 def list_cases(user_id: str | None = None, limit: int = 50, offset: int = 0) -> list[dict]:
@@ -143,7 +144,8 @@ def delete_case(case_id: str) -> None:
         cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
         for table in (
             "title_chains",
-            "verification_results",
+            "case_memory",
+            "case_results",
             "documents",
         ):
             try:
@@ -209,6 +211,7 @@ def get_case_status_payload(case_id: str) -> dict:
             "saved_path": file_paths.get("raw"),
             "status": d["status"],
             "document_type": d.get("document_type") or "",
+            "error": d.get("error") or "",
         })
 
         # results element (only if status is structured)
@@ -236,7 +239,11 @@ def get_case_status_payload(case_id: str) -> dict:
                 "cost_usd": float(d["cost_usd"]),
                 "latency_ms": d["latency_ms"],
                 "model_used": d["model_used"],
-                "provider": "gemini" if "gemini" in (d["model_used"] or "").lower() else "groq"
+                "provider": (
+                    "gemini" if "gemini" in (d["model_used"] or "").lower()
+                    else "groq" if "groq" in (d["model_used"] or "").lower()
+                    else "openai" if d["model_used"] else ""
+                )
             })
 
         # errors element (if failed or classification_failed)

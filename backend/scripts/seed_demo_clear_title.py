@@ -13,7 +13,6 @@ Usage:  venv\\Scripts\\python.exe backend\\scripts\\seed_demo_clear_title.py
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 

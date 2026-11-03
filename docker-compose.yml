@@ -1,8 +1,8 @@
 services:
 
-  # ── Redis ─────────────────────────────────────────────────────────────────
+  # -- Redis -----------------------------------------------------------------
   # Broker + result backend for Celery. Also stores pipeline job state
-  # (see redis_store.py). Data is persisted in the `redis_data` named volume.
+  # Data is persisted in the `redis_data` named volume.
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -14,11 +14,11 @@ services:
       timeout: 3s
       retries: 5
 
-  # ── MySQL ──────────────────────────────────────────────────────────────────
+  # -- MySQL ------------------------------------------------------------------
   # The official mysql:8.0 image reads MYSQL_* env vars on first boot and
   # automatically: creates the root user, creates MYSQL_USER, sets passwords,
   # and creates MYSQL_DATABASE — no SQL scripts needed.
-  # Your mysql_store.py then creates all 5 tables via CREATE TABLE IF NOT EXISTS.
+  # backend/database/migrations.py then creates the tables via CREATE TABLE IF NOT EXISTS.
   mysql:
     image: mysql:8.0
     restart: unless-stopped
@@ -39,7 +39,7 @@ services:
       retries: 10
       start_period: 30s
 
-  # ── phpMyAdmin ─────────────────────────────────────────────────────────────
+  # -- phpMyAdmin -------------------------------------------------------------
   # Browser-based MySQL UI. Open http://localhost:8080 to view all tables/data.
   # No installation needed — runs inside Docker.
   phpmyadmin:
@@ -56,7 +56,7 @@ services:
     ports:
       - "127.0.0.1:8080:80"
 
-  # ── API (FastAPI + uvicorn) ────────────────────────────────────────────────
+  # -- API (FastAPI + uvicorn) ------------------------------------------------
   # Serves the REST API and the frontend static files.
   # Port 8000 exposed to host — open http://localhost:8000
   api:
@@ -89,7 +89,7 @@ services:
       retries: 5
       start_period: 20s
 
-  # ── Celery Worker ──────────────────────────────────────────────────────────
+  # -- Celery Worker ----------------------------------------------------------
   # Same Docker image as `api`, different start command.
   # Processes background tasks: OCR, structuring, verification, etc.
   worker:
@@ -117,7 +117,7 @@ services:
       - ./uploads:/app/uploads
       - ./outputs:/app/outputs
 
-# ── Named volumes ────────────────────────────────────────────────────────────
+# -- Named volumes ------------------------------------------------------------
 # Docker manages these — data survives `docker compose down`.
 # Use `docker compose down -v` ONLY if you want to wipe all data.
 volumes:

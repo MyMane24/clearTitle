@@ -11,7 +11,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.config import CORS_ORIGINS, GEMINI_API_KEY, GROQ_API_KEY, SARVAM_API_KEY
+from backend.config import (
+    CLEARTITLE_AGENT_PROVIDER,
+    CORS_ORIGINS,
+    GEMINI_API_KEY,
+    MAX_UPLOAD_SIZE_MB,
+    OPENAI_API_KEY,
+    SARVAM_API_KEY,
+)
 from backend.logger import get_logger
 from backend.routers import auth as auth_router
 from backend.routers import cases as cases_router
@@ -19,11 +26,10 @@ from backend.routers import results as results_router
 
 logger = get_logger(__name__)
 
-# ── Ensure required directories exist ─────────────────────────────────────────
-for d in ["uploads", "outputs/structured", "outputs/raw_ocr"]:
-    Path(d).mkdir(parents=True, exist_ok=True)
+# -- Ensure required directories exist -----------------------------------------
+Path("uploads").mkdir(parents=True, exist_ok=True)
 
-# ── Lifespan (replaces deprecated @app.on_event) ─────────────────────────────
+# -- Lifespan (replaces deprecated @app.on_event) -----------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: init DB tables once
@@ -35,7 +41,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-# ── App ────────────────────────────────────────────────────────────────────────
+# -- App ------------------------------------------------------------------------
 app = FastAPI(
     title="ClearTitle Property Verification Engine",
     description="Sarvam OCR + LLM structuring + title-chain verification for property documents",
@@ -51,7 +57,7 @@ app.add_middleware(
     allow_credentials=True,
 )
 
-# ── API routes ─────────────────────────────────────────────────────────────────
+# -- API routes -----------------------------------------------------------------
 app.include_router(auth_router.router, prefix="/api")
 app.include_router(cases_router.router, prefix="/api")
 app.include_router(results_router.router, prefix="/api")
@@ -62,15 +68,25 @@ app.include_router(auth_router.google_router)
 
 @app.get("/health")
 async def health():
+    agent_provider = CLEARTITLE_AGENT_PROVIDER.lower()
+    if agent_provider == "gemini":
+        agent_provider_key = bool(GEMINI_API_KEY)
+    elif agent_provider in {"openai", "luna"}:
+        agent_provider_key = bool(OPENAI_API_KEY)
+    else:
+        agent_provider_key = False
     return {
         "status": "ok",
         "sarvam_key": bool(SARVAM_API_KEY),
-        "groq_key":   bool(GROQ_API_KEY),
+        "openai_key": bool(OPENAI_API_KEY),
         "gemini_key": bool(GEMINI_API_KEY),
+        "agent_provider": agent_provider,
+        "agent_provider_key": agent_provider_key,
+        "max_upload_size_mb": MAX_UPLOAD_SIZE_MB,
     }
 
 
-# ── Serve frontend ─────────────────────────────────────────────────────────────
+# -- Serve frontend -------------------------------------------------------------
 FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
 SPA_DIST = FRONTEND / "dist"
 
@@ -88,7 +104,9 @@ if SPA_DIST.exists():
         candidate = (SPA_DIST / full_path).resolve()
         if candidate.is_relative_to(SPA_DIST.resolve()) and candidate.is_file():
             return candidate
-        return FileResponse(SPA_DIST / "index.html")
+        # index.html must revalidate on every load, or browsers keep serving a
+        # stale bundle after each deploy.
+        return FileResponse(SPA_DIST / "index.html", headers={"Cache-Control": "no-cache"})
 else:
     @app.get("/", response_class=FileResponse)
     async def serve_ui():

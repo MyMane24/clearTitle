@@ -4,13 +4,17 @@ import './dashboard.css';
 import clearTitleLogo from '../assets/clearTitle.png';
 import {
   API, AuthResponse, AuthUser, CaseListItem, CaseResults, HealthStatus,
-  StatusResponse, TitleChainEntry, VerificationItem, getToken, setToken,
+  StatusResponse, TitleChainEntry, getToken, setToken,
 } from '../api/backend';
 import { DocSummary } from './utils';
+import { PhaseAChainView } from './PhaseAResult';
+import { requirementsForPausedTransaction } from './transactionResults';
+import { TransactionResultCard } from './TransactionResultCard';
+import { EvidenceRequestDialog } from './EvidenceRequestDialog';
 import {
-  AlertTriangle, ArrowLeft, BarChart3, Check, CheckCircle2,
+  AlertTriangle, ArrowLeft, Check, CheckCircle2,
   ChevronDown, ChevronUp, FileText, FileUp,
-  GitMerge, Lock, LogIn, LogOut, MapPin, Menu, MinusCircle,
+  GitMerge, Lock, LogIn, LogOut, MapPin, Menu,
   Play, Plus, RefreshCw, ShieldCheck, Sparkles, Download,
   Trash2, Upload, Users, X, XCircle, ScrollText,
 } from 'lucide-react';
@@ -42,12 +46,12 @@ function profileInitials(u: AuthUser): string {
 function logClass(line: string): string {
   if (line.includes("✗") || line.toLowerCase().includes("failed")) return "log-err";
   if (line.includes("✓") || line.toLowerCase().includes("complete")) return "log-ok";
-  if (line.includes("Step") || line.includes("──")) return "log-info";
+  if (line.includes("Step") || line.includes("--")) return "log-info";
   if (line.includes("⚠")) return "log-warn";
   return "";
 }
 
-function docStageInfo(docStatus: string): { label: string; pct: number; state: 'waiting' | 'active' | 'done' | 'failed' } {
+function docStageInfo(docStatus: string, error = ''): { label: string; pct: number; state: 'waiting' | 'active' | 'done' | 'failed' } {
   const map: Record<string, { label: string; pct: number; state: 'waiting' | 'active' | 'done' | 'failed' }> = {
     uploaded:            { label: 'Waiting to process...',   pct: 0,   state: 'waiting' },
     preprocessing:       { label: 'Reading and understanding...', pct: 15, state: 'active' },
@@ -61,19 +65,30 @@ function docStageInfo(docStatus: string): { label: string; pct: number; state: '
     structuring:         { label: 'Extracting property information...', pct: 90, state: 'active' },
     structuring_done:    { label: 'Extracting property information...', pct: 95, state: 'active' },
     structured:          { label: 'Complete',              pct: 100, state: 'done' },
+    skipped:             { label: 'Skipped',               pct: 100, state: 'done' },
     failed:              { label: 'Failed',                pct: 0,   state: 'failed' },
     classification_failed:{ label: 'Unrecognized document', pct: 0, state: 'failed' },
     pending_retry:       { label: 'Waiting to retry...',  pct: 0,   state: 'waiting' },
   };
+  if (error.toLowerCase().includes('insufficient credits')) {
+    return { label: 'Insufficient OCR credits', pct: 0, state: 'failed' };
+  }
   return map[docStatus] || { label: docStatus, pct: 0, state: 'waiting' };
+}
+
+function documentErrorMessage(error = ''): string {
+  if (error.toLowerCase().includes('insufficient credits')) {
+    return 'OCR stopped: Sarvam has insufficient credits. Add credits to the Sarvam account, then retry this document.';
+  }
+  return error;
 }
 
 function AiDots() {
   return <span className="ai-dots"><span /><span /><span /></span>;
 }
 
-function DocPipelineCard({ doc, compact }: { doc: { doc_id: string; original_name: string; status: string; document_type: string }; compact?: boolean }) {
-  const info = docStageInfo(doc.status);
+function DocPipelineCard({ doc, compact }: { doc: { doc_id: string; original_name: string; status: string; document_type: string; error?: string }; compact?: boolean }) {
+  const info = docStageInfo(doc.status, doc.error);
   const cardClass = `doc-pipeline-card ${info.state === 'active' ? 'active' : info.state === 'done' ? 'done' : info.state === 'failed' ? 'failed' : ''}`;
 
   if (compact && info.state === 'done') {
@@ -84,14 +99,14 @@ function DocPipelineCard({ doc, compact }: { doc: { doc_id: string; original_nam
             <Check size={14} style={{ color: '#059669', flexShrink: 0 }} />
             <span>{doc.original_name}</span>
           </div>
-          <span className="doc-pipeline-status done">Complete</span>
+           <span className="doc-pipeline-status done">{info.label}</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={cardClass}>
+      <div className={cardClass}>
       <div className="doc-pipeline-top">
         <div className="doc-pipeline-name">
           {info.state === 'done' ? (
@@ -108,6 +123,9 @@ function DocPipelineCard({ doc, compact }: { doc: { doc_id: string; original_nam
           {info.label}
         </div>
       </div>
+      {info.state === 'failed' && doc.error && (
+        <div className="doc-pipeline-error" role="alert">{documentErrorMessage(doc.error)}</div>
+      )}
       {info.state !== 'done' && info.state !== 'failed' && (
         <div className="doc-pipeline-bar-wrap">
           <div className={`doc-pipeline-bar ${info.state}`} style={{ width: `${info.pct}%` }} />
@@ -116,53 +134,19 @@ function DocPipelineCard({ doc, compact }: { doc: { doc_id: string; original_nam
     </div>
   );
 }
-
-function PhaseStep({ icon, label, status }: {
-  icon: React.ReactNode;
-  label: string;
-  status: 'pending' | 'active' | 'done';
-}) {
-  const statusIcon = status === 'done' ? <Check size={16} style={{ color: '#059669' }} />
-    : status === 'active' ? <Sparkles size={16} style={{ color: '#ea580c' }} />
-    : <span className="phase-dot-pending" />;
-
-  return (
-    <div className={`phase-step ${status}`}>
-      <div className="phase-step-icon">{statusIcon}</div>
-      <div className="phase-step-content">
-        <div className="phase-step-label">
-          {label}
-          {status === 'active' && <AiDots />}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function AIPipeline({ statusData }: { statusData: StatusResponse }) {
   const files = statusData.files || [];
-  const allDone = files.length > 0 && files.every(f => f.status === 'structured' || f.status === 'failed' || f.status === 'classification_failed');
-  const anyActive = files.some(f => f.status !== 'uploaded' && f.status !== 'structured' && f.status !== 'failed' && f.status !== 'classification_failed');
-  const allStructured = files.every(f => f.status === 'structured');
+  const terminal = (file: typeof files[number]) =>
+    ['structured', 'skipped', 'failed', 'classification_failed'].includes(file.status) ||
+    Boolean(file.error?.toLowerCase().includes('insufficient credits'));
+  const allDone = files.length > 0 && files.every(terminal);
+  const anyActive = files.some(f => f.status !== 'uploaded' && !terminal(f));
   const hasFiles = files.length > 0;
 
-  const tcStatus = statusData.title_chain_status;
-  const vStatus = statusData.verification_status;
-
-  let titleChainState: 'pending' | 'active' | 'done' = 'pending';
-  if (tcStatus === 'complete' || tcStatus === 'error') titleChainState = 'done';
-  else if (allDone && tcStatus && tcStatus !== 'pending') titleChainState = 'active';
-  else if (allDone && statusData.status === 'complete') titleChainState = 'active';
-
-  let verifyState: 'pending' | 'active' | 'done' = 'pending';
-  if (vStatus === 'complete') verifyState = 'done';
-  else if (titleChainState === 'done' && vStatus) verifyState = 'active';
-  else if (titleChainState === 'done' && !vStatus) verifyState = 'active';
-
   const showAnalysis = allDone && hasFiles;
-  const allComplete = titleChainState === 'done' && verifyState === 'done';
-  const activeDocCount = files.filter(f => f.status !== 'uploaded' && f.status !== 'structured' && f.status !== 'failed' && f.status !== 'classification_failed').length;
-  const doneDocCount = files.filter(f => f.status === 'structured').length;
+  const allComplete = allDone && statusData.status !== 'processing';
+  const activeDocCount = files.filter(f => f.status !== 'uploaded' && !terminal(f)).length;
+  const doneDocCount = files.filter(f => f.status === 'structured' || f.status === 'skipped').length;
 
   return (
     <div className="ai-pipeline">
@@ -174,11 +158,11 @@ function AIPipeline({ statusData }: { statusData: StatusResponse }) {
         <div>
           <div className="ai-text">
             {allComplete
-              ? 'Analysis complete'
+              ? 'Document processing complete'
               : anyActive
                 ? <>AI is analyzing your documents<AiDots /></>
                 : showAnalysis
-                  ? 'Running final analysis...'
+                  ? 'Finishing document processing...'
                   : 'Preparing documents...'}
           </div>
           {hasFiles && (
@@ -198,21 +182,6 @@ function AIPipeline({ statusData }: { statusData: StatusResponse }) {
         <DocPipelineCard key={f.doc_id} doc={f} compact={showAnalysis} />
       ))}
 
-      {/* Phase 2: Analysis steps — only show after all docs done */}
-      {showAnalysis && (
-        <div className="analysis-steps">
-          <PhaseStep
-            icon={<GitMerge size={16} />}
-            label="Building title chain"
-            status={titleChainState}
-          />
-          <PhaseStep
-            icon={<ShieldCheck size={16} />}
-            label="Verifying title"
-            status={verifyState}
-          />
-        </div>
-      )}
     </div>
   );
 }
@@ -253,16 +222,29 @@ function fmtDate(value?: string | null): string {
   if (isNaN(d.getTime())) return value;
   return d.toLocaleString();
 }
-function chainDateMs(e: TitleChainEntry): number | null {
-  const t = Date.parse(e.execution_date || '');
+function chainDateMs(e: any): number | null {
+  const d = e.execution_date || e.executed_date || e.registration_date || '';
+  const t = Date.parse(d);
   return isNaN(t) ? null : t;
 }
 
-function sortChain(chain: TitleChainEntry[]): TitleChainEntry[] {
+function normalizeParties(raw: any): any[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw.map(p => typeof p === 'string' ? { entity_name: p } : p);
+  }
+  if (typeof raw === 'string') return [{ entity_name: raw }];
+  return [raw];
+}
+
+function sortChain(chain: any[]): any[] {
   return [...chain].sort((a, b) => {
+    const idxA = a.sequence ?? a.transaction_index ?? (a.tx_id ? parseInt(String(a.tx_id).replace(/\D/g, '')) : 0);
+    const idxB = b.sequence ?? b.transaction_index ?? (b.tx_id ? parseInt(String(b.tx_id).replace(/\D/g, '')) : 0);
+    if (idxA !== idxB) return idxA - idxB;
     const da = chainDateMs(a), db = chainDateMs(b);
     if (da != null && db != null && da !== db) return da - db;
-    return (a.transaction_index ?? 0) - (b.transaction_index ?? 0);
+    return 0;
   });
 }
 
@@ -337,6 +319,8 @@ function chainTagCls(e: TitleChainEntry): string {
 }
 
 function chainPropertyDescription(e: TitleChainEntry): string {
+  if (e.schedule_property) return e.schedule_property;
+  if (e.property_location) return e.property_location;
   const pd = e.property_details;
   if (pd && typeof pd === 'object') {
     if (pd.description) return pd.description;
@@ -347,6 +331,9 @@ function chainPropertyDescription(e: TitleChainEntry): string {
 }
 
 function chainSurveyIdentity(e: TitleChainEntry): string {
+  if (e.survey_number || e.plot_number || e.site_flat_number) {
+    return [e.survey_number, e.plot_number, e.site_flat_number].filter(Boolean).join(' / ');
+  }
   const pd = e.property_details;
   if (e.property_identity) return e.property_identity;
   if (pd && typeof pd === 'object') {
@@ -357,6 +344,7 @@ function chainSurveyIdentity(e: TitleChainEntry): string {
 }
 
 function chainConsideration(e: TitleChainEntry): string {
+  if (e.consideration != null && e.consideration !== '') return String(e.consideration);
   const f = e.financials;
   const v = f && typeof f === 'object' ? f.consideration_amount : (typeof f === 'string' ? f : null);
   if (v == null || v === '') return '';
@@ -365,6 +353,7 @@ function chainConsideration(e: TitleChainEntry): string {
 }
 
 function chainMarketValue(e: TitleChainEntry): string {
+  if (e.market_value != null && e.market_value !== '') return String(e.market_value);
   const f = e.financials;
   const v = f && typeof f === 'object' ? f.market_value : null;
   if (v == null || v === '') return '';
@@ -379,22 +368,13 @@ function fmtChainDate(value?: string | null): string {
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-function ChainTimeline({ chain, status, titleStory }: {
+function ChainTimeline({ chain }: {
   chain: TitleChainEntry[];
-  status?: string;
-  titleStory?: string;
 }) {
-  if (status === 'no_transactions') {
-    return (
-      <div className="vr-sheet-empty warn">
-        There are no transactions existing for this property in EC. Please upload a valid EC.
-      </div>
-    );
-  }
   if (!chain || chain.length === 0) {
     return (
       <div className="vr-sheet-empty warn">
-        {titleStory || 'No title chain entries yet. Title chain is built once all documents are structured.'}
+        No title chain entries are available yet.
       </div>
     );
   }
@@ -405,18 +385,41 @@ function ChainTimeline({ chain, status, titleStory }: {
     <div className="chain-tree">
       <section className="chain-nodes">
         <div className="chain-spine-v" />
-        {sorted.map((e, i) => {
+        {sorted.map((e: any, i: number) => {
           const isLast = i === sorted.length - 1;
           const isAgreement = !!e.is_agreement_to_sell;
-          const vendors = Array.isArray(e.parties?.vendors) ? e.parties.vendors : [];
-          const purchasers = Array.isArray(e.parties?.purchasers) ? e.parties.purchasers : [];
+          const rawVendors = e.parties?.vendors || e.vendors || [];
+          const rawPurchasers = e.parties?.purchasers || e.purchasers || [];
+          const vendors = normalizeParties(rawVendors);
+          const purchasers = normalizeParties(rawPurchasers);
+          const execDate = e.execution_date || e.executed_date || e.registration_date;
+          const regRef = e.registration_reference || e.registration_number;
+          const rawTransactionType = String(e.transaction_type || '');
+          const transactionType = rawTransactionType.replace(/\s*\(EC entry; instrument not supplied\)/i, '');
+          const typeKey = transactionType.toUpperCase();
+          const docType = e.document_type || transactionType || 'Transaction';
+          const leftPartyLabel = typeKey === 'SALE' ? 'VENDORS (SELLER)'
+            : typeKey === 'GIFT' ? 'DONORS'
+            : typeKey === 'MORTGAGE' ? 'BORROWERS / MORTGAGORS'
+            : typeKey === 'RELEASE' || typeKey === 'RELEASE_OF_MORTGAGE' ? 'RELEASING PARTY'
+            : typeKey === 'PARTITION' ? 'CO-OWNERS / PARTIES'
+            : 'PARTIES (VENDORS FIELD)';
+          const rightPartyLabel = typeKey === 'SALE' ? 'PURCHASERS (BUYER)'
+            : typeKey === 'GIFT' ? 'DONEES'
+            : typeKey === 'MORTGAGE' ? 'LENDER / MORTGAGEE'
+            : typeKey === 'RELEASE' || typeKey === 'RELEASE_OF_MORTGAGE' ? 'RELEASE BENEFICIARY'
+            : typeKey === 'PARTITION' ? 'ALLOTTED PARTIES'
+            : 'PARTIES (PURCHASERS FIELD)';
+          const entryIdx = e.sequence ?? e.transaction_index ?? (e.tx_id ? e.tx_id.replace(/^T/, '') : null);
           const schedule = chainPropertyDescription(e);
           const survey = chainSurveyIdentity(e);
           const consideration = chainConsideration(e);
           const marketValue = chainMarketValue(e);
           const isAdvisory = ADVISORY_ROLES.has(e.chain_role || '');
+          const uncertainty = (e.uncertainty || []).join('; ');
           const scheduleLong = !!schedule && schedule.length > 40;
-          const portionLong = !!e.portion && e.portion.length > 40;
+          const portion = e.conveyed_portion || e.portion || null;
+          const portionLong = !!portion && portion.length > 40;
           const tagCls = chainTagCls(e);
           return (
             <div key={`${e.transaction_index ?? 'n'}-${i}`} className={`chain-node${isLast ? ' last' : ''}`}>
@@ -428,22 +431,25 @@ function ChainTimeline({ chain, status, titleStory }: {
                   <div>
                     <span className="chain-node-label">DOCUMENT TYPE</span>
                     <p className="chain-node-value doc">
-                      {e.transaction_type || 'Transaction'}
-                      {e.transaction_index != null && (
-                        <span className={`chain-entry-badge badge-${tagCls}`}>ENTRY #{e.transaction_index}</span>
+                      {docType}
+                      {entryIdx != null && (
+                        <span className={`chain-entry-badge badge-${tagCls}`}>ENTRY #{entryIdx}</span>
                       )}
                     </p>
+                    {transactionType && transactionType !== docType && (
+                      <p className="chain-node-classification">Transaction class: {transactionType}</p>
+                    )}
                   </div>
-                  {e.execution_date && (
+                  {execDate && (
                     <div className="chain-meta-right">
                       <span className="chain-node-label">EXECUTED DATE</span>
-                      <p className="chain-node-value mono">{fmtChainDate(e.execution_date)}</p>
+                      <p className="chain-node-value mono">{fmtChainDate(execDate)}</p>
                     </div>
                   )}
-                  {e.registration_reference && (
+                  {regRef && (
                     <div className="chain-meta-right">
                       <span className="chain-node-label">REGISTRATION NO</span>
-                      <p className="chain-node-value reg">{e.registration_reference}</p>
+                      <p className="chain-node-value reg">{regRef}</p>
                     </div>
                   )}
                 </div>
@@ -456,12 +462,12 @@ function ChainTimeline({ chain, status, titleStory }: {
                     </div>
                     <div className="chain-party-grid">
                       <div>
-                        <span className="chain-node-label">{isAgreement ? 'EXECUTANT' : 'VENDORS (SELLER)'}</span>
-                        {vendors.length ? vendors.map((v, vi) => <PartyRow key={vi} p={v} />) : <div className="chain-party-none">—</div>}
+                        <span className="chain-node-label">{isAgreement ? 'EXECUTANT' : leftPartyLabel}</span>
+                        {vendors.length ? vendors.map((v, vi) => <PartyRow key={vi} p={v} />) : <div className="chain-party-none">No party listed</div>}
                       </div>
                       <div>
-                        <span className="chain-node-label">{isAgreement ? 'CLAIMANT' : 'PURCHASERS (BUYER)'}</span>
-                        {purchasers.length ? purchasers.map((p, pi) => <PartyRow key={pi} p={p} />) : <div className="chain-party-none">—</div>}
+                        <span className="chain-node-label">{isAgreement ? 'CLAIMANT' : rightPartyLabel}</span>
+                        {purchasers.length ? purchasers.map((p, pi) => <PartyRow key={pi} p={p} />) : <div className="chain-party-none">No party listed</div>}
                       </div>
                     </div>
                   </div>
@@ -490,17 +496,29 @@ function ChainTimeline({ chain, status, titleStory }: {
                           <p className="chain-node-value mono-bold">{consideration}</p>
                         </div>
                       )}
+                      {e.property_location && (
+                        <div>
+                          <span className="chain-node-label">LOCATION</span>
+                          <p className="chain-node-value">{e.property_location}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
 
+                {!!e.source_doc_ids?.length && (
+                  <p className="chain-node-source">Source documents: {e.source_doc_ids.join(', ')}</p>
+                )}
+                {e.inferred && <p className="chain-node-source chain-node-inferred">Inferred from recital; original document not supplied.</p>}
+
                 <ChainPropertyDropdown
                   schedule={schedule}
                   scheduleLong={scheduleLong}
-                  portion={e.portion || null}
+                  portion={portion}
                   portionLong={portionLong}
                   isAdvisory={isAdvisory}
                   explanation={e.explanation || null}
+                  uncertainty={uncertainty || null}
                 />
               </div>
             </div>
@@ -511,290 +529,21 @@ function ChainTimeline({ chain, status, titleStory }: {
   );
 }
 
-function vrfStatusClass(s: string): string {
-  const up = (s || "N/A").toUpperCase();
-  if (up === "VERIFIED") return "ok";
-  if (up === "FLAG" || up === "NOT_VERIFIED" || up.includes("ATTENTION") || up.includes("DISCREPANC")) return "fail";
-  return "na";
-}
-
-const FIELD_ORDER: RegExp[] = [
-  /vendor/i,
-  /purchaser|buyer/i,
-  /survey|cts/i,
-  /locality|project name/i,
-  /execution|registration/i,
-];
-
-function fieldRank(name: string): number {
-  const idx = FIELD_ORDER.findIndex(r => r.test(name));
-  return idx === -1 ? 999 : idx;
-}
-
-const ABBR = /^(smt|sri|shri|dr|mr|mrs|ms|no|nos|fig|vs|etc|sd|ec|gpa|plot|st|rd|pvt|ltd)\.?$/i;
-
-function splitSummary(text: string): string[] {
-  const chunks = text.split(/\s+-\s+(?=[A-Z])/);
-  const sentences: string[] = [];
-  for (const chunk of chunks) {
-    let buf = "";
-    let prev = "";
-    for (let i = 0; i < chunk.length; i++) {
-      const ch = chunk[i];
-      const next = chunk[i + 1] || "";
-      const nextNext = chunk[i + 2] || "";
-      const wordBefore = chunk.slice(0, i).split(/\s+/).pop() || "";
-      const isSentenceEnd =
-        (ch === "." || ch === "!" || ch === "?") &&
-        next === " " &&
-        /[a-z0-9)]/.test(prev) &&
-        /[A-Z]/.test(nextNext) &&
-        !ABBR.test(wordBefore);
-      buf += ch;
-      if (isSentenceEnd) {
-        sentences.push(buf.trim());
-        buf = "";
-      }
-      prev = ch;
-    }
-    if (buf.trim()) sentences.push(buf.trim());
-  }
-  return sentences
-    .map(s => s.replace(/^[-•*]\s*/, "").trim())
-    .filter(Boolean)
-    .filter(s => !/^these include:?$/i.test(s) && !/^they include:?$/i.test(s));
-}
-
-function TypewriterBullets({ sentences, speed = 14 }: { sentences: string[]; speed?: number }) {
-  const total = sentences.reduce((n, s) => n + s.length + 1, 0);
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    setCount(0);
-    let i = 0;
-    const id = window.setInterval(() => {
-      i += 1;
-      setCount(i);
-      if (i >= total) window.clearInterval(id);
-    }, speed);
-    return () => window.clearInterval(id);
-  }, [total, speed]);
-
-  let remaining = count;
-  const items: Array<{ text: string; done: boolean }> = [];
-  for (const s of sentences) {
-    if (remaining >= s.length + 1) {
-      items.push({ text: s, done: true });
-      remaining -= s.length + 1;
-    } else {
-      items.push({ text: s.slice(0, Math.max(remaining, 0)), done: false });
-      remaining = 0;
-      break;
-    }
-  }
-
-  return (
-    <ul className="vrf-summary-list">
-      {items.map((it, i) => (
-        <li key={i} className={it.done ? "done" : "typing"}>
-          {it.text}
-          {!it.done && <span className="vrf-typing-caret" />}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function FieldRow({ it, index }: { it: VerificationItem; index: number }) {
-  const [open, setOpen] = useState(false);
-  const s = (it.status || "N/A").toUpperCase();
-  const cls = vrfStatusClass(s);
-  const Icon = s === "VERIFIED" ? CheckCircle2 : s === "FLAG" || s.includes("ATTENTION") || s.includes("NOT_") || s === "NEEDS_REVIEW" ? XCircle : MinusCircle;
-
-  return (
-    <div
-      className={`vrf-field ${cls}${open ? " open" : ""}`}
-      style={{ animationDelay: `${Math.min(index * 55, 600)}ms` }}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-      onClick={() => setOpen(o => !o)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={e => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          setOpen(o => !o);
-        }
-      }}
-    >
-      <span className="vrf-field-icon"><Icon size={16} /></span>
-      <span className="vrf-field-name">{it.field || "—"}</span>
-      <span className={`vrf-status-text ${cls}`}>{s}</span>
-
-      <div className="vrf-evidence">
-        <div className="vrf-evidence-row">
-          <span className="vrf-evidence-label">Sale Deed</span>
-          <span className="vrf-evidence-value">{it.sd_value != null && it.sd_value !== "" ? String(it.sd_value) : "—"}</span>
-        </div>
-        <div className="vrf-evidence-row">
-          <span className="vrf-evidence-label">EC Ledger</span>
-          <span className="vrf-evidence-value">{it.ec_value != null && it.ec_value !== "" ? String(it.ec_value) : "—"}</span>
-        </div>
-        {it.khata_value != null && it.khata_value !== "" && (
-          <div className="vrf-evidence-row">
-            <span className="vrf-evidence-label">Khata Extract</span>
-            <span className="vrf-evidence-value">{String(it.khata_value)}</span>
-          </div>
-        )}
-        {it.notes ? (
-          <div className="vrf-evidence-note">
-            <span className="vrf-evidence-label">Conclusion</span>
-            <span className="vrf-evidence-value">{it.notes}</span>
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function PipelineTrace({ item }: { item: any }) {
-  const hasSd = item.sd_value != null && item.sd_value !== '';
-  const hasEc = item.ec_value != null && item.ec_value !== '';
-  const hasKhata = item.khata_value != null && item.khata_value !== '';
-  const hasNote = item.notes;
-  if (!hasSd && !hasEc && !hasKhata && !hasNote) return null;
-  const status = String(item.status || (item.pass ? 'VERIFIED' : 'N/A')).toUpperCase();
-  const isFail = status === 'FLAG' || status === 'NEEDS_REVIEW' || status === 'NOT_VERIFIED' || status.includes('ATTENTION');
-  return (
-    <div className="trace-comparison-box pipeline-trace-enter">
-      {hasSd && (
-        <div className="trace-row">
-          <span className="trace-label">Sale Deed</span>
-          <span className="trace-value">{String(item.sd_value)}</span>
-        </div>
-      )}
-      {hasEc && (
-        <div className="trace-row">
-          <span className="trace-label">EC Ledger</span>
-          <span className="trace-value">{String(item.ec_value)}</span>
-        </div>
-      )}
-      {hasKhata && (
-        <div className="trace-row">
-          <span className="trace-label">Khata Extract</span>
-          <span className="trace-value">{String(item.khata_value)}</span>
-        </div>
-      )}
-      {hasNote && (
-        <div className="trace-row conclusion">
-          <span className="trace-label">Conclusion</span>
-          <span className={`trace-value${isFail ? ' fail-text' : ''}`} style={isFail ? { color: '#dc2626' } : undefined}>
-            {isFail ? <XCircle size={14} style={{ color: '#dc2626' }} /> : <CheckCircle2 size={14} />}
-            {' '}{item.notes}
-          </span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PipelineNode({ item, index }: { item: any; index: number }) {
-  const [open, setOpen] = useState(false);
-  const status = String(item.status || (item.pass ? 'VERIFIED' : 'N/A')).toUpperCase();
-  const ok = status === 'VERIFIED';
-  const na = status === 'N/A';
-  const title = item.title || item.check_name || item.field || 'Verification Check';
-  const desc = item.description || item.comment || item.details;
-  const hasTrace = item.sd_value != null || item.ec_value != null || item.khata_value != null || item.notes;
-
-  return (
-    <div
-      className={`pipeline-node stagger-${(index % 5) + 1}`}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-      onClick={() => setOpen(o => !o)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={e => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          setOpen(o => !o);
-        }
-      }}
-    >
-      <div className={`pipeline-dot${ok ? '' : na ? ' na' : ' fail'}`}>
-        {ok ? <Check size={20} style={{ strokeWidth: 3 }} /> : na ? <MinusCircle size={20} style={{ strokeWidth: 3 }} /> : <X size={20} style={{ strokeWidth: 3 }} />}
-      </div>
-      <div className="pipeline-content">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h3 className="pipeline-node-title">{title}</h3>
-          <span className={`badge-verified-sm ${ok ? 'ok' : na ? 'na' : 'fail'}`}>
-            {ok ? 'Verified' : na ? 'N/A' : 'Flag'}
-          </span>
-        </div>
-        {desc && <p className="pipeline-node-desc">{desc}</p>}
-        {open && hasTrace && <PipelineTrace item={item} />}
-      </div>
-    </div>
-  );
-}
-
-function TypewriterParagraph({ text, speed = 16 }: { text: string; speed?: number }) {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    setCount(0);
-    let i = 0;
-    const id = window.setInterval(() => {
-      i += 1;
-      setCount(i);
-      if (i >= text.length) window.clearInterval(id);
-    }, speed);
-    return () => window.clearInterval(id);
-  }, [text, speed]);
-
-  const done = count >= text.length;
-  return (
-    <p className="summary-stream-text">
-      {text.slice(0, count)}
-      {!done && <span className="summary-stream-caret" aria-hidden="true" />}
-    </p>
-  );
-}
-
-function SummaryReveal({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <button
-        className={`summary-head-btn${open ? ' open' : ''}`}
-        onClick={() => setOpen(true)}
-        aria-expanded={open}
-      >
-        <Sparkles size={16} style={{ color: '#059669' }} />
-        <span>VERIFICATION SUMMARY</span>
-        {open ? <ChevronUp size={14} className="summary-head-arrow" /> : <ChevronDown size={14} className="summary-head-arrow" />}
-      </button>
-      {open && (
-        <div className="summary-grid">
-          <TypewriterParagraph text={text} />
-        </div>
-      )}
-    </>
-  );
-}
-
-function ChainPropertyDropdown({ schedule, scheduleLong, portion, portionLong, isAdvisory, explanation }: {
+function ChainPropertyDropdown({ schedule, scheduleLong, portion, portionLong, isAdvisory, explanation, uncertainty }: {
   schedule: string | null;
   scheduleLong: boolean;
   portion: string | null;
   portionLong: boolean;
   isAdvisory: boolean;
   explanation: string | null;
+  uncertainty: string | null;
 }) {
   const [openField, setOpenField] = useState<string | null>(null);
   const hasSchedule = !!schedule;
   const hasPortion = !!portion;
   const hasAdvisory = isAdvisory && !!explanation;
-  if (!hasSchedule && !hasPortion && !hasAdvisory) return null;
+  const hasUncertainty = !!uncertainty;
+  if (!hasSchedule && !hasPortion && !hasAdvisory && !hasUncertainty) return null;
 
   const toggle = (field: string) => setOpenField(prev => prev === field ? null : field);
 
@@ -820,6 +569,12 @@ function ChainPropertyDropdown({ schedule, scheduleLong, portion, portionLong, i
             {openField === 'advisory' ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
           </button>
         )}
+        {hasUncertainty && (
+          <button className="chain-prop-text-btn" onClick={() => toggle('uncertainty')}>
+            <span className="chain-node-label">UNCERTAINTY / NOTES</span>
+            {openField === 'uncertainty' ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+          </button>
+        )}
       </div>
       {openField === 'schedule' && schedule && (
         <div className="chain-prop-inline-content">
@@ -836,78 +591,18 @@ function ChainPropertyDropdown({ schedule, scheduleLong, portion, portionLong, i
           <p className="chain-alert-inline">{explanation}</p>
         </div>
       )}
-    </div>
-  );
-}
-
-function VerifyResults({ verification, locked, onUnlock }: {
-  verification: NonNullable<CaseResults['verification']>;
-  locked?: boolean;
-  onUnlock?: () => void;
-}) {
-  const items: VerificationItem[] = verification.items || [];
-  const orderedItems = [...items].sort((a, b) => fieldRank(a.field || "") - fieldRank(b.field || ""));
-  const summary = verification.summary || {};
-  const [summaryOpen, setSummaryOpen] = useState(false);
-  const verdictStr = String(verification.verdict || summary.verdict || "N/A").toUpperCase();
-  const isClear = verdictStr === "VERIFIED" || verdictStr === "CLEAR_TITLE" || verdictStr.includes("CLEAR");
-  const isAttention = verdictStr === "NOT_VERIFIED" || verdictStr === "REQUIRED_ATTENTION" || verdictStr.includes("ATTENTION") || verdictStr.includes("DISCREPANC") || verdictStr.includes("NOT_");
-  const displayVerdict = isClear ? "ClearTitle" : isAttention ? "Attention Required" : verdictStr;
-  const heroCls = isClear ? "ok" : isAttention ? "fail" : "na";
-  const HeroIcon = isClear ? ShieldCheck : isAttention ? AlertTriangle : MinusCircle;
-  const summarySentences = summary.overall_comment ? splitSummary(String(summary.overall_comment)) : [];
-
-  return (
-    <div className="vrf">
-      <div className={`vrf-hero ${heroCls}`}>
-        <div className="vrf-hero-icon"><HeroIcon size={34} /></div>
-        <div className="vrf-hero-text">
-          <span className="vrf-hero-label">Case Verdict</span>
-          <span className="vrf-hero-verdict">{displayVerdict}</span>
-        </div>
-      </div>
-
-      {locked ? (
-        <div className="guest-lock">
-          <Lock size={22} />
-          <p><strong>Field-by-field verification is locked.</strong></p>
-          <p>Sign in to see the full verification for every field.</p>
-          {onUnlock && <button className="btn btn-primary" onClick={onUnlock}>Sign in to unlock</button>}
-        </div>
-      ) : orderedItems.length === 0 ? (
-        <div className="vr-sheet-empty">
-          {verification?.status === "error"
-            ? "Verification did not complete due to a temporary issue. Please retry."
-            : "Verification has not run yet."}
-        </div>
-      ) : (
-        <div className="vrf-fields">
-          {orderedItems.map((it, i) => <FieldRow key={i} it={it} index={i} />)}
-        </div>
-      )}
-
-      {summarySentences.length > 0 && (
-        <div className="vrf-summary">
-          {summaryOpen ? (
-            <div className="vrf-summary-body">
-              <div className="vrf-summary-title"><Sparkles size={15} /> Summary</div>
-              <TypewriterBullets sentences={summarySentences} />
-            </div>
-          ) : (
-            <button className="vrf-summary-toggle" onClick={() => setSummaryOpen(true)}>
-              <Sparkles size={15} /> View Summary
-            </button>
-          )}
+      {openField === 'uncertainty' && uncertainty && (
+        <div className="chain-prop-inline-content">
+          <p className="chain-node-value">{uncertainty}</p>
         </div>
       )}
     </div>
   );
 }
 
-function GuestReportPreview({ results, onSignIn, onNewCase }: {
+function GuestReportPreview({ results, onSignIn }: {
   results: CaseResults;
   onSignIn: () => void;
-  onNewCase: () => void;
 }) {
   const sd = results.documents.find(d =>
     d.document_type === 'SALE_DEED' || d.structured?.document_type === 'SALE_DEED'
@@ -917,7 +612,6 @@ function GuestReportPreview({ results, onSignIn, onNewCase }: {
   const purchasers: any[] = s.parties?.purchasers || [];
   const ps = s.property_schedule || {};
   const caseInfo = results.case;
-
   const scheduleText = String(
     ps.full_schedule_description
       || [ps.cts_number, ps.survey_number].filter(Boolean).join(', ')
@@ -926,121 +620,44 @@ function GuestReportPreview({ results, onSignIn, onNewCase }: {
 
   return (
     <div className="gp-shell">
-      {/* Top Header */}
       <div className="gp-header">
         <div className="gp-header-left">
           <span className="gp-pulse" />
           <span className="gp-case-id">CASE #{caseInfo?.case_id || '—'}</span>
         </div>
       </div>
-
-      {/* Content Stack */}
       <div className="gp-content">
-
-        {/* Card 1: Parties */}
         <div className="gp-card">
-          <div className="gp-card-head">
-            <div className="gp-card-label">
-              <span className="gp-card-label-text">PARTIES IDENTIFIED</span>
-            </div>
-          </div>
+          <div className="gp-card-head"><div className="gp-card-label"><span className="gp-card-label-text">PARTIES IDENTIFIED</span></div></div>
           <div className="gp-parties-grid">
-            {vendors.length > 0 && vendors.map((v: any, i: number) => (
-              <div className="gp-party-cell" key={`v-${i}`}>
-                <span className="gp-party-role">VENDORS (SELLER)</span>
-                <p className="gp-party-name">{v.entity_name || '—'}</p>
-                {v.address && <p className="gp-party-addr">{v.address}</p>}
-              </div>
-            ))}
-            {purchasers.length > 0 && purchasers.map((p: any, i: number) => (
-              <div className="gp-party-cell" key={`p-${i}`}>
-                <span className="gp-party-role">PURCHASERS (BUYER)</span>
-                <p className="gp-party-name">{p.entity_name || '—'}</p>
-                {p.address && <p className="gp-party-addr">{p.address}</p>}
-              </div>
-            ))}
+            {vendors.length > 0 && vendors.map((v, i) => <div className="gp-party-cell" key={`v-${i}`}><span className="gp-party-role">VENDORS (SELLER)</span><p className="gp-party-name">{v.entity_name || '—'}</p>{v.address && <p className="gp-party-addr">{v.address}</p>}</div>)}
+            {purchasers.length > 0 && purchasers.map((p, i) => <div className="gp-party-cell" key={`p-${i}`}><span className="gp-party-role">PURCHASERS (BUYER)</span><p className="gp-party-name">{p.entity_name || '—'}</p>{p.address && <p className="gp-party-addr">{p.address}</p>}</div>)}
           </div>
         </div>
-
-        {/* Card 2: Property Details */}
         {(ps.survey_number || ps.plot_number || ps.project_name || ps.floor_location || ps.dimensions || ps.super_built_up_area) && (
           <div className="gp-card">
-            <div className="gp-card-head">
-              <div className="gp-card-label">
-                <span className="gp-card-label-text">PROPERTY DETAILS</span>
-              </div>
-              {ps.plot_number && <span className="gp-card-badge">PLOT NO. {ps.plot_number}</span>}
-            </div>
+            <div className="gp-card-head"><div className="gp-card-label"><span className="gp-card-label-text">PROPERTY DETAILS</span></div>{ps.plot_number && <span className="gp-card-badge">PLOT NO. {ps.plot_number}</span>}</div>
             <div className="gp-props-grid">
-              {ps.survey_number && (
-                <div className="gp-prop-cell">
-                  <span className="gp-prop-label">SURVEY</span>
-                  <p className="gp-prop-val">{ps.survey_number}</p>
-                </div>
-              )}
-              {ps.project_name && (
-                <div className="gp-prop-cell">
-                  <span className="gp-prop-label">LOCATION</span>
-                  <p className="gp-prop-val">{ps.project_name}</p>
-                </div>
-              )}
-              {(ps.floor_location || ps.dimensions || ps.super_built_up_area) && (
-                <div className="gp-prop-cell">
-                  <span className="gp-prop-label">STRUCTURE</span>
-                  <p className="gp-prop-val gp-prop-truncate">
-                    {[ps.floor_location, ps.dimensions, ps.super_built_up_area].filter(Boolean).join(', ')}
-                  </p>
-                </div>
-              )}
+              {ps.survey_number && <div className="gp-prop-cell"><span className="gp-prop-label">SURVEY</span><p className="gp-prop-val">{ps.survey_number}</p></div>}
+              {ps.project_name && <div className="gp-prop-cell"><span className="gp-prop-label">LOCATION</span><p className="gp-prop-val">{ps.project_name}</p></div>}
+              {(ps.floor_location || ps.dimensions || ps.super_built_up_area) && <div className="gp-prop-cell"><span className="gp-prop-label">STRUCTURE</span><p className="gp-prop-val gp-prop-truncate">{[ps.floor_location, ps.dimensions, ps.super_built_up_area].filter(Boolean).join(', ')}</p></div>}
             </div>
           </div>
         )}
-
-        {/* Card 3: Blurred teaser */}
-        {scheduleText && (
-          <div className="gp-card gp-card-blurred">
-            <span className="gp-blur-label">HISTORICAL TITLE DEVOLUTION &amp; ENCUMBRANCES</span>
-            <p className="gp-blur-text">{scheduleText}...</p>
-          </div>
-        )}
-
-        {/* Floating Lock Overlay */}
+        {scheduleText && <div className="gp-card gp-card-blurred"><span className="gp-blur-label">HISTORICAL TITLE DEVOLUTION &amp; ENCUMBRANCES</span><p className="gp-blur-text">{scheduleText}...</p></div>}
         <div className="gp-lock-overlay">
           <div className="gp-lock-box">
-            <div className="gp-lock-icon-wrap">
-              <Lock size={24} />
-            </div>
-            <div className="gp-lock-text">
-              <h2 className="gp-lock-title">Full Due Diligence Findings Locked</h2>
-              <p className="gp-lock-sub">
-                Authenticate your session to inspect the complete 3-stage devolution timeline, check prior share exposure alerts, and export title scrutiny sheets.
-              </p>
-            </div>
-            <button className="gp-lock-cta" onClick={onSignIn}>
-              <Lock size={14} />
-              <span>Sign in to Unlock Full Findings</span>
-            </button>
-            <div className="gp-lock-trust">
-              <span>✓ Instant Access</span>
-              <span>•</span>
-              <span>✓ Zero Setup</span>
-              <span>•</span>
-              <span>✓ Scrutiny Ready</span>
-            </div>
+            <div className="gp-lock-icon-wrap"><Lock size={24} /></div>
+            <div className="gp-lock-text"><h2 className="gp-lock-title">Full Due Diligence Findings Locked</h2><p className="gp-lock-sub">Authenticate your session to inspect the complete title chain, check prior share exposure alerts, and export title scrutiny sheets.</p></div>
+            <button className="gp-lock-cta" onClick={onSignIn}><Lock size={14} /><span>Sign in to Unlock Full Findings</span></button>
+            <div className="gp-lock-trust"><span>✓ Instant Access</span><span>•</span><span>✓ Zero Setup</span><span>•</span><span>✓ Scrutiny Ready</span></div>
           </div>
         </div>
-
       </div>
-
-      {/* Bottom Meta */}
-      <div className="gp-footer">
-        <span>Protected by 256-Bit Cryptographic Vault</span>
-        <span>Forensic Title Scrutiny Session</span>
-      </div>
+      <div className="gp-footer"><span>Protected by 256-Bit Cryptographic Vault</span><span>Forensic Title Scrutiny Session</span></div>
     </div>
   );
 }
-
 export function VerificationDashboard() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1058,16 +675,28 @@ export function VerificationDashboard() {
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
   const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [evidenceUploadBusy, setEvidenceUploadBusy] = useState(false);
+  const [manualUploadTxId, setManualUploadTxId] = useState<string | null>(null);
+  const [evidenceUploads, setEvidenceUploads] = useState<Record<number, File | undefined>>({});
+  const [dismissedPauseKey, setDismissedPauseKey] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [pipelineStartError, setPipelineStartError] = useState<string | null>(null);
   const [cases, setCases] = useState<CaseListItem[]>([]);
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeReportTab, setActiveReportTab] = useState<'verification' | 'title-chain'>('verification');
-  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [titleStoryOpen, setTitleStoryOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const analysisTimerRef = useRef<number | null>(null);
-  const analysisWaitStartRef = useRef<number>(0);
+  const uploadedForPausedTxRef = useRef<{ txId: string; updatedAt: string | null } | null>(null);
+
+  // A new pause (next transaction, or the same one re-pausing after a resume)
+  // starts with empty upload slots. Must live above the authLoading early
+  // return so the hook count never changes between renders.
+  const pausedTxKey = `${String(results?.agent?.paused_transaction || '')}:${String(results?.agent?.updated_at || '')}`;
+  useEffect(() => { setEvidenceUploads({}); }, [pausedTxKey]);
 
   const addLog = useCallback((msg: string, cls = 'log-info') => {
     setLogs(prev => [...prev.slice(-200), { text: msg, cls }]);
@@ -1080,7 +709,7 @@ export function VerificationDashboard() {
     }
   }, []);
 
-  // ── Auth bootstrap ──
+  // -- Auth bootstrap --
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -1111,6 +740,49 @@ export function VerificationDashboard() {
       }
     }
   }, [results]);
+
+  // A verification run can be resumed outside this page (for example after
+  // requested evidence is processed). Refresh an open results view so a newly
+  // paused transaction and its upload/skip dialog do not remain invisible.
+  useEffect(() => {
+    if (view === 'upload' || !currentCaseId) return;
+    let cancelled = false;
+    const refreshResults = async () => {
+      if (document.visibilityState === 'hidden') return;
+      try {
+        const fresh = await API.getResults(currentCaseId);
+        if (cancelled) return;
+        setResults(previous => {
+          if (
+            previous?.agent?.status === fresh.agent?.status &&
+            previous?.agent?.updated_at === fresh.agent?.updated_at &&
+            previous?.agent?.paused_transaction === fresh.agent?.paused_transaction
+          ) return previous;
+          return fresh;
+        });
+        const freshAgent = fresh.agent;
+        const freshPausedRequirements = requirementsForPausedTransaction(
+          freshAgent?.transactions,
+          freshAgent?.paused_transaction,
+        );
+        if (
+          fresh.case.case_id === currentCaseId &&
+          COMPLETE_STATUSES.includes(String(fresh.case.status || '').toLowerCase()) &&
+          String(freshAgent?.status || '').toLowerCase() === 'paused' &&
+          freshAgent?.paused_transaction &&
+          freshPausedRequirements.length > 0
+        ) setView('results');
+      } catch { /* transient result reads are retried on the next refresh */ }
+    };
+    void refreshResults();
+    const timer = window.setInterval(() => void refreshResults(), 5000);
+    window.addEventListener('focus', refreshResults);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refreshResults);
+    };
+  }, [view, currentCaseId]);
 
   // Close profile menu on outside click / Escape
   useEffect(() => {
@@ -1147,7 +819,7 @@ export function VerificationDashboard() {
     navigate(linkCaseId ? `/login?link=${encodeURIComponent(linkCaseId)}` : '/login');
   };
 
-  // ── Health check ──
+  // -- Health check --
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -1155,18 +827,22 @@ export function VerificationDashboard() {
         const d = await API.health();
         if (!cancelled) setHealth(d);
       } catch {
-        if (!cancelled) setHealth({ status: 'error', sarvam_key: false, groq_key: false, gemini_key: false });
+        if (!cancelled) setHealth({ status: 'error', sarvam_key: false, openai_key: false, gemini_key: false, agent_provider: 'openai', agent_provider_key: false });
       }
     })();
     return () => { cancelled = true; };
   }, []);
 
-  const healthOk = !!health && !!health.sarvam_key && !!health.groq_key && !!health.gemini_key;
+  const healthOk = !!health && !!health.sarvam_key && !!health.openai_key && !!health.agent_provider_key;
   const healthText = !health ? "Checking..."
     : healthOk ? "API keys loaded"
-      : `⚠ Missing: ${[!health.sarvam_key && "Sarvam", !health.groq_key && "Groq", !health.gemini_key && "Gemini"].filter(Boolean).join(", ")}`;
+      : `⚠ Missing: ${[
+          !health.sarvam_key && "Sarvam",
+          !health.openai_key && "OpenAI",
+          !health.agent_provider_key && `${health.agent_provider} agent provider`,
+        ].filter(Boolean).join(", ")}`;
 
-  // ── Sidebar: load cases ──
+  // -- Sidebar: load cases --
   const loadCases = useCallback(async () => {
     try {
       const data = await API.listCases();
@@ -1178,7 +854,7 @@ export function VerificationDashboard() {
     if (auth) loadCases();
   }, [auth, loadCases]);
 
-  // ── Resume last guest scan after a page refresh ──
+  // -- Resume last guest scan after a page refresh --
   useEffect(() => {
     if (authLoading || auth) return;
     const caseId = sessionStorage.getItem("currentCaseId");
@@ -1203,12 +879,13 @@ export function VerificationDashboard() {
     })();
   }, [authLoading, auth]);
 
-  // ── Files ──
+  // -- Files --
   const slotCount = (slot: UploadSlot) => files.filter(f => f.slot === slot).length;
 
   const addFilesToSlot = (slot: UploadSlot, incoming: File[]) => {
     const pdfs = incoming.filter(f => f.name.toLowerCase().endsWith(".pdf"));
     if (pdfs.length === 0) return;
+    setUploadError(null);
     setFiles(prev => {
       if (slot === 'additional') {
         const next = [...prev];
@@ -1228,16 +905,26 @@ export function VerificationDashboard() {
 
   const removeFile = (index: number) => {
     setFiles(prev => prev.filter((_, i) => i !== index));
+    setUploadError(null);
   };
 
   const clearFiles = () => {
     setFiles([]);
     setCurrentCaseId(null);
+    setUploadError(null);
   };
 
-  // ── Processing ──
+  // -- Processing --
   const startProcessing = async () => {
     if (slotCount('sale_deed') < 1 || slotCount('ec') < 1) return;
+    const maxSizeMb = health?.max_upload_size_mb ?? 50;
+    const oversizedFile = files.find(item => item.file.size > maxSizeMb * 1024 * 1024);
+    if (oversizedFile) {
+      setUploadError(`${oversizedFile.file.name} is larger than the ${maxSizeMb} MB upload limit. Reduce or split the PDF, then try again.`);
+      return;
+    }
+    setUploadError(null);
+    setPipelineStartError(null);
     setView('processing');
     updateProgress(5, "Uploading documents...");
 
@@ -1248,7 +935,10 @@ export function VerificationDashboard() {
         files.map(f => f.slot),
       );
     } catch (e: any) {
-      addLog(`✗ Upload failed: ${e.message}`, "log-err");
+      const message = e?.message || 'The upload could not be completed.';
+      addLog(`✗ Upload failed: ${message}`, "log-err");
+      setUploadError(message);
+      setView('upload');
       return;
     }
 
@@ -1262,7 +952,9 @@ export function VerificationDashboard() {
       await API.process(uploadResp.case_id);
       addLog("✓ Pipeline started — running in background", "log-ok");
     } catch (e: any) {
-      addLog(`✗ Pipeline start failed: ${e.message}`, "log-err");
+      const message = e?.message || 'The document pipeline could not be started.';
+      addLog(`✗ Pipeline start failed: ${message}`, "log-err");
+      setPipelineStartError(message);
       return;
     }
 
@@ -1276,7 +968,6 @@ export function VerificationDashboard() {
 
   const startPolling = (caseId: string) => {
     stopPolling();
-    analysisWaitStartRef.current = 0;
     pollRef.current = setInterval(() => pollStatus(caseId), 2000);
   };
 
@@ -1295,20 +986,14 @@ export function VerificationDashboard() {
       const isTerminal = COMPLETE_STATUSES.includes(s.status) || s.status === "failed";
 
       if (isTerminal) {
-        // Docs are structured but the title-chain + verification pass is still
-        // running in the background. Keep polling until it lands (or a cap).
-        const waitForAnalysis = s.status === "complete" && !s.verification_status;
-        if (waitForAnalysis) {
-          if (!analysisWaitStartRef.current) analysisWaitStartRef.current = Date.now();
-          if (Date.now() - analysisWaitStartRef.current < ANALYSIS_WAIT_MS) {
-            updateProgress(100, "All documents structured – finishing title analysis…");
-            return;
-          }
-        }
         stopPolling();
-        analysisWaitStartRef.current = 0;
         updateProgress(100, "Pipeline complete");
         await showResults(caseId);
+        const pausedTx = uploadedForPausedTxRef.current;
+        if (pausedTx) {
+          uploadedForPausedTxRef.current = null;
+          void waitForEvidenceResume(caseId, pausedTx.txId, pausedTx.updatedAt);
+        }
         loadCases();
       }
     } catch (e: any) {
@@ -1344,7 +1029,7 @@ export function VerificationDashboard() {
     }
   };
 
-  // ── Link a case after signing in via /login?link=<caseId> ──
+  // -- Link a case after signing in via /login?link=<caseId> --
   useEffect(() => {
     const linkCase = searchParams.get('link');
     if (!linkCase || authLoading) return;
@@ -1359,7 +1044,7 @@ export function VerificationDashboard() {
     })();
   }, [searchParams, auth, authLoading]);
 
-  // ── Auto-link guest case on login (no ?link= param) ──
+  // -- Auto-link guest case on login (no ?link= param) --
   useEffect(() => {
     if (authLoading || !auth) return;
     const caseId = sessionStorage.getItem("currentCaseId");
@@ -1367,20 +1052,13 @@ export function VerificationDashboard() {
     API.link(caseId).catch(() => {});
   }, [auth, authLoading, searchParams]);
 
-  const runAnalysisTask = async (kind: 'reverify' | 'chain') => {
+  const runAnalysisTask = async () => {
     if (!currentCaseId) return;
     setAnalyzing(true);
-    const isChain = kind === 'chain';
-    const before = isChain
-      ? results?.title_chain?.updated_at || null
-      : results?.verification?.updated_at || null;
-    const logMsg = isChain
-      ? "⏳ Title-chain rebuild queued…"
-      : "⏳ Re-verification queued…";
+    const before = agent?.updated_at || null;
     try {
-      if (isChain) await API.rerunTitleChain(currentCaseId);
-      else await API.reverify(currentCaseId);
-      addLog(logMsg, "log-info");
+      await API.analyze(currentCaseId);
+      addLog("Agent analysis queued", "log-info");
     } catch (e: any) {
       addLog(`✗ Re-run failed: ${e.message}`, "log-err");
       setAnalyzing(false);
@@ -1411,11 +1089,9 @@ export function VerificationDashboard() {
         await finish(fresh, false);
         return;
       }
-      const outcome = isChain ? fresh?.title_chain : fresh?.verification;
+      const outcome = fresh?.agent;
       const done = !!outcome &&
-        outcome.status &&
-        (outcome.status === 'complete' || outcome.status === 'error' ||
-         outcome.status === 'skipped' || outcome.status === 'no_transactions') &&
+        ['done', 'error', 'paused'].includes(outcome.status) &&
         outcome.updated_at && outcome.updated_at !== before;
       if (done) {
         await finish(fresh, true);
@@ -1426,10 +1102,7 @@ export function VerificationDashboard() {
     await tick();
   };
 
-  const runVerification = () => runAnalysisTask('reverify');
-  const runTitleChain = () => runAnalysisTask('chain');
-
-  // ── Results actions ──
+  // -- Results actions --
   const skipDoc = async (docId: string) => {
     if (!currentCaseId) return;
     try {
@@ -1439,6 +1112,101 @@ export function VerificationDashboard() {
       startPolling(currentCaseId);
     } catch (e: any) {
       addLog(`✗ Skip failed: ${e.message}`, "log-err");
+    }
+  };
+
+  const retryPipelineStart = async () => {
+    if (!currentCaseId) return;
+    setPipelineStartError(null);
+    try {
+      await API.process(currentCaseId);
+      startPolling(currentCaseId);
+    } catch (e: any) {
+      setPipelineStartError(e?.message || 'The document pipeline could not be started.');
+    }
+  };
+
+  const waitForEvidenceResume = async (caseId: string, previousPausedTx: string, previousUpdatedAt: string | null) => {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < ANALYSIS_WAIT_MS) {
+      await new Promise(resolve => window.setTimeout(resolve, 2500));
+      try {
+        const fresh = await API.getResults(caseId);
+        setResults(fresh);
+        const state = fresh.agent;
+        if (state?.status === 'done' || state?.status === 'error') return;
+        if (state?.status === 'paused' && state.paused_transaction &&
+            (state.paused_transaction !== previousPausedTx || (!!previousUpdatedAt && state.updated_at !== previousUpdatedAt))) return;
+      } catch { /* retry transient result reads */ }
+    }
+    addLog('⚠ Verification is taking longer than expected; refresh results to check its status.', 'log-warn');
+  };
+
+  const submitEvidence = async () => {
+    const txId = manualUploadTxId || pausedTransactionId;
+    const reqs = manualUploadTxId
+      ? requirementsForPausedTransaction(rawTx, manualUploadTxId)
+      : pausedRequirements;
+    // Mirror the dialog's fallback slot so a transaction with no listed
+    // requirement can still receive a supporting document.
+    const slots = reqs.length ? reqs : [{ document_type: 'Supporting document' }];
+    const selected = slots
+      .map((_: unknown, i: number) => evidenceUploads[i])
+      .filter((f): f is File => !!f);
+    if (!currentCaseId || !txId || !selected.length) return;
+    setEvidenceUploadBusy(true);
+    try {
+      if (txId === pausedTransactionId) {
+        uploadedForPausedTxRef.current = { txId, updatedAt: results?.agent?.updated_at || null };
+        setDismissedPauseKey(`${txId}:${String(results?.agent?.updated_at || '')}`);
+        await API.uploadMore(currentCaseId, selected);
+        addLog(`Submitted ${selected.length} document(s); OCR processing started. Verification resumes automatically when processing finishes.`, "log-info");
+      } else {
+        await API.uploadMore(currentCaseId, selected, txId);
+        addLog(`Submitted ${selected.length} document(s) for ${txId}; OCR processing started. Verification will retry only this transaction when processing finishes.`, "log-info");
+      }
+      setManualUploadTxId(null);
+      setEvidenceUploads({});
+      setView('processing');
+      startPolling(currentCaseId);
+    } catch (e: any) {
+      addLog(`✗ Evidence upload failed: ${e.message}`, "log-err");
+      if (txId !== pausedTransactionId) setDismissedPauseKey(null);
+    } finally {
+      setEvidenceUploadBusy(false);
+    }
+  };
+
+  const skipPausedTransaction = async () => {
+    const txId = results?.agent?.paused_transaction;
+    if (!currentCaseId || !txId) return;
+    if (!window.confirm(`Skip ${txId} without verifying? It stays pending and verification continues with the next transaction.`)) return;
+    const previousUpdatedAt = results?.agent?.updated_at || null;
+    setEvidenceUploadBusy(true);
+    setDismissedPauseKey(`${txId}:${String(previousUpdatedAt)}`);
+    try {
+      await API.skipAgentTransaction(currentCaseId, txId);
+      addLog(`Skipped ${txId}; it remains pending and verification will continue with the next transaction.`, "log-warn");
+      setAnalyzing(true);
+      const poll = async (startedAt: number) => {
+        try {
+          const fresh = await API.getResults(currentCaseId);
+          setResults(fresh);
+          const state = fresh.agent;
+          const hasNewState = !!state?.updated_at && state.updated_at !== previousUpdatedAt;
+          if ((hasNewState && ['done', 'paused', 'error'].includes(state?.status || '')) || Date.now() - startedAt > ANALYSIS_WAIT_MS) {
+            setAnalyzing(false);
+            return;
+          }
+        } catch { /* continue polling until completion or timeout */ }
+        window.setTimeout(() => void poll(startedAt), 2500);
+      };
+      void poll(Date.now());
+    } catch (e: any) {
+      addLog(`✗ Skip failed: ${e.message}`, "log-err");
+      setDismissedPauseKey(null);
+    } finally {
+      setEvidenceUploadBusy(false);
     }
   };
 
@@ -1467,7 +1235,7 @@ export function VerificationDashboard() {
     }
   };
 
-  // ── History ──
+  // -- History --
   const deleteCase = async (caseId: string) => {
     if (!confirm(`Delete case ${caseId} and all associated data? This cannot be undone.`)) return;
     try {
@@ -1502,18 +1270,97 @@ export function VerificationDashboard() {
     );
   }
 
-  const needsAction = statusData?.needs_action || results?.needs_action || [];
+const needsActionSource = statusData?.needs_action?.length ? statusData.needs_action : results?.needs_action || [];
+const needsAction = needsActionSource.filter(
+  (item: any, index: number, items: any[]) => items.findIndex((candidate: any) => candidate.doc_id === item.doc_id) === index,
+);
+const visibleErrors = (statusData?.errors || []).filter((error: any) => error.step !== 'classify');
   const activeDoc = results?.documents?.find(d => String(d.doc_id) === String(activeDocId));
-const chain = results?.title_chain?.chain || [];
-const sortedChain = sortChain(chain);
-const titleChainStatus = results?.title_chain?.status;
-const titleStory = results?.title_chain?.title_story || results?.title_chain?.source?.title_story || '';
-  const verification = results?.verification || null;
+  const agent = results?.agent;
   const caseInfo = results?.case;
   const allComplete = caseInfo ? COMPLETE_STATUSES.includes(caseInfo.status) : false;
 
+  // Transform agent.transactions to UI format
+  const rawTx = agent?.transactions || [];
+  const requiredDocumentCount = rawTx.reduce(
+    (count: number, transaction: any) => count + (Array.isArray(transaction.required_documents) ? transaction.required_documents.length : 0),
+    0,
+  );
+  const agentTx = rawTx.map((t: any, i: number) => ({
+    ...t,
+    index: t.sequence ?? i + 1,
+  }));
+  const verifiedCount = rawTx.filter((t: any) =>
+    String(t.status || '').toUpperCase() === 'VERIFIED_WITH_AVAILABLE_EVIDENCE'
+  ).length;
+  const issueCount = rawTx.filter((t: any) => String(t.status || '').toUpperCase() === 'ISSUES_IDENTIFIED').length;
+  const skippedTxIds = new Set<string>(agent?.skipped_tx_ids || []);
+  const skippedCount = agentTx.filter((t: any) =>
+    skippedTxIds.has(t.tx_id)
+    || ['SKIPPED', 'SKIPPED_BY_USER'].includes(String(t.status || '').toUpperCase())
+    || t.legacy_fields?.workflow_action === 'SKIPPED_BY_USER'
+  ).length;
+  const pendingCount = Math.max(0, rawTx.length - verifiedCount - issueCount - skippedCount);
+  const pausedRequirements = requirementsForPausedTransaction(rawTx, agent?.paused_transaction);
+  const pausedTransactionId = String(agent?.paused_transaction || '').trim();
+  const pauseKey = `${pausedTransactionId}:${String(agent?.updated_at || '')}`;
+  const showPausedEvidenceDialog = Boolean(
+    results && currentCaseId && results.case.case_id === currentCaseId &&
+    String(agent?.status || '').toLowerCase() === 'paused' &&
+    pausedTransactionId && pausedRequirements.length > 0 &&
+    dismissedPauseKey !== pauseKey,
+  );
+  // One dialog serves both flows: the automatic pause dialog and an upload
+  // opened from any eligible transaction card. Manual open wins.
+  const dialogTxId = manualUploadTxId || (showPausedEvidenceDialog ? pausedTransactionId : '');
+  const dialogRequirements = dialogTxId
+    ? requirementsForPausedTransaction(rawTx, dialogTxId)
+    : [];
+
+  // Title chain data from agent
+  const titleChain = agent?.title_chain;
+  const legacyTitleChain = titleChain && !Array.isArray(titleChain)
+    ? titleChain as { transactions?: any[]; title_story?: string; unresolved?: string[] }
+    : {};
+  const chain = legacyTitleChain.transactions || [];
+  const sortedChain = sortChain(chain);
+  const titleStory = legacyTitleChain.title_story || '';
+  const chainUnresolved = legacyTitleChain.unresolved || [];
+  const propertyIdentity = (agent?.property_identity || {}) as Record<string, unknown>;
+  const identityDetails = Array.isArray(propertyIdentity.details)
+    ? propertyIdentity.details.map((detail, index) => {
+      const record: Record<string, unknown> = detail && typeof detail === 'object' && !Array.isArray(detail)
+        ? detail as Record<string, unknown>
+        : { value: detail };
+      return {
+        label: typeof record.label === 'string' ? record.label : `Property detail ${index + 1}`,
+        value: record.value,
+      };
+    }).filter(detail => detail.value != null && detail.value !== '')
+    : [];
+  const identityEntries = Object.entries(propertyIdentity).filter(([key, value]) =>
+    key !== 'details' && value != null && value !== ''
+  );
+
   return (
     <div className="ctd-root">
+      {dialogTxId && (
+        <EvidenceRequestDialog
+          transactionId={dialogTxId}
+          requirements={dialogRequirements}
+          uploads={evidenceUploads}
+          busy={evidenceUploadBusy}
+          onPick={(index, file) => setEvidenceUploads((prev) => ({ ...prev, [index]: file }))}
+          onSubmit={() => void submitEvidence()}
+          onSkip={
+            manualUploadTxId
+              ? () => { setManualUploadTxId(null); setEvidenceUploads({}); }
+              : () => void skipPausedTransaction()
+          }
+          skipLabel={manualUploadTxId ? 'Close' : undefined}
+          submitLabel={manualUploadTxId ? 'Submit & retry verification' : undefined}
+        />
+      )}
       {/* Main Top Bar */}
       <header className={`header ${auth ? '' : 'header-guest'}`}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -1614,7 +1461,7 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                   <div className="case-meta">
                     <span>{c.completed_docs}/{c.total_docs}</span>
                     {(c.status === 'complete' || c.status === 'completed') ? (
-                      <span className="case-status-done"><CheckCircle2 size={11} style={{ verticalAlign: '-1px' }} /> Title Verification Done</span>
+                      <span className="case-status-done"><CheckCircle2 size={11} style={{ verticalAlign: '-1px' }} /> Documents Processed</span>
                     ) : (
                       <span className={`badge ${caseBadgeClass(c.status)}`}>{c.status}</span>
                     )}
@@ -1636,6 +1483,12 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                 <h1 className="upload-main-title">Upload documents</h1>
                 <p className="upload-main-sub">We extract, cross-check and verify against Kaveri records. Nothing is shared.</p>
               </div>
+
+              {uploadError && (
+                <div role="alert" style={{ margin: '0 0 18px', padding: '12px 14px', border: '1px solid #fecaca', borderRadius: 10, background: '#fef2f2', color: '#991b1b', lineHeight: 1.5 }}>
+                  <strong>Upload did not start.</strong> {uploadError}
+                </div>
+              )}
 
               <div className="upload-slots-grid">
               {UPLOAD_SLOTS.map(slotCfg => {
@@ -1711,6 +1564,12 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
 
           {view === 'processing' && (
             <div className="card plain">
+              {pipelineStartError && (
+                <div role="alert" style={{ marginBottom: 16, padding: '12px 14px', border: '1px solid #fecaca', borderRadius: 10, background: '#fef2f2', color: '#991b1b', lineHeight: 1.5 }}>
+                  <strong>Processing has not started.</strong> {pipelineStartError}{' '}
+                  <button className="btn btn-primary" onClick={() => void retryPipelineStart()}>Try starting again</button>
+                </div>
+              )}
               <AIPipeline statusData={statusData || { status: 'processing', files: files.map((f, i) => ({ doc_id: `DOC_${String(i+1).padStart(3,'0')}`, original_name: f.file.name, status: 'uploaded', document_type: '' })) }} />
             </div>
           )}
@@ -1721,19 +1580,22 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                 <GuestReportPreview
                   results={results}
                   onSignIn={() => openAuth(currentCaseId || undefined)}
-                  onNewCase={() => setView('upload')}
                 />
               ) : (
               <>
               {/* Action Required Banner (if any errors or unclassified docs) */}
-              {(needsAction.length > 0 || (statusData?.errors || []).length > 0) && (
+              {(needsAction.length > 0 || visibleErrors.length > 0) && (
                 <div className="card" style={{ marginBottom: 24 }}>
                   <div className="card-title">
                     <AlertTriangle size={16} style={{ verticalAlign: '-2px', marginRight: 8 }} /> Action Required
                   </div>
                   {needsAction.map((d: any) => (
                     <div key={d.doc_id} style={{ marginTop: 12, padding: 12, background: 'var(--white)', borderRadius: 8, border: '1px solid var(--border)' }}>
-                      <p style={{ fontSize: 14, marginBottom: 10 }}><strong>{d.filename}</strong> — document type not recognised</p>
+                      <p style={{ fontSize: 14, marginBottom: 10 }}>
+                        <strong>{d.filename}</strong>
+                        {d.document_type && <span> — detected: {String(d.document_type).replace(/_/g, ' ')}</span>}
+                        <br />{d.message || 'This document needs review. Replace it with a property document or skip it.'}
+                      </p>
                       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                         <button className="btn btn-secondary" onClick={() => skipDoc(d.doc_id)}><CheckCircle2 size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> Continue without this document</button>
                         <button className="btn btn-primary" onClick={() => document.getElementById(`replace-input-${d.doc_id}`)?.click()}><Upload size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> Upload a replacement document</button>
@@ -1751,17 +1613,17 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                       </div>
                     </div>
                   ))}
-                  {(statusData?.errors || []).length > 0 && (
+                  {visibleErrors.length > 0 && (
                     <>
                       <div style={{ marginTop: 14 }}>
-                        {(statusData?.errors || []).map((e: any, i: number) => (
+                        {visibleErrors.map((e: any, i: number) => (
                           <div className="error-item" key={i}>
                             <strong>{e.doc_id}</strong> — Step: {e.step}<br />
                             <code style={{ fontSize: 11 }}>{e.error}</code>
                           </div>
                         ))}
                       </div>
-                      {(statusData?.errors || []).some((e: any) => e.step !== "classify" || !e.action_required) && (
+                      {visibleErrors.some((e: any) => e.step !== "classify" || !e.action_required) && (
                         <div style={{ marginTop: 12 }}>
                           <button className="btn btn-primary" onClick={retryFailed}><RefreshCw size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> Retry Failed</button>
                         </div>
@@ -1772,7 +1634,7 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
               )}
 
               {/* TAB 1: VERIFICATION REPORT */}
-              {activeReportTab === 'verification' && (
+{activeReportTab === 'verification' && (
                 <div className="tab-pane active">
                   {/* Verdict Section */}
                   <div className="verdict-banner">
@@ -1780,44 +1642,70 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                       <div className="vr-banner-meta-row">
                         <div className="vr-banner-meta-lines" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                           <div className="font-mono" style={{ fontSize: 11, color: '#94a3b8' }}>
-                            CASE ID: <strong style={{ color: '#1e293b' }}>{currentCaseId || caseInfo?.case_id || 'A722E83D'}</strong>
+                            CASE ID: <strong style={{ color: '#1e293b' }}>{currentCaseId || caseInfo?.case_id || '—'}</strong>
                           </div>
                           <div className="font-mono" style={{ fontSize: 11, color: '#94a3b8' }}>
                             {fmtDate(caseInfo?.created_at || new Date().toISOString())}
                           </div>
                         </div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '14px 0 0' }}>
-                        <span className="shimmer-effect" style={{
-                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                          width: 48, height: 48, borderRadius: '50%', flexShrink: 0,
-                          background: String(verification?.verdict || 'CLEAR_TITLE').toUpperCase().includes('ATTENTION')
-                            ? 'radial-gradient(circle at 30% 25%, #fee2e2, #fecaca 60%, #f87171)'
-                            : 'radial-gradient(circle at 30% 25%, #d1fae5, #a7f3d0 60%, #34d399)',
-                          boxShadow: String(verification?.verdict || 'CLEAR_TITLE').toUpperCase().includes('ATTENTION')
-                            ? '0 0 18px rgba(239,68,68,.55), inset 0 0 8px rgba(255,255,255,.5)'
-                            : '0 0 18px rgba(16,185,129,.55), inset 0 0 8px rgba(255,255,255,.5)',
-                        }}>
-                          {String(verification?.verdict || 'CLEAR_TITLE').toUpperCase().includes('ATTENTION')
-                            ? <AlertTriangle size={28} style={{ color: '#dc2626', strokeWidth: 2.25 }} />
-                            : <ShieldCheck size={28} style={{ color: '#047857', strokeWidth: 2.25 }} />}
-                        </span>
+                      <div className="verification-verdict-line">
                         <p className="vr-status-line" style={{ fontWeight: 800, letterSpacing: '.01em', lineHeight: 1.3, margin: 0, textTransform: 'uppercase',
                           color: '#1c1917' }}>
-                          {verification?.status === "error"
+                          {agent?.status === "error"
                             ? "VERIFICATION COULD NOT BE COMPLETED, PLEASE RETRY"
-                            : (verification?.summary?.status_line ||
-                              "VERIFICATION NOT COMPLETED YET")}
+                            : agent?.status === "running" || agent?.status === "idle"
+                            ? "VERIFICATION IN PROGRESS…"
+                            : null}
                         </p>
                       </div>
                     </div>
                   </div>
 
+                  {(identityDetails.length > 0 || identityEntries.length > 0) && (
+                    <section className="verification-property-identity" aria-labelledby="verification-property-identity-title">
+                      <div className="verification-property-identity-heading">
+                        <span className="verification-property-identity-kicker">TARGET PROPERTY</span>
+                        <h2 id="verification-property-identity-title">Property identity</h2>
+                        <p>Recorded identifiers and descriptions for the property under verification.</p>
+                      </div>
+                      <dl className="verification-property-identity-list">
+                        {identityDetails.map((detail, index) => (
+                          <div className="verification-property-identity-item" key={`${detail.label}-${index}`}>
+                            <dt>{detail.label}</dt>
+                            <dd>{typeof detail.value === 'object' ? JSON.stringify(detail.value) : String(detail.value)}</dd>
+                          </div>
+                        ))}
+                        {identityEntries.map(([key, value]) => (
+                          <div className="verification-property-identity-item" key={key}>
+                            <dt>{key.replace(/[_-]+/g, ' ')}</dt>
+                            <dd>{typeof value === 'object' ? JSON.stringify(value) : String(value)}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </section>
+                  )}
+                  {!!chainUnresolved.length && (
+                    <section className="chain-unresolved-card" aria-label="Unresolved title-chain questions">
+                      <div className="chain-summary-heading">
+                        <span className="chain-unresolved-mark"><AlertTriangle size={16} /></span>
+                        <div>
+                          <span className="chain-node-label">REQUIRES REVIEW</span>
+                          <h2>Unresolved chain questions</h2>
+                        </div>
+                      </div>
+                      <ul>
+                        {chainUnresolved.map((item: string, i: number) => <li key={i}>{item}</li>)}
+                      </ul>
+                    </section>
+                  )}
+
                   {/* Verification Pipeline Nodes */}
-                  <div className="pipeline-container">
+                    <div className="pipeline-container phase-a-chain-list verification-results-list">
                     <div className="pl-controls-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, marginBottom: 24 }}>
-                      <span className="font-mono" style={{ fontSize: 12, fontWeight: 800, color: '#1e293b' }}>
-                        {verification?.items ? verification.items.filter((x: any) => String(x.status).toUpperCase() === 'VERIFIED').length : 0}/{verification?.items ? verification.items.length : 0} checks cleared
+                      <span className="verification-progress-copy">
+                        <strong>Transaction outcomes</strong>
+                        <span>{verifiedCount} verified · {skippedCount} skipped and unverified · {pendingCount} pending · {issueCount} with issues identified</span>
                       </span>
                       <button
                         className="vr-chain-link"
@@ -1827,61 +1715,40 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                       >
                         <GitMerge size={14} />
                         <span className="vr-chain-label">View Title Chain</span>
-                        <span className="vr-chain-arrow">&gt;</span>
+                        <span className="vr-chain-arrow">{'>'}</span>
                       </button>
                     </div>
 
-                    <div className="pipeline-line"></div>
-
                     {/* Dynamic Pipeline Items */}
-                    {verification?.items && verification.items.length > 0 ? (
-                      verification.items.map((item: any, idx: number) => (
-                        <PipelineNode key={idx} item={item} index={idx} />
+                    {agent?.transactions && agent.transactions.length > 0 ? (
+                      agentTx.map((item: any, idx: number) => (
+                        <TransactionResultCard
+                          key={item.tx_id || idx}
+                          transaction={item}
+                          documents={results.documents}
+                          skipped={skippedTxIds.has(item.tx_id)}
+                          onOpenUpload={
+                            skippedTxIds.has(item.tx_id)
+                            || String(item.status || '').toUpperCase() === 'ISSUES_IDENTIFIED'
+                              ? (txId) => { setEvidenceUploads({}); setManualUploadTxId(txId); }
+                              : undefined}
+                          evidenceUploadBusy={evidenceUploadBusy}
+                        />
                       ))
                     ) : (
                       <div className="vr-sheet-empty">
-                        {verification?.status === "error"
-                          ? "Verification did not complete due to a temporary issue. Please retry — no checks were evaluated."
-                          : "Verification has not run yet. No checks have been evaluated."}
+                        {agent?.status === "error"
+                          ? "Verification did not complete due to a temporary issue. Please retry — no transactions were evaluated."
+                          : "Verification has not run yet. No transactions have been evaluated."}
                       </div>
                     )}
                   </div>
 
-                  {/* Detailed Report — headline + summary preview with expand */}
-                  {(verification?.summary?.summary_text || verification?.summary?.overall_comment || verification?.summary?.headline) && (
-                    <div style={{ marginTop: 24, marginBottom: 28 }}>
-                      {verification?.summary?.headline && (
-                        <p style={{ fontSize: 16, fontWeight: 700, color: '#1e293b', margin: '0 0 8px', lineHeight: 1.55 }}>
-                          {verification.summary.headline}
-                        </p>
-                      )}
-                      <p style={{
-                        fontSize: 14, color: '#475569', lineHeight: 1.8, margin: 0, whiteSpace: 'pre-line',
-                        overflow: 'hidden', display: '-webkit-box', WebkitBoxOrient: 'vertical',
-                        WebkitLineClamp: summaryOpen ? undefined : 2,
-                      }}>
-                        {verification?.summary?.summary_text || verification?.summary?.overall_comment}
-                      </p>
-                      <button
-                        onClick={() => setSummaryOpen(o => !o)}
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 4,
-                          marginTop: 10, padding: 0, border: 'none', background: 'transparent',
-                          cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#2563eb',
-                        }}
-                      >
-                        {summaryOpen ? 'Hide' : 'View Full Report'}
-                        <span style={{ fontSize: 10, transition: 'transform .15s', transform: summaryOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>▼</span>
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Re-run Verification + Download Report Controls */}
+                  {/* Re-run Verification + Actions Controls */}
                   <div className="pl-actions-row" style={{ marginTop: 24, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
-                    {verification?.status !== "error" && verification?.items?.length ? (
+                    {requiredDocumentCount > 0 ? (
                     <button
                       className="btn btn-secondary"
-                      disabled={!allComplete}
                       onClick={async () => {
                         const cid = currentCaseId || caseInfo?.case_id;
                         if (!cid) return;
@@ -1889,34 +1756,36 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                           const headers: Record<string, string> = {};
                           const token = getToken();
                           if (token) headers['Authorization'] = `Bearer ${token}`;
-                          const r = await fetch(`/api/results/${cid}/report/pdf`, { headers });
-                          if (!r.ok) throw new Error('Failed to generate report');
-                          const blob = await r.blob();
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = `title-report-${cid}.pdf`;
-                          document.body.appendChild(a);
-                          a.click();
-                          a.remove();
+                          const response = await fetch(`/api/results/${cid}/required-documents/pdf`, { headers });
+                          if (!response.ok) {
+                            const body = await response.json().catch(() => null);
+                            throw new Error(body?.detail || `Request failed (${response.status})`);
+                          }
+                          const url = URL.createObjectURL(await response.blob());
+                          const link = document.createElement('a');
+                          link.href = url;
+                          link.download = 'required-documents-checklist.pdf';
+                          document.body.appendChild(link);
+                          link.click();
+                          link.remove();
                           URL.revokeObjectURL(url);
-                        } catch (e: any) {
-                          alert('Could not generate report. ' + (e.message || ''));
+                        } catch (error: any) {
+                          alert('Could not generate required-documents checklist. ' + (error?.message || ''));
                         }
                       }}
                     >
                       <Download size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-                      Download Report
+                      Download Required Documents
                     </button>
                     ) : null}
                     <button
                       className="btn btn-primary"
                       disabled={!allComplete || analyzing}
-                      onClick={runVerification}
-                      title="Re-run only the verification pass (title chain is left as-is)"
+                      onClick={runAnalysisTask}
+                      title="Resume the ClearTitle agent for this case"
                     >
                       <RefreshCw size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-                      {analyzing ? 'Analyzing…' : 'Re Run Verification'}
+                      {analyzing ? 'Analyzing…' : 'Resume Analysis'}
                     </button>
                   </div>
 
@@ -2010,81 +1879,16 @@ const titleStory = results?.title_chain?.title_story || results?.title_chain?.so
                     )}
                   </div>
 
-                  {/* Required documents — generated by the LLM during title-chain build */}
-                  {(() => {
-                    const reqDocs = results?.title_chain?.source?.required_documents;
-                    if (!Array.isArray(reqDocs) || reqDocs.length === 0) return null;
-                    return (
-                      <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 24, marginTop: 24 }}>
-                        <p style={{ color: '#1c1917', fontSize: 16, fontWeight: 500, marginBottom: 12, textAlign: 'left' }}>
-                          The above results are generated only based on the documents uploaded, and the user
-                          still needs to verify these documents to ensure clearTitle.
-                        </p>
-                        <div style={{ marginBottom: 8 }}>
-                          <span className="font-mono" style={{ fontSize: 15, fontWeight: 700, color: '#111827', letterSpacing: '0.04em', textTransform: 'none' }}>
-                            DOCUMENTS REQUIRED FOR COMPLETE VERIFICATION
-                          </span>
-                        </div>
-                        <div style={{ overflowX: 'auto' }}>
-                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                            <thead>
-                              <tr>
-                                {['Date', 'Instrument / Event', 'Parties / Effect', 'Required Documents'].map(h => (
-                                  <th key={h} style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '2px solid #e2e8f0', fontSize: 11, letterSpacing: '0.06em', color: '#6b7280', whiteSpace: 'nowrap' }}>
-                                    {h}
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {reqDocs.map((r, i) => (
-                                <tr key={`${i}-${r.date}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                  <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', color: '#44403c', verticalAlign: 'top' }}>{r.date || '—'}</td>
-                                  <td style={{ padding: '8px 10px', fontWeight: 600, color: '#292524', verticalAlign: 'top' }}>{r.instrument_event || '—'}</td>
-                                  <td style={{ padding: '8px 10px', color: '#57534e', verticalAlign: 'top' }}>{r.parties_effect || '—'}</td>
-                                  <td style={{ padding: '8px 10px', color: '#b45309', verticalAlign: 'top' }}>{r.required_docs || '—'}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    );
-                  })()}
                 </div>
               )}
 
               {/* TAB 2: TITLE CHAIN */}
               {activeReportTab === 'title-chain' && (
                 <div className="tab-pane active">
-                  <div className="chain-page-head">
-                    <div className="chain-page-head-left">
-                      <span className="chain-kicker">TITLE CHAIN • CASE {currentCaseId || caseInfo?.case_id || 'A722E83D'}</span>
-                      <h1 className="chain-page-title">Chain of title</h1>
-                      <p className="chain-page-sub">Chronological property devolution, ownership transitions, and adverse encumbrance tracking.</p>
-                    </div>
-                    <div className="chain-page-head-right">
-                      <button
-                        className="chain-rerun-btn"
-                        disabled={!allComplete || analyzing}
-                        onClick={runTitleChain}
-                        title="Re-run only the title chain build (verification is left as-is)"
-                      >
-                        <RefreshCw size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-                        {analyzing ? 'Rebuilding…' : 'Re Run Title Chain'}
-                      </button>
-                      <button className="chain-back-btn" onClick={() => setActiveReportTab('verification')}>
-                        <ArrowLeft size={14} /> Back to Report
-                      </button>
-                      <span className="chain-milestones">
-                        <span className="chain-milestones-dot" />
-                        {sortedChain.length} TRANSACTIONS LINKED
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Connected Chronological Chain Nodes */}
-                  <ChainTimeline chain={chain} status={titleChainStatus} titleStory={titleStory} />
+                  <PhaseAChainView
+                    result={agent || {}}
+                    onBack={() => setActiveReportTab('verification')}
+                  />
                 </div>
               )}
 

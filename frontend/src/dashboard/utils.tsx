@@ -459,7 +459,7 @@ function KhataSection({ s }: { s: any }) {
 
   return (
     <>
-      {/* ── Top Metadata Grid ── */}
+      {/* -- Top Metadata Grid -- */}
       <div className="ds-meta-grid">
         <div className="ds-meta-cell">
           <span className="ds-meta-label">DOCUMENT TYPE</span>
@@ -507,7 +507,7 @@ function KhataSection({ s }: { s: any }) {
         )}
       </div>
 
-      {/* ── Property Details ── */}
+      {/* -- Property Details -- */}
       {propFields.length > 0 && (
         <div className="ds-block">
           <h3 className="ds-block-heading">
@@ -526,7 +526,7 @@ function KhataSection({ s }: { s: any }) {
         </div>
       )}
 
-      {/* ── Khata Holders ── */}
+      {/* -- Khata Holders -- */}
       {holders.length > 0 && (
         <div className="ds-block">
           <h3 className="ds-block-heading">
@@ -560,7 +560,7 @@ function KhataSection({ s }: { s: any }) {
         </div>
       )}
 
-      {/* ── Property Tax ── */}
+      {/* -- Property Tax -- */}
       {(taxFields.length > 0 || hasDues) && (
         <div className="ds-block">
           <h3 className="ds-block-heading">
@@ -591,7 +591,7 @@ function KhataSection({ s }: { s: any }) {
         </div>
       )}
 
-      {/* ── Certification ── */}
+      {/* -- Certification -- */}
       {certFields.length > 0 && (
         <div className="ds-block">
           <h3 className="ds-block-heading">
@@ -656,7 +656,7 @@ const isKhata = /khata/i.test(docType);
         <KhataSection s={s} />
       ) : (
         <>
-      {/* ── Top Metadata Grid ── */}
+      {/* -- Top Metadata Grid -- */}
       <div className="ds-meta-grid">
         <div className="ds-meta-cell">
           <span className="ds-meta-label">DOCUMENT TYPE</span>
@@ -706,7 +706,7 @@ const isKhata = /khata/i.test(docType);
         )}
       </div>
 
-      {/* ── Parties ── */}
+      {/* -- Parties -- */}
       {hasParties && (
         <div className="ds-block">
           <h3 className="ds-block-heading">
@@ -720,7 +720,7 @@ const isKhata = /khata/i.test(docType);
         </div>
       )}
 
-      {/* ── Property Details ── */}
+      {/* -- Property Details -- */}
       {hasProperty && !isEC && (
         <div className="ds-block">
           <h3 className="ds-block-heading">
@@ -745,7 +745,7 @@ const isKhata = /khata/i.test(docType);
         </div>
       )}
 
-      {/* ── Consideration & Fees ── */}
+      {/* -- Consideration & Fees -- */}
       {hasFin && (
         <div className="ds-block">
           <h3 className="ds-block-heading">
@@ -797,13 +797,13 @@ const isKhata = /khata/i.test(docType);
         </div>
       )}
 
-      {/* ── Search Criteria (for ECs) ── */}
+      {/* -- Search Criteria (for ECs) -- */}
       <SearchCriteriaSection crit={s.search_criteria} />
 
-      {/* ── Historical Ledger (for ECs — shows parties, financials, property per transaction) ── */}
+      {/* -- Historical Ledger (for ECs — shows parties, financials, property per transaction) -- */}
       <LedgerSection ledger={Array.isArray(s.historical_ledger) ? s.historical_ledger : []} />
 
-      {/* ── Fallback sections for any unhandled keys ── */}
+      {/* -- Fallback sections for any unhandled keys -- */}
       <FallbackSections structured={s} />
         </>
       )}

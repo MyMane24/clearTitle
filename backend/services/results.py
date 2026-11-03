@@ -3,8 +3,23 @@
 from __future__ import annotations
 
 from backend.database.repositories.document_repo import get_case_documents
-from backend.database.repositories.title_chain_repo import get_title_chain
-from backend.database.repositories.verification_results_repo import get_verification_results
+from backend.services.agent_schemas import (
+    normalize_transaction_verification,
+)
+
+
+def _transaction_for_api(raw: dict) -> dict:
+    """Adapt historical result rows into the canonical v3.0 response shape."""
+    return normalize_transaction_verification(raw)
+
+
+def classification_action_message(document: dict) -> str:
+    document_type = document.get("document_type") or "unknown document"
+    label = document_type.replace("_", " ").lower()
+    reason = (document.get("error") or "").strip()
+    if not reason:
+        reason = f"This appears to be a {label}, not a property or title document."
+    return f"{reason} Replace it with a property document or continue without it."
 
 
 def _case_row(case_id: str) -> dict:
@@ -23,27 +38,45 @@ def _case_row(case_id: str) -> dict:
     return dict(row)
 
 
+def _agent_block(case_id: str) -> dict:
+    from backend.database.repositories.agent_repo import get_agent_state
+    state = get_agent_state(case_id)
+    memory = state.get("memory") or {}
+    result = state.get("result") or {}
+    case_result = state.get("case_result") or {}
+    transactions = [
+        _transaction_for_api(item)
+        for item in case_result if isinstance(case_result, list) and isinstance(item, dict)
+    ]
+    statuses = {str(item.get("status") or "").upper() for item in transactions}
+    if "ISSUES_IDENTIFIED" in statuses:
+        overall_status = "ISSUES_IDENTIFIED"
+    elif statuses and statuses == {"VERIFIED_WITH_AVAILABLE_EVIDENCE"}:
+        overall_status = "VERIFIED_WITH_AVAILABLE_EVIDENCE"
+    else:
+        overall_status = "INCONCLUSIVE" if transactions else None
+    # Keep the Phase A chain separate and expose saved transaction results even
+    # while a run is paused before the consolidated report is produced.
+    return {
+        **result,
+        "transactions": transactions,
+        "overall_status": overall_status,
+        "status": state.get("status") or ("done" if result else "idle"),
+        "updated_at": memory.get("updated_at"),
+        "stage": memory.get("stage") or memory.get("current_stage"),
+        "paused_transaction": memory.get("paused_transaction") or (
+            memory.get("current_tx_id")
+            if state.get("status") == "paused" and memory.get("status") == "PENDING_NOT_VERIFIED"
+            else None
+        ),
+        "next_action": memory.get("next_action"),
+        "skipped_tx_ids": memory.get("skipped_tx_ids") or [],
+    }
+
+
 def build_case_results(case_id: str) -> dict:
     case = _case_row(case_id)
     documents = get_case_documents(case_id)
-    title_chain = get_title_chain(case_id)
-    verification = get_verification_results(case_id)
-
-    if not title_chain:
-        title_chain = {"case_id": case_id, "status": "pending", "chain": []}
-    if not isinstance(title_chain.get("chain"), list):
-        title_chain["chain"] = []
-
-    if not verification:
-        verification = {
-            "case_id": case_id,
-            "status": "pending",
-            "verdict": "N/A",
-            "summary": {},
-            "items": [],
-        }
-    if not isinstance(verification.get("items"), list):
-        verification["items"] = []
 
     return {
         "case": {
@@ -73,26 +106,27 @@ def build_case_results(case_id: str) -> dict:
             for d in documents
         ],
         "needs_action": _needs_action(case_id),
-        "title_chain": title_chain,
-        "verification": verification,
+        "agent": _agent_block(case_id),
     }
 
 
 def _needs_action(case_id: str) -> list[dict]:
     from backend.database.repositories.document_repo import get_classification_failed_documents
-    return [
-        {
-            "doc_id": d["doc_id"],
-            "filename": d["filename"],
-            "message": f"'{d['filename']}' — document type not recognised.",
+    actions = []
+    for doc in get_classification_failed_documents(case_id):
+        document_type = doc.get("document_type") or "unknown document"
+        actions.append({
+            "doc_id": doc["doc_id"],
+            "filename": doc["filename"],
+            "document_type": document_type,
+            "message": classification_action_message(doc),
             "choices": [
                 {"action": "skip", "method": "POST",
-                 "url": f"/api/case/{case_id}/doc/{d['doc_id']}/skip",
+                 "url": f"/api/case/{case_id}/doc/{doc['doc_id']}/skip",
                  "label": "Continue without this document"},
                 {"action": "replace", "method": "POST",
-                 "url": f"/api/case/{case_id}/doc/{d['doc_id']}/replace",
+                 "url": f"/api/case/{case_id}/doc/{doc['doc_id']}/replace",
                  "label": "Upload a replacement document"},
             ],
-        }
-        for d in get_classification_failed_documents(case_id)
-    ]
+        })
+    return actions

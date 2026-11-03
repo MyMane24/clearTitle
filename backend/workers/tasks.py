@@ -13,6 +13,7 @@ from backend.workers.idempotency import idempotent_stage
 from backend.workers.stage_adapter import run_stage
 from backend.workers.stages import (
     ClassificationFailed,
+    OcrInsufficientCredits,
     ClassifyStage,
     MergeStage,
     OcrStage,
@@ -27,7 +28,7 @@ logger = get_logger(__name__)
 # Autoretry config for tasks
 TASK_RETRY_CONFIG = {
     "autoretry_for": (Exception,),
-    "exclude_from_autoretry": (ClassificationFailed,),
+    "exclude_from_autoretry": (ClassificationFailed, OcrInsufficientCredits),
     "retry_backoff": True,
     "retry_backoff_max": 120,
     "retry_jitter": True,

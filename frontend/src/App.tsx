@@ -5,18 +5,21 @@ import { PricingPage } from './pages/PricingPage';
 import { HowItWorksPage } from './pages/HowItWorksPage';
 import { OcrViewerPage } from './pages/OcrViewerPage';
 import { VerificationDashboard } from './dashboard/VerificationDashboard';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<HomePage />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/pricing" element={<PricingPage />} />
-      <Route path="/how-it-works" element={<HowItWorksPage />} />
-      <Route path="/app" element={<VerificationDashboard />} />
-      <Route path="/ocr" element={<OcrViewerPage />} />
-      <Route path="/ocr/:caseId" element={<OcrViewerPage />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <ErrorBoundary>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/pricing" element={<PricingPage />} />
+        <Route path="/how-it-works" element={<HowItWorksPage />} />
+        <Route path="/app" element={<VerificationDashboard />} />
+        <Route path="/ocr" element={<OcrViewerPage />} />
+        <Route path="/ocr/:caseId" element={<OcrViewerPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </ErrorBoundary>
   );
 }

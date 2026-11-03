@@ -40,11 +40,10 @@ def get_pipeline_logs(case_id: str) -> list[str]:
         cursor = conn.cursor()
         cursor.execute("SELECT pipeline_logs FROM cases WHERE id = %s", (case_id,))
         row = cursor.fetchone()
-        if row and row[0]:
-            try:
-                logs = json.loads(row[0])
-                if isinstance(logs, list):
-                    return logs
-            except Exception:
-                pass
+    if not row or not row[0]:
         return []
+    try:
+        logs = json.loads(row[0])
+    except (TypeError, json.JSONDecodeError):
+        return []
+    return logs if isinstance(logs, list) else []

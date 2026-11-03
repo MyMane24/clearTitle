@@ -35,6 +35,7 @@ from backend.integrations.redis.state_store import (
     get_case_job,
     reset_for_retry,
     set_case_status,
+    update_file_in_case,
 )
 from backend.integrations.redis.state_store import (
     case_exists as redis_case_exists,
@@ -45,9 +46,15 @@ from backend.integrations.redis.state_store import (
 from backend.integrations.redis.state_store import (
     init_case as redis_init_case,
 )
-from backend.integrations.storage.file_utils import delete_case_dir, get_case_dir, save_upload
+from backend.integrations.storage.file_utils import (
+    MAX_UPLOAD_SIZE_BYTES,
+    delete_case_dir,
+    get_case_dir,
+    save_upload,
+)
 from backend.logger import get_logger
 from backend.services.auth import get_current_user, get_optional_user
+from backend.services.results import classification_action_message
 from backend.services.orchestrator import (
     start_case_pipeline,
     start_retry_pipeline,
@@ -69,13 +76,6 @@ router = APIRouter()
 logger = get_logger(__name__)
 
 _executor = ThreadPoolExecutor(max_workers=4)
-
-
-def _require_owner(case_id: str, user: dict) -> None:
-    """403 unless the case belongs to the authenticated user."""
-    owner = get_case_owner(case_id)
-    if owner and owner != user["id"]:
-        raise HTTPException(status_code=403, detail="Not your case")
 
 
 def _enforce_access(case_id: str, user: dict | None) -> None:
@@ -148,6 +148,19 @@ async def upload_documents(
 ):
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
+
+    oversized = [
+        f.filename or "A selected PDF"
+        for f in files
+        if getattr(f, "size", None) is not None and f.size > MAX_UPLOAD_SIZE_BYTES
+    ]
+    if oversized:
+        names = ", ".join(oversized)
+        limit_mb = MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)
+        raise HTTPException(
+            status_code=413,
+            detail=f"{names} exceed the {limit_mb}MB per-file upload limit. Reduce or split the PDF and retry.",
+        )
 
     case_id = str(uuid.uuid4())[:8].upper()
     case_dir = get_case_dir(case_id)
@@ -252,7 +265,8 @@ async def get_status(case_id: str, user: dict | None = Depends(get_optional_user
         {
             "doc_id": d["doc_id"],
             "filename": d["filename"],
-            "message": f"'{d['filename']}' — document type not recognised.",
+            "document_type": d.get("document_type") or "",
+            "message": classification_action_message(d),
             "choices": [
                 {"action": "skip", "method": "POST",
                  "url": f"/api/case/{case_id}/doc/{d['doc_id']}/skip",
@@ -345,7 +359,7 @@ async def link_case(case_id: str, user: dict = Depends(get_current_user)):
             return {"case_id": case_id, "linked": True, "already": True}
         raise HTTPException(status_code=403, detail="Case is linked to another account")
     set_case_owner(case_id=case_id, user_id=user["id"])
-    append_log(case_id, "── Case linked to account ──")
+    append_log(case_id, "-- Case linked to account --")
     return {"case_id": case_id, "linked": True, "already": False}
 
 
@@ -353,6 +367,7 @@ async def link_case(case_id: str, user: dict = Depends(get_current_user)):
 async def upload_more_documents(
     case_id: str,
     files: list[UploadFile] = File(...),
+    transaction_id: str | None = Form(None),
     user: dict | None = Depends(get_optional_user),
 ):
     if not files:
@@ -361,9 +376,45 @@ async def upload_more_documents(
         raise HTTPException(status_code=404, detail="Case not found")
     _enforce_access(case_id, user)
 
+    if transaction_id:
+        from backend.database.repositories import agent_repo
+        from backend.services.agent_schemas import normalize_status
+
+        phase_a = agent_repo.get_agent_result(case_id) or {}
+        from backend.services.cleartitle_agent import _phase_a_transactions
+        chain_tx_ids = {item.get("tx_id") for item in _phase_a_transactions(phase_a)}
+        if transaction_id not in chain_tx_ids:
+            raise HTTPException(status_code=404, detail="Transaction not found in the saved title chain")
+        previous = agent_repo.get_transaction_result(case_id, transaction_id) or {}
+        previous_status = normalize_status(previous.get("status"))
+        if previous_status == "PENDING_NOT_VERIFIED":
+            memory = agent_repo.get_agent_memory(case_id) or {}
+            if transaction_id not in set(memory.get("skipped_tx_ids") or []):
+                raise HTTPException(status_code=409, detail="Evidence retry is only available for a skipped transaction")
+        elif previous_status != "ISSUES_IDENTIFIED":
+            raise HTTPException(status_code=409, detail="Evidence retry is only available for a pending or issues-identified transaction")
+
+    if any(not (f.filename or "").lower().endswith(".pdf") for f in files):
+        raise HTTPException(status_code=400, detail="Only PDF documents can be uploaded")
+    pipeline_lock = None
+    if PIPELINE_LOCK_ENABLED:
+        from backend.integrations.redis.lock import RedisLock
+        pipeline_lock = RedisLock(f"case:{case_id}:pipeline_lock")
+        if not pipeline_lock.acquire():
+            raise HTTPException(status_code=409, detail="Document pipeline is already processing")
+
     meta = get_case_job(case_id)
+    if meta.get("status") == STATUS_PROCESSING:
+        if pipeline_lock:
+            pipeline_lock.release()
+        raise HTTPException(status_code=409, detail="Document pipeline is already processing")
     existing_files = meta.get("files", [])
-    start_idx = len(existing_files)
+    # Next doc_id follows the highest existing number, not the list length:
+    # gaps from removed documents must never collide with surviving doc_ids.
+    start_idx = max(
+        (int(str(f.get("doc_id", "DOC_000")).split("_")[1]) for f in existing_files),
+        default=0,
+    )
 
     case_dir = get_case_dir(case_id)
 
@@ -405,7 +456,38 @@ async def upload_more_documents(
     add_files_to_case(case_id, saved)
     append_log(case_id, f"Uploaded {len(saved)} additional file(s) — total docs is now {new_total}")
 
-    return {"case_id": case_id, "files": saved, "total_docs": new_total}
+    # Carry an explicit user-selected skipped transaction through document
+    # processing so finalization can queue a transaction-scoped retry.
+    if transaction_id:
+        from backend.database.repositories import agent_repo
+        memory = agent_repo.get_agent_memory(case_id) or {}
+        memory["evidence_retry_tx_id"] = transaction_id
+        agent_repo.save_agent_memory(case_id=case_id, memory=memory)
+    else:
+        from backend.database.repositories import agent_repo
+        memory = agent_repo.get_agent_memory(case_id) or {}
+        if memory.pop("evidence_retry_tx_id", None):
+            agent_repo.save_agent_memory(case_id=case_id, memory=memory)
+
+    set_case_status(case_id, STATUS_PROCESSING)
+    try:
+        start_case_pipeline(case_id)
+    except Exception as e:
+        if pipeline_lock:
+            pipeline_lock.release()
+        if transaction_id:
+            try:
+                from backend.database.repositories import agent_repo
+                memory = agent_repo.get_agent_memory(case_id) or {}
+                memory.pop("evidence_retry_tx_id", None)
+                agent_repo.save_agent_memory(case_id=case_id, memory=memory)
+            except Exception as clear_error:
+                logger.warning("Failed to clear transaction retry marker for %s: %s", case_id, clear_error)
+        set_case_status(case_id, STATUS_FAILED)
+        append_log(case_id, f"FATAL: Failed to start uploaded-document pipeline — {e}")
+        raise HTTPException(status_code=500, detail="Could not process the uploaded document")
+
+    return {"case_id": case_id, "files": saved, "total_docs": new_total, "status": STATUS_PROCESSING}
 
 
 @router.post("/case/{case_id}/doc/{doc_id}/replace")
@@ -432,6 +514,7 @@ async def replace_document_endpoint(
         filename=filename,
         file_paths={"raw": str(dest)},
     )
+    update_file_in_case(case_id, doc_id, str(dest), filename)
     append_log(case_id, f"[{doc_id}] Document replaced — pending retry")
     return {"case_id": case_id, "doc_id": doc_id, "status": "replaced"}
 
@@ -456,9 +539,7 @@ async def skip_document_endpoint(
         if d.get("status") in ("failed", "classification_failed")
     ]
     if not unresolved:
-        from backend.workers.title_chain_tasks import run_case_analysis_task
-        run_case_analysis_task.apply_async(args=[case_id])
-        append_log(case_id, "── All documents resolved — running title chain + verification ──")
+        append_log(case_id, "-- All documents resolved — OCR and extraction phase complete --")
 
     return {"case_id": case_id, "doc_id": doc_id, "status": "skipped"}
 
@@ -467,7 +548,7 @@ async def skip_document_endpoint(
 async def get_doc_pdf(case_id: str, doc_id: str, user: dict | None = Depends(get_optional_user)):
     """Serve the original uploaded PDF for a document."""
     _enforce_access(case_id, user)
-    from backend.database.repositories.document_repo import get_case_documents
+    from backend.database.repositories.document_repo import get_case_documents, resolve_legacy_pdf_path
     docs = get_case_documents(case_id)
     doc = next((d for d in docs if d["doc_id"] == doc_id), None)
     if not doc:
@@ -475,9 +556,11 @@ async def get_doc_pdf(case_id: str, doc_id: str, user: dict | None = Depends(get
     paths = doc.get("file_paths") or {}
     raw_path = paths.get("raw")
     if not raw_path:
+        raw_path = resolve_legacy_pdf_path(case_id, doc_id)
+    if not raw_path:
         raise HTTPException(status_code=404, detail="PDF file not found")
     from pathlib import Path
     pdf = Path(raw_path)
     if not pdf.is_file():
         raise HTTPException(status_code=404, detail="PDF file missing on disk")
-    return FileResponse(str(pdf), media_type="application/pdf", filename=doc.get("filename", f"{doc_id}.pdf"))
+    return FileResponse(str(pdf), media_type="application/pdf", filename=pdf.name)

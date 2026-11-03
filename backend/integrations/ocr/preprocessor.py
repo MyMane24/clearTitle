@@ -16,7 +16,7 @@ import fitz  # PyMuPDF
 import numpy as np
 from PIL import Image
 
-# ── Constants ──────────────────────────────────────────────────────────────────
+# -- Constants ------------------------------------------------------------------
 TARGET_DPI    = 200                # Sarvam works best at 150-200 DPI
 RENDER_MATRIX = fitz.Matrix(TARGET_DPI / 72, TARGET_DPI / 72)
 

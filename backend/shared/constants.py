@@ -3,7 +3,7 @@
 Extracted verbatim from `backend/constants.py`.
 """
 
-# ── Document types ──────────────────────────────────────────────────────────
+# -- Document types ----------------------------------------------------------
 
 SALE_DEED = "SALE_DEED"
 GIFT_DEED = "GIFT_DEED"
@@ -28,7 +28,7 @@ BUILDING_LICENSE = "BUILDING_LICENSE"
 COMPLETION_CERTIFICATE = "COMPLETION_CERTIFICATE"
 UNKNOWN_DOC = "UNKNOWN"
 
-# ── Pipeline statuses ───────────────────────────────────────────────────────
+# -- Pipeline statuses -------------------------------------------------------
 
 STATUS_PROCESSING = "processing"
 STATUS_PREPROCESSED = "preprocessed"

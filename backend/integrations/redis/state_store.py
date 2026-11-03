@@ -29,7 +29,7 @@ from backend.database.repositories.verification_repo import (
 )
 from backend.integrations.redis.client import get_redis as _get_client
 
-# ── Key helpers ──────────────────────────────────────────────────────────────────
+# -- Key helpers ------------------------------------------------------------------
 
 def _meta_key(case_id: str) -> str:
     return f"case:{case_id}:meta"
@@ -44,7 +44,7 @@ def _docs_status_key(case_id: str) -> str:
     return f"case:{case_id}:docs"
 
 
-# ── Case-level operations ────────────────────────────────────────────────────────
+# -- Case-level operations --------------------------------------------------------
 
 def case_exists(case_id: str) -> bool:
     try:
@@ -313,7 +313,7 @@ def get_done_count(case_id: str) -> int:
 
 
 
-# ── Single-case delete ────────────────────────────────────────────────────────────
+# -- Single-case delete ------------------------------------------------------------
 
 def delete_case(case_id: str) -> int:
     """Delete all Redis cache keys for a single case. Returns count of keys deleted."""
@@ -335,28 +335,7 @@ def delete_case(case_id: str) -> int:
         return 0
 
 
-# ── Full flush ────────────────────────────────────────────────────────────────────
-
-def flush_all_cases() -> int:
-    """Delete ALL case:* keys from the Redis cache. Returns count of keys deleted."""
-    try:
-        r = _get_client()
-        count = 0
-        cursor = 0
-        while True:
-            cursor, keys = r.scan(cursor=cursor, match="case:*", count=100)
-            if keys:
-                r.delete(*keys)
-                count += len(keys)
-            if cursor == 0:
-                break
-        return count
-    except Exception as e:
-        print(f"Failed to flush Redis cache: {e}")
-        return 0
-
-
-# ── Reset / cleanup ──────────────────────────────────────────────────────────────
+# -- Reset / cleanup --------------------------------------------------------------
 
 def reset_for_retry(case_id: str) -> None:
     """Reset for a retry run — MySQL status becomes 'processing'; Redis cache cleared."""
@@ -374,7 +353,7 @@ def reset_for_retry(case_id: str) -> None:
         print(f"Failed to reset Redis cache for case {case_id}: {e}")
 
 
-# ── Full job snapshot (for status endpoint) ──────────────────────────────────────
+# -- Full job snapshot (for status endpoint) --------------------------------------
 
 def get_case_job(case_id: str) -> dict:
     """Return a dict matching the old JOBS[case_id] format for frontend compat.

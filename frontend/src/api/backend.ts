@@ -12,8 +12,11 @@ export function setToken(token: string | null): void {
 export interface HealthStatus {
   status: string;
   sarvam_key: boolean;
-  groq_key: boolean;
+  openai_key: boolean;
   gemini_key: boolean;
+  agent_provider: string;
+  agent_provider_key: boolean;
+  max_upload_size_mb?: number;
 }
 
 export interface AuthUser {
@@ -51,7 +54,7 @@ export interface StatusResponse {
   results?: any[];
   errors?: any[];
   needs_action?: any[];
-  files?: { doc_id: string; original_name: string; status: string; document_type: string }[];
+  files?: { doc_id: string; original_name: string; status: string; document_type: string; error?: string }[];
 }
 
 export interface CaseListItem {
@@ -86,11 +89,63 @@ export interface OcrTextResponse {
   documents: OcrDocText[];
 }
 
+export interface AgentMissingDoc {
+  document_type: string;
+  reason?: string;
+  for_transaction?: string;
+}
+
+export interface AgentTransaction {
+  tx_id: string;
+  sequence: number;
+  status: string;
+  summary: string;
+  transaction_metadata?: Record<string, unknown>;
+  required_documents: AgentMissingDoc[];
+  reviewed_document_ids: string[];
+  verified_at: string | null;
+  schema_version: string;
+  findings: { title: string; details: string; evidence: { doc_id: string; pages?: string | null }[] }[];
+}
+
+export interface TitleChainTransaction {
+  tx_id?: string;
+  sequence?: number;
+  date?: string | null;
+  type?: string | null;
+  parties?: string | null;
+  property?: string | null;
+  registration_reference?: string | null;
+  explanation?: string | null;
+  status?: string | null;
+  uncertainty?: string[];
+  inferred?: boolean;
+}
+
 export interface TitleChainEntry {
+  tx_id?: string;
+  sequence?: number;
+  document_type?: string | null;
+  transaction_type?: string | null;
+  executed_date?: string | null;
+  registration_number?: string | null;
+  registration_date?: string | null;
+  vendors?: any[];
+  purchasers?: any[];
+  survey_number?: string | null;
+  plot_number?: string | null;
+  site_flat_number?: string | null;
+  property_location?: string | null;
+  market_value?: string | null;
+  consideration?: string | null;
+  schedule_property?: string | null;
+  conveyed_portion?: string | null;
+  source_doc_ids?: string[];
+  inferred?: boolean;
+  uncertainty?: string[];
   transaction_index?: number | null;
   execution_date?: string | null;
   registration_reference?: string | null;
-  transaction_type?: string | null;
   parties?: any;
   financials?: any;
   property_details?: any;
@@ -105,13 +160,18 @@ export interface TitleChainEntry {
   explanation?: string | null;
 }
 
-export interface VerificationItem {
-  field?: string;
-  sd_value?: unknown;
-  ec_value?: unknown;
-  khata_value?: unknown;
-  status: "VERIFIED" | "NOT_VERIFIED" | "N/A" | string;
-  notes?: string;
+export interface AgentReport {
+  status: string;
+  stage?: string | null;
+  property_identity?: unknown;
+  title_chain_graph?: string;
+  title_chain?: unknown;
+  paused_transaction?: string | null;
+  next_action?: string | null;
+  overall_status?: string | null;
+  transactions?: AgentTransaction[];
+  updated_at?: string | null;
+  skipped_tx_ids?: string[];
 }
 
 export interface CaseResults {
@@ -128,32 +188,7 @@ export interface CaseResults {
   };
   documents: any[];
   needs_action?: any[];
-  title_chain: {
-    status?: string;
-    chain: TitleChainEntry[];
-    title_story?: string | null;
-    model_used?: string;
-    updated_at?: string;
-    source?: {
-      title_story?: string | null;
-      sd_property?: any;
-      message?: string | null;
-      required_documents?: Array<{
-        date?: string | null;
-        instrument_event?: string | null;
-        parties_effect?: string | null;
-        required_docs?: string | null;
-      }>;
-    } | null;
-  } | null;
-  verification: {
-    status?: string;
-    verdict?: string;
-    summary?: any;
-    items: VerificationItem[];
-    model_used?: string;
-    updated_at?: string;
-  } | null;
+  agent: AgentReport;
 }
 
 async function apiError(response: Response, fallback = "Request failed"): Promise<string> {
@@ -186,10 +221,10 @@ export const API = {
   async health(): Promise<HealthStatus> {
     try {
       const r = await fetch("/health");
-      if (!r.ok) return { status: "error", sarvam_key: false, groq_key: false, gemini_key: false };
+      if (!r.ok) return { status: "error", sarvam_key: false, openai_key: false, gemini_key: false, agent_provider: "openai", agent_provider_key: false };
       return r.json();
     } catch {
-      return { status: "error", sarvam_key: false, groq_key: false, gemini_key: false };
+      return { status: "error", sarvam_key: false, openai_key: false, gemini_key: false, agent_provider: "openai", agent_provider_key: false };
     }
   },
 
@@ -220,9 +255,10 @@ export const API = {
     return request<UploadResponse>("/api/upload", { method: "POST", body: fd });
   },
 
-  async uploadMore(caseId: string, files: File[]): Promise<UploadResponse> {
+  async uploadMore(caseId: string, files: File[], transactionId?: string): Promise<UploadResponse> {
     const fd = new FormData();
     files.forEach(f => fd.append("files", f));
+    if (transactionId) fd.append("transaction_id", transactionId);
     return request<UploadResponse>(`/api/case/${caseId}/upload`, { method: "POST", body: fd });
   },
 
@@ -260,6 +296,10 @@ export const API = {
     return request(`/api/case/${caseId}/link`, { method: "POST" });
   },
 
+  async skipAgentTransaction(caseId: string, txRef: string): Promise<{ case_id: string; status: string }> {
+    return request(`/api/results/${caseId}/agent/skip/${txRef}`, { method: "POST" });
+  },
+
   async listCases(): Promise<CasesResponse> {
     try {
       return await request<CasesResponse>("/api/cases");
@@ -278,13 +318,5 @@ export const API = {
 
   async analyze(caseId: string): Promise<{ case_id: string; status: string }> {
     return request(`/api/results/${caseId}/analyze`, { method: "POST" });
-  },
-
-  async reverify(caseId: string): Promise<{ case_id: string; status: string }> {
-    return request(`/api/results/${caseId}/verify`, { method: "POST" });
-  },
-
-  async rerunTitleChain(caseId: string): Promise<{ case_id: string; status: string }> {
-    return request(`/api/results/${caseId}/title-chain`, { method: "POST" });
   },
 };

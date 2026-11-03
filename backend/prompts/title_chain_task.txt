@@ -1,0 +1,125 @@
+Build Phase A for this case.
+
+First review the complete list of uploaded document IDs and their saved summaries.
+Identify the latest sale deed(s) and establish the target property from their
+merged OCR. If no sale deed is supplied, use the latest supported conveyance as a
+provisional endpoint and state the limitation rather than asserting a current
+owner. Then inspect the EC and include only entries whose property schedule
+is relevant to that target. Trace the target property's ownership backward
+through relevant instruments, recitals, mutations, and other uploaded evidence.
+Fetch OCR in chunks where necessary; continue until each relevant document has
+been examined sufficiently. Consider every document summary, but do not assume
+every document belongs in this property's chain. Trace the chain as far back as
+the uploaded evidence supports; title investigation practice expects roughly the
+last 30 years to be covered, so when the documents do not reach that far, record
+the earliest supported root explicitly as the chain limit — keep it as the first
+chain item and state in its summary points that earlier records were not
+available — rather than inventing earlier links.
+
+Before saving, verify the last title_chain item against the latest sale deed
+identified from the uploaded summaries and its merged OCR. The final item MUST
+represent that latest sale, cite that deed, include its explicit
+registration/instrument number and execution date when stated, and end with its
+documented purchaser(s) as current owner(s). Do not stop at the prior owner's
+purchase. Check that the graph also ends at those purchaser(s). If the latest deed
+is duplicated in the uploads, use the clearest OCR source and cite the document
+ID(s) actually examined. Consolidate duplicate copies of the same registered
+instrument into one chain item; never list the same registration number twice.
+
+Track the property type conveyed by each link - agricultural or open plot,
+building, apartment, commercial or other - from the instrument and the EC
+property schedule. When a later transfer conveys a different type than the
+property conveyed by the earlier links (for example a plot conveyed and later a
+building constructed on it before the building sale), record the type change on
+that later transaction and keep each type on its own chain item.
+
+CRITICAL CHAIN COMPLETENESS RULE: Every distinct ownership-changing link that
+the evidence reports as part of the target property's chain must be its own
+title_chain item and its own graph step, including links reported only in a later
+deed's recital. Do not bury a prior sale, inheritance, succession, or partition
+inside the summary points of a later deed. For a recital-only link, use the
+recital document as source, set evidence_status to recital_reported, and use null
+for unavailable dates or instrument numbers. For succession/inheritance links,
+do not place the deceased owner's reported date of death in `executed_date`;
+leave that field null unless an actual succession instrument has a stated
+execution date. Keep the death date in the factual summary instead. Keep the links in supported
+chronological order; do not invent missing facts to fill the gaps.
+Keep the result compact enough for one valid tool call. In summary_points, write
+plain-language sentences, one fact per point, with no field labels such as
+"Seller:" or "Consideration:", and use a short numbered list inside a point only
+for a long list of people. Do not put source references or filenames in
+summary_points; keep source_refs separate at the transaction or event level,
+using only doc_id and filename for audit. Preserve all material details without
+repeating the graph or property identity. During each period between ownership
+links, inspect relevant uploaded documents for property-related events (for
+example conversion orders, mortgages, construction or allocation records,
+permissions, and other dated developments); include relevant findings as
+related_events with their dates and plain-language points, and exclude unrelated
+records.
+
+Use the EC to discover and order relevant transfers/encumbrances, then represent
+each transfer directly as its own title_chain item and each non-transfer
+encumbrance as a related_event. In summary_points and the graph, state the
+transaction/event itself; do not phrase it as "the EC lists/records/shows" or
+label it an "EC entry." Keep the EC citation only in source_refs as Phase A audit
+provenance; Phase B will verify the underlying instrument and supporting records.
+
+The graph and the structured title_chain list MUST both be chronological from
+the earliest supported root first, forward through each ownership link, and end
+with the current/latest owner and property. Do not jumble entries or reverse this
+order. Draw a connected, vertical ASCII ownership graph in the style of the
+provided example, with parties/property nodes and dated deed/event labels between
+them.
+
+Use this visual pattern, replacing the labels with case evidence and keeping the
+direction root-to-current:
+
+EARLIEST OWNER(S) / ROOT
+        │
+        │ Earlier documented transfer or succession
+        ▼
+PRIOR OWNER(S)
+        │
+        │ Latest Sale Deed — date / registration reference
+        ▼
+CURRENT OWNER(S)
+
+Save one result object with these fields:
+
+{
+  "property_identity": {
+    "details": [{"label": "...", "value": "...", "source_refs": [{"doc_id": "...", "passage": "..."}]}]
+  },
+  "title_chain_graph": "A connected vertical ASCII graph, earliest supported root at top and current/latest owner at bottom",
+  "title_chain": [
+    {
+     "chain_position": 1,
+     "documented_transaction": {
+        "transaction_number": "registration / instrument number when stated, otherwise null",
+        "transaction_type": "document-supported transaction label",
+        "executed_date": "as stated in the document, or null when absent",
+         "summary_points": ["Vijayabai died on 13 January 1981.", "Her daughters Meena and Sharmila succeeded her."],
+         "source_refs": [{"doc_id": "...", "filename": "sale_deed_2012.pdf"}],
+        "evidence_status": "original_document_seen | corroborated | recital_reported"
+      },
+      "related_events": [
+        {"type": "non-transfer event label", "summary_points": ["The 1987 conversion order changed the property to non-agricultural use."], "source_refs": [{"doc_id": "...", "filename": "conversion_order.pdf"}]}
+      ]
+    }
+  ]
+}
+
+For each documented transaction, populate transaction_number only from an
+explicit registration / instrument number; otherwise use null. Include
+transaction_type, executed_date (null if absent), and concise summary_points.
+Use a plain transaction label such as "Sale", "Gift", or "Partition" for
+transaction_type; never add provenance or availability notes such as "EC entry",
+"instrument not supplied", or "reported in EC" to the transaction type — use
+evidence_status and source_refs for Phase A provenance. In summary_points, state
+the supported parties and their roles naturally, describe the property/schedule
+and important terms, include consideration when stated, and explain material
+events or discrepancies. Do not add unresolved fields to property_identity or
+title_chain entries.
+Do not create a title-story or chain-summary field. Do not output unsupported
+events or document IDs. Do not include raw OCR, long quotations, or transaction
+details in the graph that are already present in title_chain.

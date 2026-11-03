@@ -27,6 +27,10 @@ OUTPUT_LANGUAGE = "kn-IN"          # Kannada + English
 OUTPUT_FORMAT   = "md"
 
 
+def _is_insufficient_credits(error: Exception) -> bool:
+    return "insufficient credits" in str(error).casefold()
+
+
 @dataclass
 class ChunkResult:
     chunk_index: int
@@ -128,6 +132,8 @@ def _process_single_pdf(client, pdf_path: Path, chunk_idx: int,
 
         except Exception as e:
             last_err = e
+            if _is_insufficient_credits(e):
+                break
             if attempt < MAX_RETRIES - 1:
                 time.sleep(RETRY_DELAYS[attempt])
 
@@ -215,6 +221,8 @@ def _send_zip(client, zip_path: Path, chunk_idx: int,
 
         except Exception as e:
             last_err = e
+            if _is_insufficient_credits(e):
+                break
             if attempt < MAX_RETRIES - 1:
                 time.sleep(RETRY_DELAYS[attempt])
 
