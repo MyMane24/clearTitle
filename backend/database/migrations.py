@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS title_chains (
 CREATE TABLE IF NOT EXISTS case_results (
     case_id VARCHAR(32) NOT NULL,
     case_result JSON NULL,
+    final_report JSON NULL,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (case_id)
@@ -162,6 +163,9 @@ def ensure_tables():
             ("title_chains", "title_chain_graph", "ALTER TABLE title_chains ADD COLUMN title_chain_graph LONGTEXT NULL"),
             ("title_chains", "detailed_chain", "ALTER TABLE title_chains ADD COLUMN detailed_chain JSON NULL"),
             ("case_memory", "case_memory", "ALTER TABLE case_memory ADD COLUMN case_memory LONGTEXT NULL"),
+            # Generated final property title audit report (PDF lives on disk;
+            # the JSON column holds the report document and traceability).
+            ("case_results", "final_report", "ALTER TABLE case_results ADD COLUMN final_report JSON NULL"),
         ]:
             _, _, sql = col_def
             try:

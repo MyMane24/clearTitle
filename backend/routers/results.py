@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 
 from backend.database.repositories.case_repo import get_case_owner
 from backend.logger import get_logger
 from backend.services.auth import get_optional_user
+from backend.services.final_report import (
+    FinalReportMissing,
+    MalformedCaseResultError,
+    NoCaseResult,
+    ReportSynthesisError,
+)
 from backend.services.results import build_case_results
 
 router = APIRouter()
@@ -107,3 +113,58 @@ async def get_case_ocr(case_id: str, user: dict | None = Depends(get_optional_us
         result.append(entry)
 
     return {"case_id": case_id, "documents": result}
+
+
+@router.get("/results/{case_id}/final-report")
+async def get_final_report_state(case_id: str, user: dict | None = Depends(get_optional_user)):
+    """Final-report readiness plus the state of any generated report."""
+    _enforce_access(case_id, user)
+    try:
+        from backend.services.final_report import get_report_state
+        return get_report_state(case_id)
+    except MalformedCaseResultError:
+        raise HTTPException(status_code=400, detail="Case result data is malformed")
+    except NoCaseResult:
+        raise HTTPException(status_code=404, detail="No verification results for this case yet")
+
+
+@router.post("/results/{case_id}/final-report/generate")
+async def generate_final_report(case_id: str, user: dict | None = Depends(get_optional_user)):
+    """Generate the final report after re-checking readiness inside the case lock."""
+    _enforce_access(case_id, user)
+    try:
+        from backend.services import final_report as final_report_service
+        from backend.integrations.llm.agent_llm import AgentLLMError
+        try:
+            outcome = final_report_service.generate_final_report(case_id)
+        except (AgentLLMError, ReportSynthesisError) as e:
+            logger.error("Final report synthesis failed for %s: %s", case_id, e)
+            raise HTTPException(status_code=502, detail="Report generation agent failed")
+    except MalformedCaseResultError:
+        raise HTTPException(status_code=400, detail="Case result data is malformed")
+    except NoCaseResult:
+        raise HTTPException(status_code=404, detail="No verification results for this case yet")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Final report generation failed for %s: %s", case_id, e)
+        raise HTTPException(status_code=500, detail="Report generation failed")
+    if outcome.get("status") == "busy":
+        raise HTTPException(status_code=409, detail="A report is already being generated for this case")
+    return outcome
+
+
+@router.get("/results/{case_id}/final-report/pdf")
+async def download_final_report(case_id: str, user: dict | None = Depends(get_optional_user)):
+    """Serve the persisted report PDF; the generation agent is never triggered here."""
+    _enforce_access(case_id, user)
+    try:
+        from backend.services.final_report import REPORT_FILENAME, stored_pdf_path
+        path = stored_pdf_path(case_id)
+    except FinalReportMissing as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{REPORT_FILENAME}"'},
+    )

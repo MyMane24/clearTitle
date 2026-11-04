@@ -204,6 +204,39 @@ async function apiError(response: Response, fallback = "Request failed"): Promis
   }
 }
 
+export interface FinalReportBlocker {
+  tx_id: string | null;
+  sequence: number | null;
+  transaction_type: string;
+  status: string;
+  required_documents: { document_type: string; reason?: string; for_transaction?: string | null }[];
+  note?: string;
+}
+
+export interface FinalReportInfo {
+  generated_at: string;
+  source_updated_at?: string;
+  stale: boolean;
+  pdf_available: boolean;
+}
+
+export interface FinalReportState {
+  case_id: string;
+  ready: boolean;
+  blockers: FinalReportBlocker[];
+  report: FinalReportInfo | null;
+}
+
+export interface FinalReportGeneration {
+  case_id: string;
+  status: "generated" | "blocked" | "busy";
+  ready?: boolean;
+  blockers?: FinalReportBlocker[];
+  generated_at?: string;
+  pdf_filename?: string;
+  report?: FinalReportInfo | null;
+}
+
 async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const headers = new Headers(opts.headers);
   const token = getToken();
@@ -310,6 +343,14 @@ export const API = {
 
   async getResults(caseId: string): Promise<CaseResults> {
     return request<CaseResults>(`/api/results/${caseId}`);
+  },
+
+  async getFinalReportState(caseId: string): Promise<FinalReportState> {
+    return request<FinalReportState>(`/api/results/${caseId}/final-report`);
+  },
+
+  async generateFinalReport(caseId: string): Promise<FinalReportGeneration> {
+    return request<FinalReportGeneration>(`/api/results/${caseId}/final-report/generate`, { method: "POST" });
   },
 
   async getOcr(caseId: string): Promise<OcrTextResponse> {

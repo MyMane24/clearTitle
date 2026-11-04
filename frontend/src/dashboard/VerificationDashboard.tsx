@@ -3,14 +3,15 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import './dashboard.css';
 import clearTitleLogo from '../assets/clearTitle.png';
 import {
-  API, AuthResponse, AuthUser, CaseListItem, CaseResults, HealthStatus,
-  StatusResponse, TitleChainEntry, getToken, setToken,
+  API, AuthResponse, AuthUser, CaseListItem, CaseResults, FinalReportBlocker,
+  FinalReportState, HealthStatus, StatusResponse, TitleChainEntry, getToken, setToken,
 } from '../api/backend';
 import { DocSummary } from './utils';
 import { PhaseAChainView } from './PhaseAResult';
 import { requirementsForPausedTransaction } from './transactionResults';
 import { TransactionResultCard } from './TransactionResultCard';
 import { EvidenceRequestDialog } from './EvidenceRequestDialog';
+import { FinalReportBlockersModal } from './FinalReportBlockersModal';
 import {
   AlertTriangle, ArrowLeft, Check, CheckCircle2,
   ChevronDown, ChevronUp, FileText, FileUp,
@@ -675,6 +676,10 @@ export function VerificationDashboard() {
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
   const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [finalReport, setFinalReport] = useState<FinalReportState | null>(null);
+  const [reportBusy, setReportBusy] = useState(false);
+  const [reportBlockers, setReportBlockers] = useState<FinalReportBlocker[] | null>(null);
+  const [reportMessage, setReportMessage] = useState<string | null>(null);
   const [evidenceUploadBusy, setEvidenceUploadBusy] = useState(false);
   const [manualUploadTxId, setManualUploadTxId] = useState<string | null>(null);
   const [evidenceUploads, setEvidenceUploads] = useState<Record<number, File | undefined>>({});
@@ -1001,6 +1006,16 @@ export function VerificationDashboard() {
     }
   };
 
+  // -- Final report (generated only on explicit user request; backend is the
+  // source of truth for readiness — the UI never decides it itself) --
+  const refreshFinalReport = async (caseId: string) => {
+    try {
+      setFinalReport(await API.getFinalReportState(caseId));
+    } catch {
+      setFinalReport(null); // no generated report yet / nothing ready
+    }
+  };
+
   const showResults = async (caseId: string) => {
     setView('results');
     sessionStorage.setItem("currentCaseId", caseId);
@@ -1009,6 +1024,7 @@ export function VerificationDashboard() {
       setResults(data);
       const docs = data.documents.filter(d => d.status === "structured");
       if (docs.length > 0) setActiveDocId(String(docs[0].doc_id));
+      void refreshFinalReport(caseId);
     } catch (e: any) {
       addLog(`✗ Failed to load results: ${e.message}`, "log-err");
     }
@@ -1018,11 +1034,14 @@ export function VerificationDashboard() {
     setCurrentCaseId(caseId);
     setActiveCaseId(caseId);
     sessionStorage.setItem("currentCaseId", caseId);
+    setFinalReport(null);
+    setReportMessage(null);
     try {
       const data = await API.getResults(caseId);
       setResults(data);
       const docs = data.documents.filter(d => d.status === "structured");
       if (docs.length > 0) setActiveDocId(String(docs[0].doc_id));
+      void refreshFinalReport(caseId);
       setView('results');
     } catch (e: any) {
       addLog(`✗ Failed to load results: ${e.message}`, "log-err");
@@ -1100,6 +1119,63 @@ export function VerificationDashboard() {
       analysisTimerRef.current = window.setTimeout(tick, POLL_MS);
     };
     await tick();
+  };
+
+  const handleGenerateFinalReport = async () => {
+    const cid = currentCaseId || caseInfo?.case_id;
+    if (!cid || reportBusy) return;
+    setReportBusy(true);
+    setReportMessage(null);
+    try {
+      const outcome = await API.generateFinalReport(cid);
+      if (outcome.status === 'blocked') {
+        setReportBlockers(outcome.blockers || []);
+      } else if (outcome.status === 'generated') {
+        setFinalReport({ case_id: cid, ready: true, blockers: [], report: outcome.report || null });
+      }
+    } catch (e: any) {
+      setReportMessage('Could not generate report: ' + (e?.message || 'unexpected error'));
+    } finally {
+      setReportBusy(false);
+    }
+  };
+
+  const fetchFinalReportPdf = async (): Promise<Blob> => {
+    const cid = currentCaseId || caseInfo?.case_id;
+    if (!cid) throw new Error('No case selected');
+    const headers: Record<string, string> = {};
+    const token = getToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const response = await fetch(`/api/results/${cid}/final-report/pdf`, { headers });
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw new Error(body?.detail || `Request failed (${response.status})`);
+    }
+    return await response.blob();
+  };
+
+  const previewFinalReportPdf = async () => {
+    try {
+      const blobUrl = URL.createObjectURL(await fetchFinalReportPdf());
+      window.open(blobUrl, '_blank');
+    } catch (error: any) {
+      alert('Could not open the final report. ' + (error?.message || ''));
+    }
+  };
+
+  const downloadFinalReportPdf = async () => {
+    try {
+      const url = URL.createObjectURL(await fetchFinalReportPdf());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'final-title-audit-report.pdf';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      alert('Could not download the final report. ' + (error?.message || ''));
+    }
   };
 
   // -- Results actions --
@@ -1359,6 +1435,12 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
           }
           skipLabel={manualUploadTxId ? 'Close' : undefined}
           submitLabel={manualUploadTxId ? 'Submit & retry verification' : undefined}
+        />
+      )}
+      {reportBlockers && (
+        <FinalReportBlockersModal
+          blockers={reportBlockers}
+          onClose={() => setReportBlockers(null)}
         />
       )}
       {/* Main Top Bar */}
@@ -1787,6 +1869,41 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                       <RefreshCw size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
                       {analyzing ? 'Analyzing…' : 'Resume Analysis'}
                     </button>
+                  </div>
+
+                  {/* Final report — generated only on explicit request; the backend
+                      decides readiness and returns blockers when work remains. */}
+                  <div style={{ marginTop: 0, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <button
+                      className="btn btn-secondary"
+                      disabled={reportBusy}
+                      onClick={handleGenerateFinalReport}
+                      title="Create the final property title audit report PDF"
+                    >
+                      <ScrollText size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+                      {reportBusy ? 'Generating…' : finalReport?.report ? 'Regenerate Final Report' : 'Generate Final Report'}
+                    </button>
+                    {finalReport?.report?.pdf_available && (
+                      <>
+                        <button className="btn btn-secondary" disabled={reportBusy} onClick={previewFinalReportPdf}>
+                          <FileText size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+                          Preview Report
+                        </button>
+                        <button className="btn btn-secondary" disabled={reportBusy} onClick={downloadFinalReportPdf}>
+                          <Download size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+                          Download Report PDF
+                        </button>
+                      </>
+                    )}
+                    {finalReport?.report?.stale && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#b45309', background: '#fffbeb', border: '1px solid #f59e0b', borderRadius: 999, padding: '4px 12px' }}>
+                        <AlertTriangle size={12} />
+                        Report is out of date — case results changed; regenerate
+                      </span>
+                    )}
+                    {reportMessage && (
+                      <span style={{ fontSize: 12, color: '#b91c1c' }}>{reportMessage}</span>
+                    )}
                   </div>
 
                   {/* Document Extractions — bottom of verification report */}
