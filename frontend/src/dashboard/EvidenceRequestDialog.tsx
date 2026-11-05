@@ -26,9 +26,7 @@ export function EvidenceRequestDialog({
   transactionId, requirements, uploads, busy, onPick, onSubmit, onSkip,
   title, submitLabel, skipLabel,
 }: Props) {
-  const slots = requirements.length ? requirements : [
-    { document_type: 'Supporting document', reason: 'Upload the PDF that supports this transaction.' },
-  ];
+  const slots = requirements;
   const chosen = slots.filter((_, i) => uploads[i]).length;
   const submitText = submitLabel || 'Submit & resume verification';
   return (

@@ -159,7 +159,9 @@ export function TransactionResultCard({
   const metadataItems = transactionMetadataItems(metadata);
   const skippedStatus = skipped || ['SKIPPED', 'SKIPPED_BY_USER'].includes(String(transaction.status).toUpperCase());
   const issuesStatus = String(transaction.status).toUpperCase() === 'ISSUES_IDENTIFIED';
-  const canUpload = Boolean(onOpenUpload && transaction.tx_id) && (skippedStatus || issuesStatus);
+  // The button exists to fill this link's own agent-listed slots; a link with
+  // no own requests (its evidence was asked on an earlier link) offers none.
+  const canUpload = Boolean(onOpenUpload && transaction.tx_id) && (skippedStatus || issuesStatus) && requirements.length > 0;
   const status = skippedStatus ? transactionStatusLabel('SKIPPED') : transactionStatusLabel(transaction.status);
   const statusClass = skippedStatus ? 'status-skipped' : `status-${String(transaction.status || 'PENDING').toLowerCase()}`;
   const report = typeof transaction.report === 'string' ? transaction.report.trim() : '';

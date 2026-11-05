@@ -25,24 +25,15 @@ test('empty or absent canonical requirements remain empty', () => {
   assert.deepEqual(requiredDocumentsForTransaction({ missing_documents: [{ document_type: 'Legacy' }] }), []);
 });
 
-test('paused modal requirements come from the paused transaction, or from earlier links it relies on', () => {
+test('paused modal requirements come only from the transaction\'s own agent list', () => {
   const transactions = [
     { tx_id: 'PA-TC-0001', required_documents: [{ document_type: 'Sale deed', reason: 'Verify transfer' }] },
-    { tx_id: 'PA-TC-0002', required_documents: [{ document_type: 'Mutation', reason: 'Verify entry' }] },
     { tx_id: 'PA-TC-0003', required_documents: [] },
   ];
-  assert.deepEqual(requirementsForPausedTransaction(transactions, 'PA-TC-0002').map(item => item.document_type), ['Mutation']);
-  // A paused transaction with no request of its own falls back to the
-  // outstanding requests of the earlier links it relies on.
-  assert.deepEqual(requirementsForPausedTransaction(transactions, 'PA-TC-0003').map(item => item.document_type), ['Sale deed', 'Mutation']);
-});
-
-test('own requests take priority over relied-upon earlier requests', () => {
-  const transactions = [
-    { tx_id: 'PA-TC-0001', required_documents: [{ document_type: 'Sale deed', reason: 'Verify transfer' }] },
-    { tx_id: 'PA-TC-0002', required_documents: [{ document_type: 'Khata', reason: 'Verify parcel records' }] },
-  ];
-  assert.deepEqual(requirementsForPausedTransaction(transactions, 'PA-TC-0002').map(item => item.document_type), ['Khata']);
+  assert.deepEqual(requirementsForPausedTransaction(transactions, 'PA-TC-0001').map(item => item.document_type), ['Sale deed']);
+  // No fallback: a transaction with no own request shows no upload slots,
+  // even when earlier links still await evidence.
+  assert.deepEqual(requirementsForPausedTransaction(transactions, 'PA-TC-0003'), []);
   assert.deepEqual(requirementsForPausedTransaction(transactions, 'PA-TC-9999'), []);
 });
 

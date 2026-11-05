@@ -118,8 +118,21 @@ test('pending result renders each actionable requirement and never claims verifi
   assert.doesNotMatch(html, /Documents cited/);
 });
 
-test('only skipped transactions show the evidence upload action', () => {
-  const skippedHtml = renderToStaticMarkup(
+test('skipped transactions offer upload only for their own agent-listed requirements', () => {
+  const skippedWithAsksHtml = renderToStaticMarkup(
+    <TransactionResultCard
+      transaction={{
+        ...base,
+        status: 'PENDING_NOT_VERIFIED',
+        required_documents: [{ document_type: 'Mutation', reason: 'Verify parcel records.' }],
+      }}
+      skipped
+      onOpenUpload={() => {}}
+    />,
+  );
+  // A skipped link with no own request (its evidence was asked on an earlier
+  // link) offers neither upload button nor evidence section.
+  const skippedWithoutAsksHtml = renderToStaticMarkup(
     <TransactionResultCard
       transaction={{ ...base, status: 'PENDING_NOT_VERIFIED' }}
       skipped
@@ -130,7 +143,8 @@ test('only skipped transactions show the evidence upload action', () => {
     <TransactionResultCard transaction={base} onOpenUpload={() => {}} />,
   );
 
-  assert.match(skippedHtml, /Upload evidence/);
+  assert.match(skippedWithAsksHtml, /Upload evidence/);
+  assert.doesNotMatch(skippedWithoutAsksHtml, /Upload evidence/);
   assert.doesNotMatch(completedHtml, /Upload evidence/);
 });
 

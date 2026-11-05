@@ -59,7 +59,7 @@ test('busy state disables every control', () => {
   assert.equal((html.match(/disabled=/g) || []).length, 5);
 });
 
-test('retry variant uses its own title, submit and cancel labels, and shows a fallback slot when no requirements', () => {
+test('retry variant uses its own title, submit and cancel labels, and never invents slots', () => {
   const retryHtml = renderToStaticMarkup(
     <EvidenceRequestDialog
       transactionId="PA-TC-0005"
@@ -89,6 +89,6 @@ test('retry variant uses its own title, submit and cancel labels, and shows a fa
       onSubmit={() => {}}
     />,
   );
-  assert.match(fallbackHtml, /Supporting document/);
+  assert.doesNotMatch(fallbackHtml, /Supporting document/);
   assert.doesNotMatch(fallbackHtml, /Skip this transaction/);
 });

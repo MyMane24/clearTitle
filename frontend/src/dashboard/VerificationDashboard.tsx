@@ -1223,9 +1223,7 @@ export function VerificationDashboard() {
     const reqs = manualUploadTxId
       ? requirementsForPausedTransaction(rawTx, manualUploadTxId)
       : pausedRequirements;
-    // Mirror the dialog's fallback slot so a transaction with no listed
-    // requirement can still receive a supporting document.
-    const slots = reqs.length ? reqs : [{ document_type: 'Supporting document' }];
+    const slots = reqs;
     const selected = slots
       .map((_: unknown, i: number) => evidenceUploads[i])
       .filter((f): f is File => !!f);
