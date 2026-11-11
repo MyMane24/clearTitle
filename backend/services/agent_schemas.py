@@ -21,6 +21,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from backend.schemas.analysis import (
+    DossierScope,
+    DocumentEvidenceReference,
+    EffectivityStatus,
+    EvidenceBasis,
+    VerificationFinding,
+)
+
 SCHEMA_VERSION = "3.0"
 
 
@@ -118,6 +126,52 @@ class TransactionVerification(BaseModel):
     cited_documents: list[CitedDocument] = Field(default_factory=list)
     verified_at: str | None = None
     schema_version: Literal["3.0"] = SCHEMA_VERSION
+    # -- dossier dimensions + versioning (Stage 3, additive; app-owned defaults) --
+    scope: DossierScope = Field(
+        default_factory=DossierScope,
+        description="Chain and context the dossier was verified against (app-assigned).",
+    )
+    effectivity_status: EffectivityStatus = EffectivityStatus.NOT_EXAMINED
+    evidence_status: EvidenceBasis = EvidenceBasis.UNDETERMINED
+    findings: list[VerificationFinding] = Field(
+        default_factory=list,
+        description="Typed dossier findings; prompt-driven from the consolidation stage onward.",
+    )
+    # -- Phase B result content (additive; prompt-driven, defaulted for legacy
+    # -- rows so the read boundary keeps validating older persisted results) --
+    executive_summary: str = Field(
+        default="",
+        description="One-sentence outcome of this verification; complements, never replaces, the report.",
+    )
+    verified_facts: list[str] = Field(
+        default_factory=list,
+        description="Short statements established by evidence examined in this dossier.",
+    )
+    unverified_facts: list[str] = Field(
+        default_factory=list,
+        description="Claims that could not be established with examined evidence.",
+    )
+    limitations: list[str] = Field(
+        default_factory=list,
+        description="Explicit verification limitations stated apart from the narrative.",
+    )
+    contradictory_evidence: list[DocumentEvidenceReference] = Field(
+        default_factory=list,
+        description="Examined references that conflict with the transaction's claims.",
+    )
+    upstream_dependencies: list[str] = Field(
+        default_factory=list,
+        description="Earlier chain transaction IDs this dossier relied on (application-supplied context).",
+    )
+    verification_metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="App-owned ledger of contract mappings/provenance recorded at save time.",
+    )
+    revision: int = Field(
+        default=1,
+        ge=1,
+        description="Application-assigned revision number; overwritten at every save.",
+    )
 
     @model_validator(mode="after")
     def check_result_invariants(self):
@@ -139,6 +193,8 @@ class TransactionVerification(BaseModel):
             citation_keys.add(key)
         if self.status == VerificationStatus.ISSUES_IDENTIFIED and not self.cited_documents:
             raise ValueError("ISSUES_IDENTIFIED requires at least one cited document")
+        if self.revision < 1:
+            raise ValueError("revision must be at least 1")
         return self
 
 
@@ -375,6 +431,15 @@ def normalize_transaction_verification(data: Any) -> dict[str, Any]:
         "verified_at": (source.get("verified_at") or None) if complete else None,
         "schema_version": SCHEMA_VERSION,
     }
+    if source.get("schema_version") == SCHEMA_VERSION:
+        # v3.0 rows keep their additive dossier fields through the read adapter.
+        for additive in (
+            "scope", "effectivity_status", "evidence_status", "findings",
+            "executive_summary", "verified_facts", "unverified_facts", "limitations",
+            "contradictory_evidence", "upstream_dependencies", "verification_metadata",
+        ):
+            if source.get(additive) is not None:
+                payload[additive] = source[additive]
     return validate_transaction_verification(payload).model_dump()
 
 

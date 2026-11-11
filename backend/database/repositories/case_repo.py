@@ -106,6 +106,14 @@ def get_case_owner(case_id: str) -> str | None:
         return row[0] if row else None
 
 
+def case_exists(case_id: str) -> bool:
+    """True when the case row exists, regardless of ownership."""
+    with _get_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM cases WHERE id = %s", (case_id,))
+        return cursor.fetchone() is not None
+
+
 def set_case_owner(*, case_id: str, user_id: str) -> bool:
     """Attach an anonymous case (user_id IS NULL) to a user.
 

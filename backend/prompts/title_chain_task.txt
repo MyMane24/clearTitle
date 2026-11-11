@@ -98,8 +98,18 @@ Save one result object with these fields:
         "transaction_number": "registration / instrument number when stated, otherwise null",
         "transaction_type": "document-supported transaction label",
         "executed_date": "as stated in the document, or null when absent",
-         "summary_points": ["Vijayabai died on 13 January 1981.", "Her daughters Meena and Sharmila succeeded her."],
-         "source_refs": [{"doc_id": "...", "filename": "sale_deed_2012.pdf"}],
+        "registration_date": "as stated in the record, or null when absent",
+        "registration_office": "stating sub-registrar office, or null when absent",
+        "transferors": ["every party conveying, name as recorded"],
+        "transferees": ["every party acquiring, name as recorded"],
+        "property_schedule": "the schedule wording, or null when absent",
+        "survey_number": null,
+        "plot_number": null,
+        "site_flat_number": null,
+        "cts_number": null,
+        "consideration": "as stated, or null when absent",
+        "summary_points": ["Vijayabai died on 13 January 1981.", "Her daughters Meena and Sharmila succeeded her."],
+        "source_refs": [{"doc_id": "...", "filename": "sale_deed_2012.pdf"}],
         "evidence_status": "original_document_seen | corroborated | recital_reported"
       },
       "related_events": [
@@ -108,6 +118,16 @@ Save one result object with these fields:
     }
   ]
 }
+
+The application itself assigns stable transaction IDs and upstream-chain links
+it stamps into the saved result; never output a tx_id or transaction
+identifier of your own. Every structured field above is filled only from what
+the cited evidence states, and stays null when absent — parties are recorded
+exactly as the instrument writes them (use [] for an unstated list, never a
+guess), one entry per named party, and each must agree with summary_points
+where both speak. For a recital-only link whose parties are only reported,
+record the reported names as stated and rely on evidence_status to mark that
+they come from the recital.
 
 For each documented transaction, populate transaction_number only from an
 explicit registration / instrument number; otherwise use null. Include

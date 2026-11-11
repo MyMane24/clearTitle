@@ -18,14 +18,18 @@ from uuid import uuid4
 
 from backend.database.repositories import agent_repo as repo
 from backend.logger import get_logger
+from backend.schemas.analysis import VerificationFinding, content_hash, is_assigned_tx_id
+from backend.services import chain_identity
 from backend.services.agent_schemas import (
     SCHEMA_VERSION,
     SchemaValidationError,
     TransactionVerification,
+    VerificationStatus,
     normalize_status,
     normalize_transaction_verification,
     validate_transaction_verification,
 )
+from pydantic import ValidationError
 
 logger = get_logger(__name__)
 
@@ -66,13 +70,15 @@ class ToolContext:
     def __init__(self, case_id: str, docs: list[dict], chain: dict | None = None,
                  current_tx_id: str | None = None, phase_a_chain: list[dict] | None = None,
                  run_id: str | None = None,
-                 fresh_reverification: bool = False):
+                 fresh_reverification: bool = False,
+                 phase_a_hash: str | None = None):
         self.case_id = case_id
         self.run_id = run_id or str(uuid4())
         self.docs = docs
         self.by_id = {d["doc_id"]: d for d in docs}
         self.chain = chain or {}
         self.phase_a_chain = phase_a_chain or []
+        self.phase_a_hash = phase_a_hash
         self.current_tx_id = current_tx_id
         self.fresh_reverification = fresh_reverification
         self.evidence_requirements: list[dict] = []
@@ -83,6 +89,7 @@ class ToolContext:
         self.document_text_cache: dict[str, str] = {}
         self.saved_phase_a_result: dict | None = None
         self.saved_results: list[dict] = []
+        self.rejected_findings: list[dict] = []
         self.missing_requests: list[dict] = []
         self.result_error: str | None = None
         self.finished = False
@@ -112,7 +119,116 @@ def _inline_refs(value: object, definitions: dict) -> object:
 def _verification_props() -> dict:
     schema = TransactionVerification.model_json_schema()
     inlined = _inline_refs(schema, schema.get("$defs", {}))
-    return {key: value for key, value in inlined.items() if key not in {"$schema", "title"}}
+    props = {key: value for key, value in inlined.items() if key not in {"$schema", "title"}}
+    for field in APP_OWNED_RESULT_FIELDS:
+        props.get("properties", {}).pop(field, None)
+        required = props.get("required") or []
+        if field in required:
+            required.remove(field)
+    return props
+
+
+# Dossier fields the persistence contract accepts but the model never supplies:
+# they are app-assigned and overwritten at save. `findings` is model-emittable
+# from the consolidation stage onward (prompt-instructed); `scope` and
+# `revision` stay app-only, always overwritten at save.
+APP_OWNED_RESULT_FIELDS = ["scope", "revision"]
+
+# Finding-level fields the application stamps (task §5): never trusted from the
+# model, always assigned when the dossier result is canonicalized.
+APP_OWNED_FINDING_FIELDS = ("finding_id", "transaction_id")
+
+
+class RegistryReadUnavailable(Exception):
+    """The strict historical read for Phase B finding-id allocation failed.
+
+    Deliberately not a SchemaValidationError: the arguments were valid — the
+    registry read (database failure, corrupt payload) is what made identity
+    assignment unsafe, and handlers translate this into a retryable abort in
+    the same shape Phase A uses.
+    """
+
+
+def _validated_findings(ctx: ToolContext, tx_id: str, payload: dict) -> list[dict]:
+    """Per-finding validation before persistence (task §6).
+
+    Accepted findings are stamped with app-owned ids and written back into
+    ``payload["findings"]``; rejected ones are excluded, logged with enough
+    context to diagnose them, and echoed in the save response so the model gets
+    a chance to correct them. One invalid finding never erases good ones.
+    """
+    raw_findings = payload.get("findings")
+    if raw_findings is None:
+        payload["findings"] = []
+        ctx.rejected_findings = []
+        return []
+    if not isinstance(raw_findings, list):
+        raise SchemaValidationError("TransactionVerification", ["findings must be a list of finding objects"])
+    accepted: list[dict] = []
+    rejected_findings: list[dict] = []
+    for index, item in enumerate(raw_findings):
+        if not isinstance(item, dict):
+            rejected_findings.append({"index": index, "issues": ["finding must be an object"]})
+            continue
+        finding = {key: value for key, value in item.items() if key not in APP_OWNED_FINDING_FIELDS}
+        if not finding.get("evidence") and not finding.get("evidence_gaps"):
+            rejected_findings.append({"index": index, "issues": [
+                "a finding without evidence references must explicitly declare its evidence_gaps "
+                "(a missing document is not itself evidence of a legal defect)"
+            ]})
+            continue
+        if finding.get("finding_id") or finding.get("transaction_id"):
+            logger.warning(
+                "finding_ids_ignored model-supplied finding_id/transaction_id stripped tx_id=%s index=%s", tx_id, index
+            )
+        try:
+            validated = VerificationFinding.model_validate(finding).model_dump()
+        except ValidationError as error:
+            issues = [
+                f"{'.'.join(str(location) for location in err['loc'])}: {err['msg']}"
+                for err in error.errors()
+            ]
+            rejected_findings.append({"index": index, "issues": issues})
+            continue
+        unknown_doc_ids = sorted({
+            str(ref.get("doc_id"))
+            for key in ("evidence", "resolution_evidence")
+            for ref in validated.get(key) or []
+            if ref.get("doc_id") and str(ref["doc_id"]) not in ctx.by_id
+        })
+        if unknown_doc_ids:
+            issues = [f"evidence cites documents outside this case: {unknown_doc_ids}"]
+            rejected_findings.append({"index": index, "issues": issues})
+            continue
+        accepted.append(validated)
+    try:
+        prior_rows = repo.list_persisted_transaction_results(ctx.case_id)
+    except Exception as error:
+        # Identity correctness needs the persisted registry: a failed or corrupt
+        # read is an unknown state and numbering against it could reissue an id
+        # another dossier already carries. Nothing has mutated or persisted yet,
+        # so the save aborts here; after the database recovers the retry
+        # reconciles finding ids against the real history.
+        logger.warning("finding_registry_unavailable case_id=%s error=%s", ctx.case_id, error)
+        raise RegistryReadUnavailable(
+            "cannot safely assign transaction finding ids: persisted transaction "
+            f"results could not be read ({error}). Nothing was saved; retry after "
+            "the database recovers — finding ids will be reconciled against the "
+            "persisted history."
+        ) from error
+    registry, used_numbers = chain_identity.finding_registry(prior_rows)
+    chain_identity.assign_finding_ids(tx_id, accepted, registry, used_numbers)
+    for finding in accepted:
+        finding["transaction_id"] = tx_id
+    payload["findings"] = accepted
+    ctx.rejected_findings = rejected_findings
+    if rejected_findings:
+        logger.warning(
+            "findings_rejected run_id=%s case_id=%s tx_id=%s count=%d (excluded from the persisted result)",
+            ctx.run_id, ctx.case_id, tx_id, len(rejected_findings),
+        )
+    return rejected_findings
+
 
 
 _LIST_DOCS = {
@@ -397,6 +513,9 @@ def _h_save_phase_a_result(ctx: ToolContext, args: dict) -> dict:
     for index, entry in enumerate(chain):
         if not isinstance(entry, dict):
             return {"error": f"result.title_chain[{index}] must be an object"}
+        # Model-supplied transaction ids are never trusted (master rule): the
+        # application assigns stable ids below, keyed on content identity.
+        entry.pop("tx_id", None)
         if entry.get("chain_position") != index + 1:
             return {"error": "title_chain must be numbered from earliest supported root to current/latest owner"}
         if "unresolved" in entry:
@@ -404,6 +523,8 @@ def _h_save_phase_a_result(ctx: ToolContext, args: dict) -> dict:
         transaction = entry.get("documented_transaction")
         if not isinstance(transaction, dict) or not transaction:
             return {"error": f"title_chain[{index}].documented_transaction must contain the open-ended transaction details"}
+        transaction.pop("tx_id", None)
+        transaction.pop("upstream_tx_ids", None)
         if not isinstance(transaction.get("transaction_type"), str) or not transaction["transaction_type"].strip():
             return {"error": f"title_chain[{index}].documented_transaction must identify the transaction_type"}
         if "executed_date" not in transaction:
@@ -418,6 +539,15 @@ def _h_save_phase_a_result(ctx: ToolContext, args: dict) -> dict:
                     "error": f"duplicate transaction_number {transaction_number!r}; merge duplicate document copies into one chronological chain entry"
                 }
             seen_transaction_numbers.add(registration_ref)
+        for field in ("transferors", "transferees"):
+            if field in transaction and transaction[field] is not None and not chain_identity._string_list_ok(transaction[field]):
+                return {"error": f"title_chain[{index}].documented_transaction.{field} must be a list of party names (or null)"}
+        for field in (
+            "registration_date", "registration_office", "property_schedule", "consideration",
+            "survey_number", "plot_number", "site_flat_number", "cts_number",
+        ):
+            if field in transaction and transaction[field] is not None and not isinstance(transaction[field], str):
+                return {"error": f"title_chain[{index}].documented_transaction.{field} must be a string or null"}
         points = transaction.get("summary_points")
         if not isinstance(points, list) or not points:
             return {"error": f"title_chain[{index}].documented_transaction.summary_points must contain plain-language facts"}
@@ -450,10 +580,49 @@ def _h_save_phase_a_result(ctx: ToolContext, args: dict) -> dict:
     unknown_ids = sorted(referenced_ids - source_ids)
     if unknown_ids:
         return {"error": "result references documents outside this case", "doc_ids": unknown_ids}
+
+    # App-owned stable identity (task §3): preserve earlier ids for entries the
+    # evidence identifies as the same transaction; everything else gets the
+    # next id unused across the case's chain and persisted transaction results,
+    # so no historical result is ever re-associated with a different transaction.
+    # Historical identity reads are strictly required: a failed read is an
+    # unknown state, not an empty one, and numbering from empty could reissue a
+    # persisted transaction's id to a different transaction. The abort happens
+    # before any mutation below (chain ids, upstream links, persistence), so
+    # nothing is saved; once the database recovers the retry reconciles ids
+    # through the normal content matcher.
+    try:
+        prior_chain = repo.get_persisted_title_chain_entries(ctx.case_id)
+        prior_rows = repo.list_persisted_transaction_results(ctx.case_id)
+    except Exception as error:
+        logger.warning("phase_a_identity_reads_failed case_id=%s error=%s", ctx.case_id, error)
+        return {
+            "error": (
+                "cannot safely assign transaction ids: historical identity state "
+                f"could not be read ({error}). Nothing was saved; no chain or "
+                "verification result was written. Retry after the database "
+                "recovers — ids will then be reconciled against the persisted history."
+            ),
+            "retryable": True,
+        }
+    taken_ids = {
+        str(item.get("tx_id"))
+        for item in prior_rows
+        if isinstance(item, dict) and is_assigned_tx_id(item.get("tx_id"))
+    }
+    identity_notes = chain_identity.assign_chain_tx_ids(chain, prior_chain, taken_ids)
+    identity_notes += chain_identity.attach_upstream_ids(chain)
+    if identity_notes:
+        logger.info("phase_a_identity_assignment case_id=%s notes=%s", ctx.case_id, identity_notes)
+
     repo.save_phase_a_result(case_id=ctx.case_id, result=result)
     ctx.saved_phase_a_result = result
     ctx.finished = True
-    return {"saved": True}
+    return {
+        "saved": True,
+        "transaction_ids": [entry.get("tx_id") for entry in chain],
+        "identity_notes": identity_notes,
+    }
 
 
 def _collect_document_ids(value) -> set[str]:
@@ -485,7 +654,8 @@ def _h_list_transactions(ctx: ToolContext, args: dict) -> dict:
     return {"transactions": [
         {"tx_id": t.get("tx_id"), "sequence": t.get("sequence"),
          "type": t.get("transaction_type"), "executed_date": t.get("executed_date"),
-         "vendors": t.get("vendors"), "purchasers": t.get("purchasers")}
+         "vendors": t.get("transferors") or t.get("vendors"),
+         "purchasers": t.get("transferees") or t.get("purchasers")}
         for t in (ctx.chain or {}).get("transactions") or []
     ]}
 
@@ -632,6 +802,11 @@ def _upstream_chain_context(case_id: str, phase_a_chain: list[dict], sequence: i
     progress, or carries a non-terminal verification checkpoint.
     """
     unverified = []
+    index: dict[tuple[str, str, str], str] = {}
+    try:
+        index = repo.requirement_ids_index(case_id)
+    except Exception:
+        logger.warning("requirement id index unavailable for %s (non-fatal)", case_id)
     for entry in phase_a_chain or []:
         entry_sequence = int(entry.get("chain_position") or entry.get("sequence") or 0)
         if not entry_sequence or entry_sequence >= sequence:
@@ -645,13 +820,20 @@ def _upstream_chain_context(case_id: str, phase_a_chain: list[dict], sequence: i
             and not checkpoint
         ):
             continue
+        missing = [
+            {"document_type": item.get("document_type"), "reason": item.get("reason")}
+            for item in (result.get("required_documents") or []) if isinstance(item, dict)
+        ]
+        for item in missing:
+            requirement_id = index.get(repo.requirement_content_key(
+                upstream_id, item.get("document_type"), item.get("reason")
+            ))
+            if requirement_id:
+                item["requirement_id"] = requirement_id
         unverified.append({
             "tx_id": upstream_id,
             "status": status,
-            "missing": [
-                {"document_type": item.get("document_type"), "reason": item.get("reason")}
-                for item in (result.get("required_documents") or []) if isinstance(item, dict)
-            ],
+            "missing": missing,
         })
     return {"upstream_unverified": unverified}
 
@@ -862,10 +1044,42 @@ def _canonical_verification(ctx: ToolContext, args: dict, *, force_pending: bool
     } else None
     payload["schema_version"] = SCHEMA_VERSION
     # Missing fields on a partial tool call inherit prior verified state; explicit
-    # empty arrays are respected as deliberate updates.
+    # empty arrays are respected as deliberate updates. Completed updates also
+    # inherit the prior dossier's observations and result content when omitted;
+    # pending checkpoints (request_missing_documents) never carry findings.
     for key in ("cited_documents", "required_documents"):
         if key not in args and key in previous:
             payload[key] = previous[key]
+    if not force_pending and normalize_status(status) not in {
+        VerificationStatus.PENDING_NOT_VERIFIED.value,
+        VerificationStatus.PENDING.value,
+        VerificationStatus.IN_PROGRESS.value,
+    }:
+        for content_key in (
+            "findings", "executive_summary", "verified_facts", "unverified_facts",
+            "limitations", "contradictory_evidence",
+        ):
+            if content_key not in args and previous.get(content_key):
+                payload[content_key] = previous[content_key]
+    # Case-membership gate for contradictory evidence (review defect 2): every
+    # reference — model-supplied or inherited above — must cite a document in
+    # this case. Rejected hard instead of silently persisting a foreign id;
+    # structural validity of each ref is enforced by the canonical contract
+    # validation below.
+    contradictory_refs = payload.get("contradictory_evidence")
+    if contradictory_refs:
+        case_doc_ids = set(ctx.by_id)
+        foreign_ids = sorted({
+            str(ref.get("doc_id"))
+            for ref in contradictory_refs
+            if isinstance(ref, dict) and ref.get("doc_id") and str(ref.get("doc_id")) not in case_doc_ids
+        })
+        if foreign_ids:
+            raise SchemaValidationError("TransactionVerification", [
+                f"contradictory_evidence cites documents outside this case: {foreign_ids}; "
+                "nothing was saved",
+                "set contradictory_evidence to [] to clear inherited references that no longer apply",
+            ])
     for requirement in payload.get("required_documents") or []:
         owner_tx_id = requirement.get("for_transaction")
         if owner_tx_id and owner_tx_id != tx_id:
@@ -922,6 +1136,27 @@ def _canonical_verification(ctx: ToolContext, args: dict, *, force_pending: bool
             )
     if isinstance(payload.get("required_documents"), list):
         payload["required_documents"] = _dedupe(payload["required_documents"], requirement=True)
+    # Dossier evidence relationships to the chain it verified: every earlier
+    # chain link's stable id (application-supplied context, not model data).
+    payload["upstream_dependencies"] = []
+    for entry in ctx.phase_a_chain:
+        position = int(entry.get("chain_position") or 0)
+        if position and position < expected_sequence:
+            payload["upstream_dependencies"].append(
+                str(entry.get("tx_id") or f"PA-TC-{position:04d}")
+            )
+    # -- typed findings: per-finding validation before persistence. Invalid ones
+    # -- are excluded from the saved result (logged here, reported back in the
+    # -- save response) so one bad observation can never destroy good ones.
+    _validated_findings(ctx, tx_id, payload)
+    # Scope is application data (what this dossier was verified against); any
+    # model-supplied value is overwritten here (master rule: app owns all IDs
+    # and state).
+    chain_context = (payload.get("transaction_metadata") or {}).get("chain_context")
+    payload["scope"] = {
+        "phase_a_hash": ctx.phase_a_hash or None,
+        "chain_context_hash": content_hash(chain_context) if chain_context else None,
+    }
     validated = validate_transaction_verification(payload)
     return validated.model_dump()
 
@@ -939,9 +1174,9 @@ def _current_transaction_metadata(ctx: ToolContext, tx_id: str) -> dict:
     metadata = {
         key: transaction.get(key) for key in (
             "transaction_type", "executed_date", "registration_number", "registration_date",
-            "transaction_number", "vendors", "purchasers", "survey_number", "plot_number",
-            "site_flat_number", "property_location", "schedule_property", "conveyed_portion",
-            "chain_position", "is_current_owner_transaction",
+            "registration_office", "consideration", "transaction_number", "vendors", "purchasers",
+            "survey_number", "plot_number", "site_flat_number", "property_location", "schedule_property",
+            "conveyed_portion", "chain_position", "is_current_owner_transaction",
         ) if transaction.get(key) is not None
     }
     if isinstance(metadata.get("transaction_type"), str):
@@ -951,6 +1186,15 @@ def _current_transaction_metadata(ctx: ToolContext, tx_id: str) -> dict:
             metadata["transaction_type"],
             flags=re.IGNORECASE,
         ).strip()
+    if not metadata.get("vendors") or not metadata.get("purchasers"):
+        # Canonical structured parties (task §4) fill the API-facing legacy keys
+        # before any prose parsing is attempted.
+        for canonical, legacy in (("transferors", "vendors"), ("transferees", "purchasers")):
+            names = transaction.get(canonical)
+            if not metadata.get(legacy) and isinstance(names, list):
+                cleaned = [str(name).strip() for name in names if str(name or "").strip()]
+                if cleaned:
+                    metadata[legacy] = cleaned
     if not metadata.get("vendors") or not metadata.get("purchasers"):
         for point in transaction.get("summary_points") or []:
             match = re.match(
@@ -1002,6 +1246,9 @@ def _h_save_transaction_result(ctx: ToolContext, args: dict) -> dict:
     except SchemaValidationError as e:
         ctx.result_error = str(e)
         return {"error": f"invalid transaction result: {e}", "issues": e.errors}
+    except RegistryReadUnavailable as e:
+        ctx.result_error = str(e)
+        return {"error": str(e), "retryable": True}
     try:
         logger.info("agent_result_persist_attempt run_id=%s tx_id=%s", ctx.run_id, tx_id)
         repo.save_transaction_result(case_id=ctx.case_id, tx_id=tx_id, verification=payload)
@@ -1019,18 +1266,16 @@ def _h_save_transaction_result(ctx: ToolContext, args: dict) -> dict:
     # model turn asking it to finish or allowing it to reopen the investigation.
     ctx.finished = True
     missing_documents = payload.get("required_documents") or []
+    response = {"saved": True, "tx_id": tx_id, "status": payload["status"]}
     if payload["status"] == "PENDING_NOT_VERIFIED" and missing_documents:
         # Models may save a pending result directly instead of calling the
         # explicit missing-document tool. Either representation must pause this
         # transaction so the UI never advances past an unserved evidence request.
         ctx.missing_requests.append({"tx_id": tx_id, "documents": missing_documents})
-        return {
-            "saved": True,
-            "paused": True,
-            "tx_id": tx_id,
-            "required_documents": missing_documents,
-        }
-    return {"saved": True, "tx_id": tx_id, "status": payload["status"]}
+        response = {"saved": True, "paused": True, "tx_id": tx_id, "required_documents": missing_documents}
+    if ctx.rejected_findings:
+        response["rejected_findings"] = ctx.rejected_findings
+    return response
 
 
 def _h_request_missing(ctx: ToolContext, args: dict) -> dict:

@@ -22,6 +22,26 @@ def _should_start_agent(docs: list[dict], memory: dict) -> bool:
     return has_structured_documents or has_pending_verification
 
 
+def _log_requirement_matches(case_id: str, matches: list[dict]) -> None:
+    """User-visible upload effects, keyed by stable REQ ids."""
+    from backend.integrations.redis.state_store import append_pipeline_log
+
+    glyph = {
+        "MATCHED": "✓",
+        "PARTIALLY_MATCHED": "~",
+        "AMBIGUOUS": "?",
+        "NOT_MATCHED": "✗",
+    }
+    for match in matches or []:
+        document_type = str(match.get("document_type") or "")
+        doc_id = f" {match['doc_id']}" if match.get("doc_id") else ""
+        append_pipeline_log(
+            case_id,
+            f"{glyph.get(match.get('status'), '?')} {match.get('requirement_id')}"
+            f" ({document_type}){doc_id} — {str(match.get('status') or '').replace('_', ' ').casefold()}",
+        )
+
+
 # -- Case finalization task (chord callback) -----------------------------------
 
 @celery_app.task(ignore_result=True)
@@ -72,6 +92,27 @@ def finalize_case_task(results: list, case_id: str):
     try:
         from backend.database.repositories import agent_repo
         memory = agent_repo.get_agent_memory(case_id) or {}
+    except Exception as e:
+        logger.error("Failed to load agent memory for %s: %s", case_id, e)
+        memory = {}
+
+    # Stage 4: classify the processed uploads against the case's OPEN evidence
+    # requirements before any resume is queued, so the user sees what each
+    # upload covers. Deterministic; the ledger keeps only OPEN rows.
+    if memory:
+        try:
+            from backend.services.evidence_match import refresh_requirement_matches
+
+            if memory.get("paused_transaction") or memory.get("pending_tx_ids"):
+                matches = refresh_requirement_matches(case_id)
+                if matches:
+                    _log_requirement_matches(case_id, matches)
+                memory["outstanding_requirements"] = agent_repo.open_requirements(case_id)
+                agent_repo.save_agent_memory(case_id=case_id, memory=memory)
+        except Exception as e:
+            logger.error("requirement matching failed for %s: %s", case_id, e)
+
+    try:
         if _should_start_agent(get_case_documents(case_id), memory):
             from backend.workers.title_chain_tasks import run_case_analysis_task
             retry_skipped_tx_id = memory.get("evidence_retry_tx_id")

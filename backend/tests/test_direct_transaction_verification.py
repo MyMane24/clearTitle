@@ -106,11 +106,21 @@ class TestDirectTransactionVerification(unittest.TestCase):
 
     def test_phase_a_preserves_previously_assigned_transaction_ids(self):
         chain = {"title_chain": [{
-            "tx_id": "T01",
+            "tx_id": "PA-TC-0007",
             "chain_position": 1,
             "documented_transaction": {"transaction_type": "Sale"},
         }]}
-        self.assertEqual(_phase_a_transactions(chain)[0]["tx_id"], "T01")
+        self.assertEqual(_phase_a_transactions(chain)[0]["tx_id"], "PA-TC-0007")
+
+    def test_phase_a_replaces_model_supplied_ids_with_app_assignment(self):
+        chain = {"title_chain": [
+            {"tx_id": "T01", "chain_position": 1,
+             "documented_transaction": {"transaction_type": "Sale"}},
+            {"chain_position": 2,
+             "documented_transaction": {"transaction_type": "Gift", "tx_id": "0C3695AD"}},
+        ]}
+        transactions = _phase_a_transactions(chain)
+        self.assertEqual([tx["tx_id"] for tx in transactions], ["PA-TC-0001", "PA-TC-0002"])
 
     def test_legacy_transaction_id_uses_its_chain_entry_and_sequence(self):
         from backend.services.agent_tools import _canonical_verification, _phase_a_entry_for_id
@@ -1016,23 +1026,62 @@ class TestDirectTransactionVerification(unittest.TestCase):
             "status": "ISSUES_IDENTIFIED",
             "report": "A discrepancy is documented [DOC1 p.1].",
             "cited_documents": [{"doc_id": "DOC1", "pages": "1"}],
-            "findings": [{"description": "Descriptions differ", "evidence": [{"doc_id": "DOC1"}]}],
+            "conclusion": "legacy alias",
         })
         self.assertIn("error", response)
         save_result.assert_not_called()
 
     @patch("backend.services.agent_tools.repo.save_transaction_result")
     @patch("backend.services.agent_tools.repo.get_transaction_result", return_value=None)
+    def test_legacy_shaped_findings_are_excluded_and_reported_but_save_survives(self, get_result, save_result):
+        # One malformed finding can never destroy a completed verification:
+        # invalid entries are excluded, logged, and reported; good ones persist.
+        tx = _phase_a_transactions(self.phase_a)[0]
+        ctx = ToolContext(
+            "CASE1", [{"doc_id": "DOC1"}], chain={"transactions": [tx]}, current_tx_id=tx["tx_id"],
+            phase_a_chain=self.phase_a["title_chain"],
+        )
+        for document_id in ctx.by_id:
+            ctx.selected_document_ids.add(document_id)
+        with patch("backend.services.agent_tools._has_read_full_text", return_value=True), \
+             patch("backend.services.agent_tools.repo.list_transaction_results", return_value=[]):
+            response = dispatch(ctx, "save_transaction_result", {
+                "tx_id": "PA-TC-0001", "sequence": 1,
+                "status": "ISSUES_IDENTIFIED",
+                "report": "A discrepancy is documented [DOC1 p.1].",
+                "cited_documents": [{"doc_id": "DOC1", "pages": "1"}],
+                "findings": [
+                    {"description": "Legacy-shaped entry", "evidence": [{"doc_id": "DOC1"}]},
+                    {"significance": "ESTABLISHED", "title": "Deed defect",
+                     "text": "Execution clause names a different grantee.",
+                     "evidence": [{"doc_id": "DOC1", "relation": "supports"}],
+                     "severity": "CAUTION"},
+                ],
+            })
+        self.assertTrue(response["saved"])
+        self.assertEqual(response["rejected_findings"][0]["index"], 0)
+        saved = save_result.call_args.kwargs["verification"]
+        self.assertEqual(saved["findings"][0]["finding_id"], "TF-001")
+        self.assertEqual(saved["findings"][0]["transaction_id"], "PA-TC-0001")
+
+    @patch("backend.services.agent_tools.repo.save_transaction_result")
+    @patch("backend.services.agent_tools.repo.get_transaction_result", return_value=None)
     def test_tool_schema_is_derived_from_canonical_result_contract(self, get_result, save_result):
+        from backend.services.agent_schemas import TransactionVerification
+        from backend.services.agent_tools import APP_OWNED_RESULT_FIELDS
+
         schema = next(tool for tool in tools_for("verify") if tool["name"] == "save_transaction_result")["parameters"]
-        self.assertEqual(set(schema["properties"]), set(__import__(
-            "backend.services.agent_schemas", fromlist=["TransactionVerification"]
-        ).TransactionVerification.model_fields))
+        self.assertEqual(
+            set(schema["properties"]),
+            set(TransactionVerification.model_fields) - set(APP_OWNED_RESULT_FIELDS),
+        )
         self.assertTrue({"tx_id", "sequence", "status", "report"}.issubset(set(schema["required"])))
         self.assertNotIn("missing_documents", schema["properties"])
         self.assertNotIn("conclusion", schema["properties"])
         self.assertNotIn("summary", schema["properties"])
-        self.assertNotIn("findings", schema["properties"])
+        self.assertIn("findings", schema["properties"])  # model-emittable from Stage 5
+        self.assertNotIn("scope", schema["properties"])
+        self.assertNotIn("revision", schema["properties"])
 
     @patch("backend.services.agent_tools.repo.save_transaction_result")
     @patch("backend.services.agent_tools.repo.get_transaction_result", return_value=None)
@@ -1135,11 +1184,12 @@ class TestDirectTransactionVerification(unittest.TestCase):
         self.assertEqual(result["reviewed_document_ids"], [])
         self.assertEqual(result["required_documents"], [])
 
+    @patch("backend.services.cleartitle_agent.consolidate_findings", return_value={"status": "ok"})
     @patch("backend.services.cleartitle_agent._sync_case_verdict")
     @patch("backend.services.cleartitle_agent._verify_transaction")
     @patch("backend.services.cleartitle_agent.ensure_summaries")
     @patch("backend.services.cleartitle_agent.repo")
-    def test_run_verifies_pending_phase_a_entries_and_skips_completed(self, repo, ensure, verify, sync_verdict):
+    def test_run_verifies_pending_phase_a_entries_and_skips_completed(self, repo, ensure, verify, sync_verdict, phase_c):
         repo.get_agent_documents.return_value = [{"doc_id": "DOC1"}]
         repo.get_agent_memory.return_value = {}
         repo.get_agent_result.return_value = self.phase_a
@@ -1160,11 +1210,12 @@ class TestDirectTransactionVerification(unittest.TestCase):
         repo.get_title_chain.assert_not_called()
         repo.save_agent_result.assert_not_called()
 
+    @patch("backend.services.cleartitle_agent.consolidate_findings", return_value={"status": "ok"})
     @patch("backend.services.cleartitle_agent._sync_case_verdict")
     @patch("backend.services.cleartitle_agent._verify_transaction")
     @patch("backend.services.cleartitle_agent.ensure_summaries")
     @patch("backend.services.cleartitle_agent.repo")
-    def test_fresh_run_reverifies_terminal_saved_transactions(self, repo, ensure, verify, sync_verdict):
+    def test_fresh_run_reverifies_terminal_saved_transactions(self, repo, ensure, verify, sync_verdict, phase_c):
         repo.get_agent_documents.return_value = [{"doc_id": "DOC1"}]
         repo.get_agent_memory.return_value = {}
         repo.get_agent_result.return_value = self.phase_a
@@ -1844,13 +1895,14 @@ class TestDirectTransactionVerification(unittest.TestCase):
             "PA-TC-0002",
         )
 
+    @patch("backend.services.cleartitle_agent.consolidate_findings", return_value={"status": "ok"})
     @patch("backend.services.cleartitle_agent._refresh_downstream_results")
     @patch("backend.services.cleartitle_agent._sync_case_verdict")
     @patch("backend.services.cleartitle_agent._verify_transaction")
     @patch("backend.services.cleartitle_agent.ensure_summaries")
     @patch("backend.services.cleartitle_agent.repo")
     def test_scoped_run_refreshes_downstream_results_after_reverification(
-        self, repo, ensure, verify, sync_verdict, refresh,
+        self, repo, ensure, verify, sync_verdict, refresh, phase_c,
     ):
         repo.get_agent_documents.return_value = [{"doc_id": "DOC1"}]
         repo.get_agent_memory.return_value = {}
@@ -1871,13 +1923,14 @@ class TestDirectTransactionVerification(unittest.TestCase):
         refresh.assert_called_once()
         self.assertEqual(refresh.call_args.args[2], {"PA-TC-0002"})
 
+    @patch("backend.services.cleartitle_agent.consolidate_findings", return_value={"status": "ok"})
     @patch("backend.services.cleartitle_agent._refresh_downstream_results")
     @patch("backend.services.cleartitle_agent._sync_case_verdict")
     @patch("backend.services.cleartitle_agent._verify_transaction")
     @patch("backend.services.cleartitle_agent.ensure_summaries")
     @patch("backend.services.cleartitle_agent.repo")
     def test_full_analysis_does_not_trigger_downstream_refresh(
-        self, repo, ensure, verify, sync_verdict, refresh,
+        self, repo, ensure, verify, sync_verdict, refresh, phase_c,
     ):
         repo.get_agent_documents.return_value = [{"doc_id": "DOC1"}]
         repo.get_agent_memory.return_value = {}

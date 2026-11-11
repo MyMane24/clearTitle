@@ -52,11 +52,6 @@ def agent_state_with_chain(*tx_ids):
     }
 
 
-READY_DATA_PATCH = {
-    "backend.services.final_report._case_result": [make_tx()],
-    "backend.services.final_report.get_agent_state": AGENT_STATE_NO_CHAIN,
-}
-
 NARRATIVE = {
     "executive_summary": "The recorded chain of ownership is verifiable from the supplied documents.",
     "overall_position": "Title is verified for the available evidence with one outstanding item.",
@@ -86,7 +81,11 @@ def patch_case(case_result, agent_state=AGENT_STATE_NO_CHAIN, **extra):
         _case_result=Mock(return_value=case_result),
         get_agent_state=Mock(return_value=agent_state),
         get_case_dir=extra.get("get_case_dir", Mock(return_value=Path(".") / "outputs-unused")),
-        **{k: v for k, v in extra.items() if k != "get_case_dir"},
+        # Stage 6 defaults: the Phase C container read and the prior report row
+        # become part of the locked generation path.
+        _load_findings_container=extra.get("_load_findings_container", Mock(return_value=None)),
+        _load_report_row=extra.get("_load_report_row", Mock(return_value=None)),
+        **{k: v for k, v in extra.items() if k not in ("get_case_dir", "_load_findings_container", "_load_report_row")},
     )
 
 
