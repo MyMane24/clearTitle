@@ -139,8 +139,6 @@ class TestRebuildGuard(unittest.TestCase):
                 patch.object(cleartitle_agent.repo, "get_transaction_result",
                              side_effect=[None, saved_result]), \
                 patch.object(cleartitle_agent.repo, "list_requirements", return_value=[]), \
-                patch.object(cleartitle_agent.repo, "get_property_findings", return_value=None), \
-                patch.object(cleartitle_agent.repo, "save_property_findings"), \
                 patch.object(cleartitle_agent, "_sync_case_verdict"), \
                 patch.object(cleartitle_agent, "_verify_transaction", return_value=ctx) as verify:
             outcome = cleartitle_agent._run("CASE1")

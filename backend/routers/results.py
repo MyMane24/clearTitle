@@ -3,17 +3,11 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
 
-from backend.database.repositories.case_repo import case_exists, get_case_owner
+from backend.database.repositories.case_repo import get_case_owner
 from backend.logger import get_logger
 from backend.services.auth import get_optional_user
-from backend.services.final_report import (
-    FinalReportMissing,
-    MalformedCaseResultError,
-    NoCaseResult,
-    ReportSynthesisError,
-)
 from backend.services.results import build_case_results
 
 router = APIRouter()
@@ -34,41 +28,6 @@ async def get_results(case_id: str, user: dict | None = Depends(get_optional_use
         return build_case_results(case_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Case not found")
-
-
-@router.get("/results/{case_id}/findings")
-async def get_case_findings(case_id: str, user: dict | None = Depends(get_optional_user)):
-    """Consolidated property-level findings — the Phase C container, flattened.
-
-    A case without a container still returns this shape with empty lists:
-    missing consolidation is a case state, never an error (missing evidence is
-    labeled, not auto-defected). A read failure is an honest 502.
-    """
-    _enforce_access(case_id, user)
-    if not case_exists(case_id):
-        raise HTTPException(status_code=404, detail="Case not found")
-    from backend.database.repositories import agent_repo
-    try:
-        container = agent_repo.get_property_findings(case_id)
-    except Exception as e:
-        logger.error("Findings unavailable for %s: %s", case_id, e)
-        raise HTTPException(status_code=502, detail="Findings could not be read")
-    result = (container or {}).get("result") or {}
-    return {
-        "case_id": case_id,
-        "container_version": (container or {}).get("container_version"),
-        "input_hash": (container or {}).get("input_hash"),
-        "findings": result.get("findings") or [],
-        "contradictions": result.get("contradictions") or [],
-        "unresolved_dependencies": result.get("unresolved_dependencies") or [],
-        "provenance": result.get("provenance"),
-        # D8 additive exposure (present when a v2 container exists); None on
-        # v1/missing containers — the pinned missing-container shape holds.
-        "readiness": result.get("readiness"),
-        "coverage": result.get("coverage"),
-        "integrity": result.get("integrity"),
-        "correlations": result.get("correlations") if result else None,
-    }
 
 
 @router.get("/results/{case_id}/required-documents/pdf")
@@ -149,66 +108,3 @@ async def get_case_ocr(case_id: str, user: dict | None = Depends(get_optional_us
 
     return {"case_id": case_id, "documents": result}
 
-
-@router.get("/results/{case_id}/final-report")
-async def get_final_report_state(case_id: str, user: dict | None = Depends(get_optional_user)):
-    """Final-report readiness plus the state of any generated report."""
-    _enforce_access(case_id, user)
-    try:
-        from backend.services.final_report import get_report_state
-        return get_report_state(case_id)
-    except MalformedCaseResultError:
-        raise HTTPException(status_code=400, detail="Case result data is malformed")
-    except NoCaseResult:
-        raise HTTPException(status_code=404, detail="No verification results for this case yet")
-
-
-@router.post("/results/{case_id}/final-report/generate")
-async def generate_final_report(
-    case_id: str, report_type: str = "FINAL", user: dict | None = Depends(get_optional_user)
-):
-    """Generate the final report after re-checking readiness inside the case lock.
-
-    report_type: FINAL (default — requires every chain link verified) or
-    PRELIMINARY (on-demand audit over the case's current verification state).
-    """
-    _enforce_access(case_id, user)
-    report_type = (report_type or "FINAL").strip().upper()
-    if report_type not in ("FINAL", "PRELIMINARY"):
-        raise HTTPException(status_code=400, detail="report_type must be FINAL or PRELIMINARY")
-    try:
-        from backend.services import final_report as final_report_service
-        from backend.integrations.llm.agent_llm import AgentLLMError
-        try:
-            outcome = final_report_service.generate_final_report(case_id, report_type=report_type)
-        except (AgentLLMError, ReportSynthesisError) as e:
-            logger.error("Final report synthesis failed for %s: %s", case_id, e)
-            raise HTTPException(status_code=502, detail="Report generation agent failed")
-    except MalformedCaseResultError:
-        raise HTTPException(status_code=400, detail="Case result data is malformed")
-    except NoCaseResult:
-        raise HTTPException(status_code=404, detail="No verification results for this case yet")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Final report generation failed for %s: %s", case_id, e)
-        raise HTTPException(status_code=500, detail="Report generation failed")
-    if outcome.get("status") == "busy":
-        raise HTTPException(status_code=409, detail="A report is already being generated for this case")
-    return outcome
-
-
-@router.get("/results/{case_id}/final-report/pdf")
-async def download_final_report(case_id: str, user: dict | None = Depends(get_optional_user)):
-    """Serve the persisted report PDF; the generation agent is never triggered here."""
-    _enforce_access(case_id, user)
-    try:
-        from backend.services.final_report import REPORT_FILENAME, stored_pdf_path
-        path = stored_pdf_path(case_id)
-    except FinalReportMissing as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    return FileResponse(
-        path,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{REPORT_FILENAME}"'},
-    )

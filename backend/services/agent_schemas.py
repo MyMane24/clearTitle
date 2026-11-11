@@ -135,7 +135,7 @@ class TransactionVerification(BaseModel):
     evidence_status: EvidenceBasis = EvidenceBasis.UNDETERMINED
     findings: list[VerificationFinding] = Field(
         default_factory=list,
-        description="Typed dossier findings; prompt-driven from the consolidation stage onward.",
+        description="Typed dossier findings; prompt-driven during per-transaction verification.",
     )
     # -- Phase B result content (additive; prompt-driven, defaulted for legacy
     # -- rows so the read boundary keeps validating older persisted results) --

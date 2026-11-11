@@ -204,84 +204,6 @@ async function apiError(response: Response, fallback = "Request failed"): Promis
   }
 }
 
-export interface FinalReportBlocker {
-  tx_id: string | null;
-  sequence: number | null;
-  transaction_type: string;
-  status: string;
-  required_documents: { document_type: string; reason?: string; for_transaction?: string | null }[];
-  note?: string;
-  skipped?: boolean;
-}
-
-export type FinalReportType = "FINAL" | "PRELIMINARY";
-
-export interface CaseFindingDocumentRef {
-  doc_id: string;
-  pages?: string;
-}
-
-export interface CaseFinding {
-  finding_id: string;
-  category: string;
-  title: string;
-  description: string;
-  severity: string;
-  status?: string;
-  confidence?: string;
-  affected_tx_ids: string[];
-  documents: CaseFindingDocumentRef[];
-  evidence_gaps: string[];
-  implication?: string | null;
-  required_customer_action?: string | null;
-}
-
-export interface CaseFindingContradiction {
-  description: string;
-  sides: { tx_id: string; finding_index?: number | null }[];
-  severity: string;
-  resolution_guidance?: string | null;
-}
-
-export interface CaseFindingsResponse {
-  case_id: string;
-  container_version: string | null;
-  input_hash: string | null;
-  findings: CaseFinding[];
-  contradictions: CaseFindingContradiction[];
-  unresolved_dependencies: string[];
-  provenance: Record<string, unknown> | null;
-}
-
-export interface FinalReportInfo {
-  generated_at: string;
-  source_updated_at?: string;
-  report_type?: FinalReportType;
-  version?: number;
-  /** True when verification inputs changed after this render (SUPERSEDED). */
-  superseded?: boolean;
-  stale: boolean;
-  pdf_available: boolean;
-}
-
-export interface FinalReportState {
-  case_id: string;
-  ready: boolean;
-  blockers: FinalReportBlocker[];
-  report: FinalReportInfo | null;
-}
-
-export interface FinalReportGeneration {
-  case_id: string;
-  status: "generated" | "blocked" | "busy";
-  ready?: boolean;
-  report_type?: FinalReportType;
-  version?: number;
-  blockers?: FinalReportBlocker[];
-  generated_at?: string;
-  pdf_filename?: string;
-  report?: FinalReportInfo | null;
-}
 
 async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const headers = new Headers(opts.headers);
@@ -389,19 +311,6 @@ export const API = {
 
   async getResults(caseId: string): Promise<CaseResults> {
     return request<CaseResults>(`/api/results/${caseId}`);
-  },
-
-  async getCaseFindings(caseId: string): Promise<CaseFindingsResponse> {
-    return request<CaseFindingsResponse>(`/api/results/${caseId}/findings`);
-  },
-
-  async getFinalReportState(caseId: string): Promise<FinalReportState> {
-    return request<FinalReportState>(`/api/results/${caseId}/final-report`);
-  },
-
-  async generateFinalReport(caseId: string, reportType: FinalReportType = "FINAL"): Promise<FinalReportGeneration> {
-    const suffix = reportType === "PRELIMINARY" ? "?report_type=PRELIMINARY" : "";
-    return request<FinalReportGeneration>(`/api/results/${caseId}/final-report/generate${suffix}`, { method: "POST" });
   },
 
   async getOcr(caseId: string): Promise<OcrTextResponse> {

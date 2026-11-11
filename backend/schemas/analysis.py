@@ -5,8 +5,7 @@ redesign (docs/architecture/CLEARTITLE_TARGET_ARCHITECTURE.md §4):
 
 * shared provenance + evidence-reference primitives,
 * Phase A identity/chain canonical shapes,
-* evidence requirements with stable identities (Stage 4 consumers),
-* property-level consolidation (Phase C) and final opinion (Phase D).
+* evidence requirements with stable identities (Stage 4 consumers).
 
 `backend.services.agent_schemas` stays the Phase A/B *persistence* contract:
 its existing v3.0 wire shapes are preserved; later stages validate against,
@@ -14,8 +13,7 @@ or additively extend, the models defined here. Free-form LLM output must
 never reach persistence without passing one of these models first.
 
 Identifier discipline (application-assigned only — never trusted from a
-model): PA-TC-\\d{4} transactions, REQ-\\d{4} evidence requirements,
-PF-\\d{3} property findings.
+model): PA-TC-\\d{4} transactions and REQ-\\d{4} evidence requirements.
 """
 
 from __future__ import annotations
@@ -32,11 +30,9 @@ ANALYSIS_CONTRACT_VERSION = "1.0"
 
 TX_ID_RE = r"PA-TC-\d{4}"
 REQUIREMENT_ID_RE = r"REQ-\d{4}"
-FINDING_ID_RE = r"PF-\d{3}"
-# Per-dossier (Phase B) finding reference: distinct from the property-level PF- ids
-# of consolidated findings so the two layers cannot be confused. A 4th digit exists
-# only so allocation never fails a save after 999 distinct case findings;
-# pre-existing TF-### ids are unchanged.
+# Per-dossier (Phase B) finding reference. A 4th digit exists only so
+# allocation never fails a save after 999 findings; pre-existing TF-### ids
+# are unchanged.
 TX_FINDING_ID_RE = r"TF-\d{3,4}"
 
 # Application-assigned transaction identifiers that are allowed to survive
@@ -77,12 +73,6 @@ def new_requirement_id(sequence: int) -> str:
     if sequence < 1 or sequence > 9999:
         raise ValueError(f"requirement sequence out of range: {sequence}")
     return f"REQ-{sequence:04d}"
-
-
-def new_finding_id(sequence: int) -> str:
-    if sequence < 1 or sequence > 999:
-        raise ValueError(f"finding sequence out of range: {sequence}")
-    return f"PF-{sequence:03d}"
 
 
 def new_tx_finding_id(sequence: int) -> str:
@@ -172,37 +162,14 @@ class PropertyFindingStatus(str, Enum):
     PARTIALLY_RESOLVED = "PARTIALLY_RESOLVED"
     RESOLVED = "RESOLVED"
     SUPERSEDED = "SUPERSEDED"
-    # Additive per C2 (§4.9); the §6.2 transition wiring applies them as of C3
-    # (PENDING_EVIDENCE via the ladder, DISPUTED at birth/carried via records).
+    # Additive members; persisted findings carrying these values keep validating.
     PENDING_EVIDENCE = "PENDING_EVIDENCE"
     DISPUTED = "DISPUTED"
-
-
-class PropertyEvidenceSufficiency(str, Enum):
-    """Evidence-dimension label, separate from lifecycle status (§6.1)."""
-
-    SATISFIED = "SATISFIED"
-    PARTIAL = "PARTIAL"
-    NONE = "NONE"
-    UNVERIFIABLE = "UNVERIFIABLE"
-
-
-class OpinionVerdict(str, Enum):
-    CLEAR_CONFIRMED = "CLEAR_CONFIRMED"
-    ATTENTION_REQUIRED = "ATTENTION_REQUIRED"
-    NOT_VERIFIED = "NOT_VERIFIED"
-
-
-class OpinionType(str, Enum):
-    FINAL = "FINAL"
-    PRELIMINARY = "PRELIMINARY"
 
 
 class RunPhaseLabel(str, Enum):
     A = "A"
     B = "B"
-    C = "C"
-    D = "D"
 
 
 class RunPhaseStatus(str, Enum):
@@ -484,380 +451,6 @@ class VerificationFinding(BaseModel):
         return self
 
 
-# -- Phase C consolidation ----------------------------------------------------------
-
-
-class FindingLink(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    tx_id: str = Field(pattern=TX_ID_RE)
-    finding_index: int | None = Field(default=None, ge=0)
-    finding_id: str | None = Field(
-        default=None,
-        description="Stable per-save TF-### reference alongside the positional fallback (§4.9).",
-    )
-
-
-class SourceObservation(BaseModel):
-    """Immutable per-observation provenance persisted with a finding (§4.8).
-
-    ``observed_in`` records the exact input hash that observed the source,
-    ``revision``/``verified_at`` stay at their defaults until the repository
-    persists per-tx save counters/clock values for them (no invention).
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    tf_id: str = Field(pattern=TX_FINDING_ID_RE, description="Application-assigned TF id at its source dossier.")
-    tx_id: str = Field(pattern=TX_ID_RE)
-    title: str = ""
-    text_excerpt: str | None = None
-    evidence_refs: list[DocumentEvidenceReference] = Field(default_factory=list)
-    observed_in: str = ""
-    revision: int = 0
-    verified_at: str | None = None
-
-
-class TransitionEvent(BaseModel):
-    """One lifecycle/audit event, app-written only (D5, D6).
-
-    Wire shape ``{at, from, to, reason, refs[], decided_by}`` (§6.2); serialized
-    forms use ``from_status``/``to_status`` keys.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    at: str
-    from_status: str | None = Field(default=None)
-    to_status: str | None = Field(default=None)
-    reason: str = ""
-    refs: list[str] = Field(
-        default_factory=list,
-        description="Related identifiers (PF/TF/tx) or entries like ``doc_id#pages``.",
-    )
-    decided_by: str = ""
-
-
-class Correlation(BaseModel):
-    """Related-but-not-same record (§9). Declared additively in C2, persisted
-    from C3; field names follow the §8.1 wire shape (``type``/``from_pf``/
-    ``to_pf``/``rationale``/``determined_by``). Edges are rebuilt every ok run
-    and never feed the input hash."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    type: str = Literal[
-        "RELATED", "DEPENDS_ON", "CONFLICTS_WITH", "MERGED_INTO", "SPLIT_FROM",
-    ]
-    from_pf: str
-    to_pf: str | None = Field(
-        default=None,
-        description="Container-level edges (DEPENDS_ON) may omit the target finding.",
-    )
-    rationale: str = ""
-    determined_by: str = "deterministic"
-
-
-class RequirementsDigest(BaseModel):
-    """Requirement-ledger counts by status (§8.1 coverage block)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    open: int = 0
-    satisfied: int = 0
-    withdrawn: int = 0
-
-
-class CoverageDossier(BaseModel):
-    """One strictly-read transaction row in the coverage block (§8.1)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    tx_id: str = Field(pattern=TX_ID_RE)
-    revision: int = 0
-    status: str | None = None
-    terminal: bool = False
-
-
-class Coverage(BaseModel):
-    """What the findings set actually covers (§7.2/§8.1)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    phase_a_hash: str | None = None
-    dossiers: list[CoverageDossier] = Field(default_factory=list)
-    requirements: RequirementsDigest = Field(default_factory=RequirementsDigest)
-    input_snapshot: dict = Field(default_factory=dict)
-    chain_length: int = 0
-
-
-class Integrity(BaseModel):
-    """Materialized run-integrity registers (§8.1 — Option B, from C3)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    input_state: str | None = None
-    malformed_observations: list = Field(default_factory=list)
-    excluded_evidence_refs: list = Field(default_factory=list)
-    disclosures: list[str] = Field(default_factory=list)
-
-
-class Readiness(BaseModel):
-    """Container-level readiness statement (§7.2)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    state: str = Literal["COMPLETE", "PARTIAL"]
-    pending_tx_ids: list[str] = Field(default_factory=list)
-    skipped_tx_ids: list[str] = Field(default_factory=list)
-    unverified_tx_ids: list[str] = Field(default_factory=list)
-    open_requirement_ids: list[str] = Field(default_factory=list)
-
-
-class Contradiction(BaseModel):
-    """Cross-transaction contradiction surfaced by Phase C."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    description: str
-    sides: list[FindingLink] = Field(min_length=2)
-    severity: Severity = Severity.CAUTION
-    resolution_guidance: str | None = None
-    contradiction_key: str | None = Field(
-        default=None,
-        description="Deterministic content key (normalized description + sorted sides); reruns refresh, never duplicate (§5.1-5).",
-    )
-    related_pf_ids: list[str] = Field(default_factory=list)
-
-
-class ConsolidationProvenance(Provenance):
-    model_config = ConfigDict(extra="forbid")
-
-    phase_a_hash: str | None = None
-    dossier_refs: list[FindingLink] = Field(default_factory=list)
-    source_hashes: SourceHashes | None = None
-    dedup_keys: list[str] = Field(
-        default_factory=list,
-        description="Application-assigned content-identity keys of the consolidated sources.",
-    )
-
-
-class PropertyFinding(BaseModel):
-    """One consolidated, property-level finding behind one stable ID."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    finding_id: str = Field(pattern=FINDING_ID_RE, description="Application-assigned.")
-    category: FindingCategory
-    title: str = Field(max_length=120)
-    description: str
-    severity: Severity
-    status: PropertyFindingStatus = PropertyFindingStatus.OPEN
-    confidence: ConfidenceLevel = ConfidenceLevel.MEDIUM
-    affected_tx_ids: list[str] = Field(default_factory=list)
-    documents: list[DocumentEvidenceReference] = Field(default_factory=list)
-    evidence_gaps: list[str] = Field(default_factory=list)
-    implication: str | None = Field(
-        default=None,
-        description="Why the finding matters — grounded in sourced facts, never invented.",
-    )
-    required_customer_action: str | None = None
-    resolution_evidence: list[DocumentEvidenceReference] = Field(default_factory=list)
-    consolidation: ConsolidationProvenance | None = None
-    # Additive C2 identity/lifecycle contract (§4.9, OD-1 subset). All fields
-    # default so persisted v1 containers keep validating (no DDL, no migration).
-    identity_key: str | None = Field(
-        default=None,
-        description="Canonical v2 identity key: A|… / B|… / M|sha256, app-derived only.",
-    )
-    identity_basis: str | None = None  # anchors | textual | model_merge
-    identity_confidence: ConfidenceLevel | None = None
-    identity_missing_attributes: list[str] = Field(default_factory=list)
-    identity_supporting: list[str] = Field(default_factory=list)
-    source_observations: list[SourceObservation] = Field(default_factory=list)
-    lifecycle_events: list[TransitionEvent] = Field(default_factory=list)
-    superseede_reason: str | None = Field(
-        default=None,
-        description="Set only when status is SUPERSEDED: de_observed | merged_into:<PF-xxx> | split_replaced.",
-    )
-    evidence_sufficiency: PropertyEvidenceSufficiency | None = Field(
-        default=None,
-        description="Evidence dimension, app-derived; UNVERIFIABLE is reserved (§6.1).",
-    )
-
-    @model_validator(mode="after")
-    def check_finding_lifecycle(self):
-        if not self.description.strip():
-            raise ValueError("finding description must not be empty")
-        if self.status is PropertyFindingStatus.RESOLVED and not self.resolution_evidence:
-            raise ValueError("a RESOLVED finding requires resolution evidence")
-        for tx_id in self.affected_tx_ids:
-            if not re.fullmatch(TX_ID_RE, tx_id):
-                raise ValueError(f"affected_tx_ids carries an invalid transaction ID: {tx_id!r}")
-        if self.severity is Severity.CRITICAL and not (self.implication and self.documents):
-            raise ValueError(
-                "a CRITICAL finding requires sourced document evidence and a "
-                "defect-grounded implication; missing evidence alone is never a defect"
-            )
-        return self
-
-
-class FindingDraft(BaseModel):
-    """Model-proposed consolidation group (Phase C); the application assembles
-    identity, affected transactions, document coverage, and provenance."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    members: list[int] = Field(
-        min_length=1,
-        description="Candidate indexes into the deterministic candidate list (>= 1; empty groups are refused, §6-D5a).",
-    )
-    category: FindingCategory = FindingCategory.OTHER
-    title: str = Field(max_length=120)
-    description: str
-    severity: Severity = Severity.CAUTION
-    confidence: ConfidenceLevel = ConfidenceLevel.MEDIUM
-    implication: str | None = None
-    required_customer_action: str | None = None
-    evidence_gaps: list[str] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def check_draft(self):
-        if not self.description.strip():
-            raise ValueError("draft description must not be empty")
-        if not self.title.strip():
-            raise ValueError("draft title must not be empty")
-        for index in self.members:
-            if index < 0:
-                raise ValueError("draft members reference candidates by non-negative index")
-        return self
-
-
-class ContradictionDraft(BaseModel):
-    """Model-proposed contradiction draft; sides resolve app-side."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    members: list[int] = Field(
-        description="Indexes of the conflicting candidates (at least two)."
-    )
-    description: str
-    severity: Severity = Severity.CAUTION
-    resolution_guidance: str | None = None
-
-    @model_validator(mode="after")
-    def check_contradiction_draft(self):
-        if not self.description.strip():
-            raise ValueError("contradiction description must not be empty")
-        return self
-
-
-class ConsolidationDraftResult(BaseModel):
-    """Wire shape of the Phase C named draft response before app assembly."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    findings: list[FindingDraft] = Field(default_factory=list)
-    contradictions: list[ContradictionDraft] = Field(default_factory=list)
-    unresolved_dependencies: list[str] = Field(default_factory=list)
-    # OD-4 additive: propose-only RELATED pairs over candidate indexes (§9).
-    # Strictly advisory: the application re-validates every pair against its
-    # own output map and drops + registers any that fails.
-    related_pairs: list[list[int]] = Field(default_factory=list)
-
-
-class PropertyConsolidationResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    findings: list[PropertyFinding] = Field(default_factory=list)
-    contradictions: list[Contradiction] = Field(default_factory=list)
-    unresolved_dependencies: list[str] = Field(default_factory=list)
-    provenance: ConsolidationProvenance
-    # Additive C3 container blocks (§8.1, Option B) — present on v2 results.
-    coverage: Coverage | None = None
-    integrity: Integrity | None = None
-    readiness: Readiness | None = None
-    correlations: list[Correlation] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def check_finding_ids(self):
-        seen: set[str] = set()
-        for item in self.findings:
-            if item.finding_id in seen:
-                raise ValueError(f"duplicate finding ID in consolidation: {item.finding_id}")
-            seen.add(item.finding_id)
-        return self
-
-
-# -- Phase D final opinion -----------------------------------------------------------
-
-
-class OutstandingItems(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    requirement_ids: list[str] = Field(default_factory=list)
-    skipped_tx_ids: list[str] = Field(default_factory=list)
-    unverified_tx_ids: list[str] = Field(default_factory=list)
-
-
-class FindingReference(BaseModel):
-    """Customer report reference to a consolidated finding — never a re-narration."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    finding_id: str = Field(pattern=FINDING_ID_RE)
-    one_line: str | None = None
-
-
-class FinalDueDiligenceOpinion(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    verdict: OpinionVerdict
-    report_type: OpinionType
-    executive_assessment: str
-    property_identity: PropertyIdentity
-    ownership_history_summary: str
-    overall_assessment: str
-    critical_findings: list[FindingReference] = Field(default_factory=list)
-    caution_findings: list[FindingReference] = Field(default_factory=list)
-    positive_findings: list[FindingReference] = Field(default_factory=list)
-    encumbrance_assessment: str | None = None
-    conversion_layout_assessment: str | None = None
-    building_assessment: str | None = None
-    outstanding: OutstandingItems = Field(default_factory=OutstandingItems)
-    limitations: list[str] = Field(default_factory=list)
-    recommended_conditions: list[str] = Field(default_factory=list)
-    final_opinion: str
-    source_hashes: SourceHashes
-    provenance: Provenance
-
-    @model_validator(mode="after")
-    def check_opinion_completeness(self):
-        for field_name in ("executive_assessment", "ownership_history_summary", "overall_assessment", "final_opinion"):
-            if not str(getattr(self, field_name) or "").strip():
-                raise ValueError(f"{field_name} must not be empty")
-        dropped = self.report_type is OpinionType.FINAL and (
-            self.outstanding.skipped_tx_ids or self.outstanding.unverified_tx_ids or self.outstanding.requirement_ids
-        )
-        if dropped:
-            raise ValueError("a FINAL opinion must not carry outstanding items; disclose them in a PRELIMINARY one")
-        return self
-
-
-class FinalReportMetadata(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    version: int = Field(ge=1)
-    report_type: OpinionType
-    generated_at: str
-    model: str | None = None
-    prompt_version: str | None = None
-    contract_version: str = ANALYSIS_CONTRACT_VERSION
-    source_hashes: SourceHashes
-    pdf_available: bool = False
-    superseded: bool = False
-
-
 # -- run metadata ----------------------------------------------------------------------
 
 
@@ -887,29 +480,15 @@ __all__ = [
     "AnalysisRunPhase",
     "ASSIGNED_TX_ID_PATTERN",
     "ConfidenceLevel",
-    "Contradiction",
     "DocumentEvidenceReference",
     "DossierScope",
     "EffectivityStatus",
     "EntrySourceKind",
     "EvidenceBasis",
     "EvidenceRequirement",
-    "FinalDueDiligenceOpinion",
-    "FinalReportMetadata",
     "FindingCategory",
-    "FindingLink",
-    "FindingReference",
-    "FINDING_ID_RE",
     "MatchStatus",
-    "OpinionType",
-    "OpinionVerdict",
-    "OutstandingItems",
-    "PropertyConsolidationResult",
-    "PropertyFinding",
     "PropertyFindingStatus",
-    "FindingDraft",
-    "ContradictionDraft",
-    "ConsolidationDraftResult",
     "PropertyIdentity",
     "PropertyIdentityDetail",
     "Provenance",
@@ -929,7 +508,6 @@ __all__ = [
     "VerificationFinding",
     "content_hash",
     "is_assigned_tx_id",
-    "new_finding_id",
     "new_requirement_id",
     "new_tx_finding_id",
     "phase_a_hash",

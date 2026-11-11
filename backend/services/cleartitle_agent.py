@@ -48,7 +48,6 @@ from backend.services.agent_tools import (
     _with_dependency_section,
     _without_source_refs,
 )
-from backend.services.consolidation import consolidate_findings
 
 logger = get_logger(__name__)
 
@@ -740,33 +739,12 @@ def _run(
         ]
         overall_status = _overall_transaction_status(all_findings)
         memory["missing_documents"] = _collect_missing(all_findings)
-        # Phase C (target §3.1): consolidate typed dossier findings — since C4
-        # (D2) this also runs over pending inputs in partial mode (terminal
-        # dossiers only). Deterministic dedup pass + one scoped model pass;
-        # a consolidation failure never loses Phase B work.
-        memory["stage"] = "consolidating"
-        _save_state(case_id, memory, STATUS_RUNNING)
-        consolidation = consolidate_findings(case_id, run_id=run_id)
-        memory["phase_c"] = {
-            "status": consolidation.get("status"),
-            "findings": len(
-                ((consolidation.get("container") or {}).get("result") or {}).get("findings") or []
-            ),
-            "reason": consolidation.get("reason") or "",
-            # Run-scoped Option B register (input state, malformed observations,
-            # excluded evidence refs, D7 disclosure); container fields in C3.
-            "registration": consolidation.get("registration"),
-        }
-        memory["stage"] = "done"
-        memory["paused_transaction"] = None
-        memory["current_tx_id"] = None
         _save_state(case_id, memory, STATUS_DONE)
         _sync_case_verdict(case_id, "complete", overall_status)
         logger.info("agent completed for %s: %s", case_id, overall_status)
         return {
             "case_id": case_id, "status": STATUS_DONE,
             "overall_status": overall_status,
-            "consolidation": memory["phase_c"]["status"],
         }
 
     except Exception as e:  # record failure, don't crash the worker

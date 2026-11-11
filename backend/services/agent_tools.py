@@ -130,7 +130,7 @@ def _verification_props() -> dict:
 
 # Dossier fields the persistence contract accepts but the model never supplies:
 # they are app-assigned and overwritten at save. `findings` is model-emittable
-# from the consolidation stage onward (prompt-instructed); `scope` and
+# from the verification stage onward (prompt-instructed); `scope` and
 # `revision` stay app-only, always overwritten at save.
 APP_OWNED_RESULT_FIELDS = ["scope", "revision"]
 

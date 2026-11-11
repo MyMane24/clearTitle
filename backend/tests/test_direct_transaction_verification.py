@@ -1184,12 +1184,11 @@ class TestDirectTransactionVerification(unittest.TestCase):
         self.assertEqual(result["reviewed_document_ids"], [])
         self.assertEqual(result["required_documents"], [])
 
-    @patch("backend.services.cleartitle_agent.consolidate_findings", return_value={"status": "ok"})
     @patch("backend.services.cleartitle_agent._sync_case_verdict")
     @patch("backend.services.cleartitle_agent._verify_transaction")
     @patch("backend.services.cleartitle_agent.ensure_summaries")
     @patch("backend.services.cleartitle_agent.repo")
-    def test_run_verifies_pending_phase_a_entries_and_skips_completed(self, repo, ensure, verify, sync_verdict, phase_c):
+    def test_run_verifies_pending_phase_a_entries_and_skips_completed(self, repo, ensure, verify, sync_verdict):
         repo.get_agent_documents.return_value = [{"doc_id": "DOC1"}]
         repo.get_agent_memory.return_value = {}
         repo.get_agent_result.return_value = self.phase_a
@@ -1210,12 +1209,11 @@ class TestDirectTransactionVerification(unittest.TestCase):
         repo.get_title_chain.assert_not_called()
         repo.save_agent_result.assert_not_called()
 
-    @patch("backend.services.cleartitle_agent.consolidate_findings", return_value={"status": "ok"})
     @patch("backend.services.cleartitle_agent._sync_case_verdict")
     @patch("backend.services.cleartitle_agent._verify_transaction")
     @patch("backend.services.cleartitle_agent.ensure_summaries")
     @patch("backend.services.cleartitle_agent.repo")
-    def test_fresh_run_reverifies_terminal_saved_transactions(self, repo, ensure, verify, sync_verdict, phase_c):
+    def test_fresh_run_reverifies_terminal_saved_transactions(self, repo, ensure, verify, sync_verdict):
         repo.get_agent_documents.return_value = [{"doc_id": "DOC1"}]
         repo.get_agent_memory.return_value = {}
         repo.get_agent_result.return_value = self.phase_a
@@ -1895,14 +1893,13 @@ class TestDirectTransactionVerification(unittest.TestCase):
             "PA-TC-0002",
         )
 
-    @patch("backend.services.cleartitle_agent.consolidate_findings", return_value={"status": "ok"})
     @patch("backend.services.cleartitle_agent._refresh_downstream_results")
     @patch("backend.services.cleartitle_agent._sync_case_verdict")
     @patch("backend.services.cleartitle_agent._verify_transaction")
     @patch("backend.services.cleartitle_agent.ensure_summaries")
     @patch("backend.services.cleartitle_agent.repo")
     def test_scoped_run_refreshes_downstream_results_after_reverification(
-        self, repo, ensure, verify, sync_verdict, refresh, phase_c,
+        self, repo, ensure, verify, sync_verdict, refresh,
     ):
         repo.get_agent_documents.return_value = [{"doc_id": "DOC1"}]
         repo.get_agent_memory.return_value = {}
@@ -1923,14 +1920,13 @@ class TestDirectTransactionVerification(unittest.TestCase):
         refresh.assert_called_once()
         self.assertEqual(refresh.call_args.args[2], {"PA-TC-0002"})
 
-    @patch("backend.services.cleartitle_agent.consolidate_findings", return_value={"status": "ok"})
     @patch("backend.services.cleartitle_agent._refresh_downstream_results")
     @patch("backend.services.cleartitle_agent._sync_case_verdict")
     @patch("backend.services.cleartitle_agent._verify_transaction")
     @patch("backend.services.cleartitle_agent.ensure_summaries")
     @patch("backend.services.cleartitle_agent.repo")
     def test_full_analysis_does_not_trigger_downstream_refresh(
-        self, repo, ensure, verify, sync_verdict, refresh, phase_c,
+        self, repo, ensure, verify, sync_verdict, refresh,
     ):
         repo.get_agent_documents.return_value = [{"doc_id": "DOC1"}]
         repo.get_agent_memory.return_value = {}

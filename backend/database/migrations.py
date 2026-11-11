@@ -109,10 +109,7 @@ CREATE TABLE IF NOT EXISTS title_chains (
 CREATE TABLE IF NOT EXISTS case_results (
     case_id VARCHAR(32) NOT NULL,
     case_result JSON NULL,
-    final_report JSON NULL,
-    final_reports JSON NULL,
     dossier_meta JSON NULL,
-    property_findings JSON NULL,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (case_id)
@@ -192,18 +189,9 @@ def ensure_tables():
             ("title_chains", "title_chain_graph", "ALTER TABLE title_chains ADD COLUMN title_chain_graph LONGTEXT NULL"),
             ("title_chains", "detailed_chain", "ALTER TABLE title_chains ADD COLUMN detailed_chain JSON NULL"),
             ("case_memory", "case_memory", "ALTER TABLE case_memory ADD COLUMN case_memory LONGTEXT NULL"),
-            # Generated final property title audit report (PDF lives on disk;
-            # the JSON column holds the report document and traceability).
-            ("case_results", "final_report", "ALTER TABLE case_results ADD COLUMN final_report JSON NULL"),
             # M2 (Stage 3): per-tx dossier revision index — the append-only
             # history of superseded dossier snapshots lives here, one JSON doc.
             ("case_results", "dossier_meta", "ALTER TABLE case_results ADD COLUMN dossier_meta JSON NULL"),
-            # M3 (Stage 5): one consolidated property-findings container row per
-            # case (in-contract version + input hash; no per-finding rows).
-            ("case_results", "property_findings", "ALTER TABLE case_results ADD COLUMN property_findings JSON NULL"),
-            # M4 (Stage 6): append-only final-report history — version, report
-            # type, source hashes and superseding metadata, one JSON array.
-            ("case_results", "final_reports", "ALTER TABLE case_results ADD COLUMN final_reports JSON NULL"),
             # Stage 1 (target architecture): case-level phase state and the
             # analysis run that produced the persisted output. Additive only.
             ("cases", "phases", "ALTER TABLE cases ADD COLUMN phases JSON NULL"),
@@ -386,6 +374,10 @@ def ensure_tables():
             "ALTER TABLE verification_results DROP COLUMN latency_ms",
             "ALTER TABLE verification_results DROP COLUMN cost_usd",
             "ALTER TABLE verification_results DROP COLUMN model_used",
+            # Removed Phase C/D stores: consolidated findings + final report.
+            "ALTER TABLE case_results DROP COLUMN final_report",
+            "ALTER TABLE case_results DROP COLUMN final_reports",
+            "ALTER TABLE case_results DROP COLUMN property_findings",
         ]:
             try:
                 cursor.execute(sql)
@@ -496,8 +488,8 @@ def derive_evidence_requirements(case_id: str, transactions: list[dict]) -> tupl
 def downgrade_stage1(conn=None) -> None:
     """Revert the Stage 1 additive migration (docs/architecture §5 M1).
 
-    Best-effort and manual: drops the requirements ledger and the two
-    case columns. Never run as part of the startup path.
+    Best-effort and manual: drops the requirements ledger and the
+    final-report/property-findings case columns. Never run as part of the startup path.
     """
     if conn is None:
         with _get_conn() as conn:
@@ -510,6 +502,7 @@ def downgrade_stage1(conn=None) -> None:
         "ALTER TABLE cases DROP COLUMN analysis_run_id",
         "ALTER TABLE title_chains DROP COLUMN phase_a_hash",
         "ALTER TABLE case_results DROP COLUMN dossier_meta",
+        "ALTER TABLE case_results DROP COLUMN final_report",
         "ALTER TABLE case_results DROP COLUMN property_findings",
         "ALTER TABLE case_results DROP COLUMN final_reports",
     ):
