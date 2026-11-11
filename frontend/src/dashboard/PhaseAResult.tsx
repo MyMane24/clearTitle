@@ -121,7 +121,7 @@ function ChainEntry({ entry, index }: {
     type: _legacyType, executed_date: _date, execution_date: _executionDate,
     summary_points: _points, source_refs: _refs, evidence_status: _evidenceStatus,
     ...otherTransactionDetails } = transaction;
-  const { related_events: _relatedEvents, chain_position: _position, documented_transaction: _documented, ...otherEntryDetails } = item;
+  const { tx_id: _txId, upstream_tx_ids: _upstream, related_events: _relatedEvents, chain_position: _position, documented_transaction: _documented, ...otherEntryDetails } = item;
 
   return (
     <article className="phase-a-chain-entry">
