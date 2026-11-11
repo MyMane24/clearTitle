@@ -40,3 +40,4 @@ docker-compose.override.yml
 .agents/
 skills-lock.json
 opencode.json
+outputs-unused/
