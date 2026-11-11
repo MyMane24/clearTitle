@@ -10,7 +10,6 @@ from __future__ import annotations
 import io
 from html import escape
 from datetime import datetime
-from pathlib import Path
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT, TA_RIGHT
@@ -19,7 +18,6 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import (
     HRFlowable,
-    Image,
     Paragraph,
     SimpleDocTemplate,
     Table,
