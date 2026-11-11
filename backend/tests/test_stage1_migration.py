@@ -160,13 +160,15 @@ class TestSyncCaseRequirements(unittest.TestCase):
             inserted = agent_repo.sync_case_requirements("8A14D132")
         self.assertEqual(inserted, 0)
         self.assertEqual(cursor.executemany_calls, [])
-    def test_sync_noop_when_no_requirements(self):
-        connection = MagicMock()
+    def test_sync_with_no_requirements_makes_no_writes(self):
+        cursor = FakeCursor()
+        connection = FakeConnection(cursor)
         with patch.object(agent_repo, "list_transaction_results", return_value=[]), \
-                patch.object(agent_repo, "_get_conn", return_value=connection) as conn:
+                patch.object(agent_repo, "_get_conn", return_value=connection):
             inserted = agent_repo.sync_case_requirements("CASE1")
         self.assertEqual(inserted, 0)
-        conn.assert_not_called()
+        self.assertEqual(cursor.executemany_calls, [])
+        self.assertTrue(connection.committed)
 class TestSaveTransactionResultHook(unittest.TestCase):
     def _save(self, required_documents, cursor):
         verification = {
@@ -182,8 +184,12 @@ class TestSaveTransactionResultHook(unittest.TestCase):
     def test_hook_fires_when_result_asks_for_evidence(self):
         sync = self._save([{"document_type": "Index II extract"}], FakeCursor(initial=[]))
         sync.assert_called_once_with("CASE1")
-    def test_hook_skipped_for_results_without_asks(self):
+    def test_hook_fires_even_when_result_has_no_asks(self):
+        # Regression: the happy path — evidence arrives, the re-verification
+        # saves a terminal result with an empty ask list — is exactly when
+        # OPEN ledger rows close. Skipping sync there left rows OPEN forever
+        # and Phase C kept reporting the evidence as still awaited.
         sync = self._save([], FakeCursor(initial=[]))
-        sync.assert_not_called()
+        sync.assert_called_once_with("CASE1")
 if __name__ == "__main__":
     unittest.main()

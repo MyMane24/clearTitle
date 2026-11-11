@@ -200,6 +200,23 @@ class TestLifecycleSync(unittest.TestCase):
         updates = self._call_updates(cursor)
         self.assertEqual(updates, [[("SATISFIED", "CASE1", "REQ-0001")]])
 
+    def test_terminal_owner_with_no_remaining_asks_satisfies_its_rows(self):
+        # Demo-hazard regression: after the requested evidence is provided, the
+        # re-verification saves a terminal result with an empty ask list. The
+        # derivation is then empty, but the owner's OPEN rows must still close.
+        cursor = FakeCursor(fetch_rows=[
+            _row("REQ-0001", "PA-TC-0001", ASK_A),
+            _row("REQ-0002", "PA-TC-0002", ASK_B),
+        ])
+        results = [
+            _result("PA-TC-0001", 1, "VERIFIED_WITH_AVAILABLE_EVIDENCE", []),
+            _result("PA-TC-0002", 2, "ISSUES_IDENTIFIED", []),
+        ]
+        self._sync(cursor, results)
+        updates = self._call_updates(cursor)
+        self.assertEqual(updates, [[("SATISFIED", "CASE1", "REQ-0001"),
+                                    ("SATISFIED", "CASE1", "REQ-0002")]])
+
     def test_checkpointed_result_does_not_satisfy(self):
         cursor = FakeCursor(fetch_rows=[_row("REQ-0001", "PA-TC-0001", ASK_A)])
         results = [

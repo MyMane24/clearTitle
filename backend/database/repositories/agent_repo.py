@@ -326,14 +326,12 @@ def save_transaction_result(*, case_id: str, tx_id: str, verification: dict) -> 
             (case_id, _dump(transactions), _dump(meta)),
         )
         conn.commit()
-    # Keep the requirements ledger in step; only needed when the result asked
-    # for evidence (otherwise derivation is empty and syncing would only add
-    # noise for callers like tests that assert on the last executed SQL).
-    if verification.get("required_documents"):
-        try:
-            sync_case_requirements(case_id)
-        except Exception:
-            logger.exception("requirements ledger sync failed for case %s (non-fatal)", case_id)
+    # Keep the requirements ledger in step; must also run when the saved result
+    # asks for nothing — that is when previously OPEN rows get closed.
+    try:
+        sync_case_requirements(case_id)
+    except Exception:
+        logger.exception("requirements ledger sync failed for case %s (non-fatal)", case_id)
 
 
 def get_transaction_result(case_id: str, tx_id: str) -> dict | None:
@@ -414,8 +412,8 @@ def sync_case_requirements(case_id: str) -> int:
 
     transactions = list_transaction_results(case_id)
     rows = derive_evidence_requirements(case_id, transactions)
-    if not rows:
-        return 0
+    # No early return on empty `rows`: an empty ask list is exactly when OPEN
+    # rows must close (SATISFIED/WITHDRAWN), so the reconcile always runs.
 
     current_keys = {
         requirement_content_key(owner, document_type, reason)

@@ -74,7 +74,10 @@ class TestDossierDimensions(unittest.TestCase):
             TransactionVerification(**_verification(extra={"revision": 0}))
 class TestRevisionPersistence(unittest.TestCase):
     def _save(self, cursor, verification, tx_id="PA-TC-0001"):
-        with patch.object(agent_repo, "_get_conn", return_value=FakeConnection(cursor)):
+        # Ledger sync is its own feature (test_stage1_migration): stub it so
+        # these fakes only exercise the revision-persistence write path.
+        with patch.object(agent_repo, "_get_conn", return_value=FakeConnection(cursor)), \
+                patch.object(agent_repo, "sync_case_requirements"):
             agent_repo.save_transaction_result(case_id="CASE1", tx_id=tx_id, verification=verification)
     def _last_write(self, cursor):
         sql, params = cursor.calls[-1]
