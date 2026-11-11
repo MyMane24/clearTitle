@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import './dashboard.css';
 import clearTitleLogo from '../assets/clearTitle.png';
 import {
-  API, AuthResponse, AuthUser, CaseListItem, CaseResults, FinalReportBlocker,
+  API, AuthResponse, AuthUser, CaseFindingsResponse, CaseListItem, CaseResults, FinalReportBlocker,
   FinalReportState, HealthStatus, StatusResponse, TitleChainEntry, getToken, setToken,
 } from '../api/backend';
 import { DocSummary } from './utils';
@@ -12,9 +12,10 @@ import { requirementsForPausedTransaction } from './transactionResults';
 import { TransactionResultCard } from './TransactionResultCard';
 import { EvidenceRequestDialog } from './EvidenceRequestDialog';
 import { FinalReportBlockersModal } from './FinalReportBlockersModal';
+import { ConsolidatedFindings } from './ConsolidatedFindings';
 import {
   AlertTriangle, ArrowLeft, Check, CheckCircle2,
-  ChevronDown, ChevronUp, FileText, FileUp,
+  ChevronDown, ChevronUp, FileText, FileUp, FileWarning,
   GitMerge, Lock, LogIn, LogOut, MapPin, Menu,
   Play, Plus, RefreshCw, ShieldCheck, Sparkles, Download,
   Trash2, Upload, Users, X, XCircle, ScrollText,
@@ -411,7 +412,6 @@ function ChainTimeline({ chain }: {
             : typeKey === 'RELEASE' || typeKey === 'RELEASE_OF_MORTGAGE' ? 'RELEASE BENEFICIARY'
             : typeKey === 'PARTITION' ? 'ALLOTTED PARTIES'
             : 'PARTIES (PURCHASERS FIELD)';
-          const entryIdx = e.sequence ?? e.transaction_index ?? (e.tx_id ? e.tx_id.replace(/^T/, '') : null);
           const schedule = chainPropertyDescription(e);
           const survey = chainSurveyIdentity(e);
           const consideration = chainConsideration(e);
@@ -433,9 +433,6 @@ function ChainTimeline({ chain }: {
                     <span className="chain-node-label">DOCUMENT TYPE</span>
                     <p className="chain-node-value doc">
                       {docType}
-                      {entryIdx != null && (
-                        <span className={`chain-entry-badge badge-${tagCls}`}>ENTRY #{entryIdx}</span>
-                      )}
                     </p>
                     {transactionType && transactionType !== docType && (
                       <p className="chain-node-classification">Transaction class: {transactionType}</p>
@@ -677,6 +674,7 @@ export function VerificationDashboard() {
   const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [finalReport, setFinalReport] = useState<FinalReportState | null>(null);
+  const [caseFindings, setCaseFindings] = useState<CaseFindingsResponse | null>(null);
   const [reportBusy, setReportBusy] = useState(false);
   const [reportBlockers, setReportBlockers] = useState<FinalReportBlocker[] | null>(null);
   const [reportMessage, setReportMessage] = useState<string | null>(null);
@@ -1016,6 +1014,16 @@ export function VerificationDashboard() {
     }
   };
 
+  // Consolidated Phase C findings: rendered from the persisted container only;
+  // read failures hide the section but never fake content.
+  const refreshFindings = async (caseId: string) => {
+    try {
+      setCaseFindings(await API.getCaseFindings(caseId));
+    } catch {
+      setCaseFindings(null);
+    }
+  };
+
   const showResults = async (caseId: string) => {
     setView('results');
     sessionStorage.setItem("currentCaseId", caseId);
@@ -1025,6 +1033,7 @@ export function VerificationDashboard() {
       const docs = data.documents.filter(d => d.status === "structured");
       if (docs.length > 0) setActiveDocId(String(docs[0].doc_id));
       void refreshFinalReport(caseId);
+      void refreshFindings(caseId);
     } catch (e: any) {
       addLog(`✗ Failed to load results: ${e.message}`, "log-err");
     }
@@ -1035,6 +1044,7 @@ export function VerificationDashboard() {
     setActiveCaseId(caseId);
     sessionStorage.setItem("currentCaseId", caseId);
     setFinalReport(null);
+    setCaseFindings(null);
     setReportMessage(null);
     try {
       const data = await API.getResults(caseId);
@@ -1042,6 +1052,7 @@ export function VerificationDashboard() {
       const docs = data.documents.filter(d => d.status === "structured");
       if (docs.length > 0) setActiveDocId(String(docs[0].doc_id));
       void refreshFinalReport(caseId);
+      void refreshFindings(caseId);
       setView('results');
     } catch (e: any) {
       addLog(`✗ Failed to load results: ${e.message}`, "log-err");
@@ -1090,6 +1101,7 @@ export function VerificationDashboard() {
       if (fresh) setResults(fresh);
       setAnalyzing(false);
       loadCases();
+      if (currentCaseId) void refreshFindings(currentCaseId);
       addLog(
         done
           ? "✓ Results refreshed with latest output"
@@ -1121,13 +1133,13 @@ export function VerificationDashboard() {
     await tick();
   };
 
-  const handleGenerateFinalReport = async () => {
+  const handleGenerateFinalReport = async (reportType: 'FINAL' | 'PRELIMINARY' = 'FINAL') => {
     const cid = currentCaseId || caseInfo?.case_id;
     if (!cid || reportBusy) return;
     setReportBusy(true);
     setReportMessage(null);
     try {
-      const outcome = await API.generateFinalReport(cid);
+      const outcome = await API.generateFinalReport(cid, reportType);
       if (outcome.status === 'blocked') {
         setReportBlockers(outcome.blockers || []);
       } else if (outcome.status === 'generated') {
@@ -1138,6 +1150,12 @@ export function VerificationDashboard() {
     } finally {
       setReportBusy(false);
     }
+  };
+
+  // Blocked-FINAL dialog shortcut: the same PRELIMINARY flow, dialog dismissed.
+  const handleGeneratePreliminaryFromModal = () => {
+    setReportBlockers(null);
+    void handleGenerateFinalReport('PRELIMINARY');
   };
 
   const fetchFinalReportPdf = async (): Promise<Blob> => {
@@ -1439,6 +1457,7 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
         <FinalReportBlockersModal
           blockers={reportBlockers}
           onClose={() => setReportBlockers(null)}
+          onGeneratePreliminary={handleGeneratePreliminaryFromModal}
         />
       )}
       {/* Main Top Bar */}
@@ -1875,14 +1894,30 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                     <button
                       className="btn btn-secondary"
                       disabled={reportBusy}
-                      onClick={handleGenerateFinalReport}
-                      title="Create the final property title audit report PDF"
+                      onClick={() => handleGenerateFinalReport('FINAL')}
+                      title="Create the final property title audit report PDF (requires every transaction verified)"
                     >
                       <ScrollText size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
                       {reportBusy ? 'Generating…' : finalReport?.report ? 'Regenerate Final Report' : 'Generate Final Report'}
                     </button>
+                    {finalReport && !finalReport.ready && !reportBusy && (
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => handleGenerateFinalReport('PRELIMINARY')}
+                        title="An incomplete, clearly-labeled PRELIMINARY audit — lists exactly what remains outstanding"
+                      >
+                        <FileWarning size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+                        Generate Preliminary Report
+                      </button>
+                    )}
                     {finalReport?.report?.pdf_available && (
                       <>
+                        {finalReport?.report?.report_type && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#4338ca', background: '#e0e7ff', border: '1px solid #a5b4fc', borderRadius: 999, padding: '4px 12px' }}>
+                            {finalReport.report.report_type === 'PRELIMINARY' ? 'PRELIMINARY' : 'FINAL'}
+                            {typeof finalReport.report.version === 'number' && ` · v${finalReport.report.version}`}
+                          </span>
+                        )}
                         <button className="btn btn-secondary" disabled={reportBusy} onClick={previewFinalReportPdf}>
                           <FileText size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
                           Preview Report
@@ -1893,16 +1928,21 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                         </button>
                       </>
                     )}
-                    {finalReport?.report?.stale && (
+                    {(finalReport?.report?.superseded ?? finalReport?.report?.stale) && (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#b45309', background: '#fffbeb', border: '1px solid #f59e0b', borderRadius: 999, padding: '4px 12px' }}>
                         <AlertTriangle size={12} />
-                        Report is out of date — case results changed; regenerate
+                        Report superseded — verification results changed; regenerate
                       </span>
                     )}
                     {reportMessage && (
                       <span style={{ fontSize: 12, color: '#b91c1c' }}>{reportMessage}</span>
                     )}
                   </div>
+
+                  {/* Consolidated property findings (Phase C container). */}
+                  {caseFindings && (
+                    <ConsolidatedFindings data={caseFindings} />
+                  )}
 
                   {/* Document Extractions — bottom of verification report */}
                   <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 24, marginTop: 8 }}>

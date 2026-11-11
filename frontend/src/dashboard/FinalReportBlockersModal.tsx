@@ -1,16 +1,19 @@
 import React from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, FileWarning } from 'lucide-react';
 import type { FinalReportBlocker } from '../api/backend';
 
 interface Props {
   blockers: FinalReportBlocker[];
   onClose: () => void;
+  /** Offered only when the case cannot produce a FINAL report yet. */
+  onGeneratePreliminary?: () => void;
 }
 
 // Blockers dialog: explains which transaction verifications are incomplete and
 // exactly which documents each one still needs before a final report can be
-// generated. Read-only — it points the user back to the case workflow.
-export function FinalReportBlockersModal({ blockers, onClose }: Props) {
+// generated. Read-only on the verification side — it points the user back to
+// the case workflow, but offers the clearly-labeled preliminary report.
+export function FinalReportBlockersModal({ blockers, onClose, onGeneratePreliminary }: Props) {
   return (
     <div role="presentation" style={{ position: 'fixed', inset: 0, zIndex: 20000, display: 'grid', placeItems: 'center', padding: 20, background: 'rgba(15, 23, 42, 0.56)' }}>
       <section role="dialog" aria-modal="true" aria-labelledby="final-report-blockers-title" className="card" style={{ width: 'min(600px, 100%)', maxHeight: 'min(82vh, 740px)', overflowY: 'auto', border: '1px solid #fca5a5', background: '#fef2f2', boxShadow: '0 24px 80px rgba(0,0,0,.28)', padding: 24 }}>
@@ -30,6 +33,11 @@ export function FinalReportBlockersModal({ blockers, onClose }: Props) {
                 <span style={{ display: 'inline-block', marginLeft: 8, padding: '1px 8px', borderRadius: 999, fontSize: 11, fontWeight: 600, background: '#fee2e2', color: '#b91c1c', verticalAlign: 'middle' }}>
                   {(blocker.status || '').replace(/_/g, ' ').toLowerCase() || 'pending'}
                 </span>
+                {blocker.skipped && (
+                  <span style={{ display: 'inline-block', marginLeft: 6, padding: '1px 8px', borderRadius: 999, fontSize: 11, fontWeight: 600, background: '#fef3c7', color: '#b45309', verticalAlign: 'middle' }}>
+                    user skipped
+                  </span>
+                )}
               </strong>
               {blocker.note && <span style={{ display: 'block', color: '#57534e', fontSize: 13, lineHeight: 1.5, marginBottom: 4 }}>{blocker.note}</span>}
               {blocker.required_documents.length > 0 ? (
@@ -49,6 +57,16 @@ export function FinalReportBlockersModal({ blockers, onClose }: Props) {
         </ul>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <button className="btn btn-primary" onClick={onClose}>Back to case</button>
+          {onGeneratePreliminary && (
+            <button
+              className="btn btn-secondary"
+              onClick={onGeneratePreliminary}
+              title="Generate a clearly-labeled PRELIMINARY report over the current verification state — it lists everything still outstanding"
+            >
+              <FileWarning size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+              Generate preliminary report
+            </button>
+          )}
         </div>
       </section>
     </div>

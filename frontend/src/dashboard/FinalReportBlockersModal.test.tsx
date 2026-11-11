@@ -27,8 +27,15 @@ const blockers: FinalReportBlocker[] = [
   },
 ];
 
-function render(items: FinalReportBlocker[] = blockers): string {
-  return renderToStaticMarkup(<FinalReportBlockersModal blockers={items} onClose={() => {}} />);
+const skippedBlocker: FinalReportBlocker = {
+  ...blockers[0],
+  skipped: true,
+};
+
+function render(items: FinalReportBlocker[] = blockers, opts: { onGeneratePreliminary?: () => void } = {}): string {
+  return renderToStaticMarkup(
+    <FinalReportBlockersModal blockers={items} onClose={() => {}} {...opts} />,
+  );
 }
 
 test('lists every blocking transaction with its status and required documents', () => {
@@ -52,4 +59,20 @@ test('an empty blocker list still renders the dialog with the closing action', (
   const html = render([]);
   assert.match(html, /Transaction verification incomplete/);
   assert.match(html, /Back to case/);
+});
+
+test('a user-skipped transaction is labeled as such, without the badge for unskipped ones', () => {
+  assert.doesNotMatch(render(), /user skipped/);
+  const html = render([skippedBlocker]);
+  assert.match(html, /user skipped/);
+});
+
+test('the preliminary-report action appears only when offered', () => {
+  assert.doesNotMatch(render(), /Generate preliminary report/);
+  let called = false;
+  const html = render([blockers[0]], {
+    onGeneratePreliminary: () => { called = true; },
+  });
+  assert.match(html, /Generate preliminary report/);
+  assert.ok(!called, 'callback must not fire during a static render');
 });
