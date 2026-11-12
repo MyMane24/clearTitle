@@ -246,6 +246,30 @@ test('skipped result retains its actual report, citations, and outstanding requi
   assert.doesNotMatch(html, />Pending verification</);
 });
 
+test('all-clear earlier-transactions section is hidden; pending ones still render', () => {
+  const allClear = render({
+    ...base,
+    report: [
+      '## Conclusion',
+      '',
+      'The inspected deed supports the transfer.',
+      '',
+      '## Earlier transactions',
+      '',
+      'No earlier sale or transfer remains unverified in the supplied chain context.',
+    ].join('\n'),
+  });
+  assert.match(allClear, /The inspected deed supports the transfer/);
+  assert.doesNotMatch(allClear, /Earlier transactions/);
+
+  const pending = render({
+    ...base,
+    report: '## Earlier transactions\n\nThe earlier sale has not been verified yet; this assessment rests on this transaction\'s own evidence.',
+  });
+  assert.match(pending, /Earlier transactions/);
+  assert.match(pending, /The earlier sale has not been verified yet/);
+});
+
 test('issue, inconclusive, and in-progress results receive distinct readable status classes', () => {
   assert.match(render({ ...base, status: 'ISSUES_IDENTIFIED' }), /status-issues_identified/);
   assert.match(render({ ...base, status: 'INCONCLUSIVE' }), /status-inconclusive/);

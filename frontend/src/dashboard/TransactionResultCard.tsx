@@ -24,6 +24,11 @@ type Props = {
 const documentIdPattern = /DOC_\d+/g;
 const citationPattern = /\[([^\[\]\n]+)\]/g;
 const boldPattern = /\*\*([^*]+)\*\*/g;
+// The '## Earlier transactions' section is only meaningful when an earlier
+// chain link is actually unverified; an all-clear body (the model writes one
+// even when every upstream link is verified) reads like a defect — hide it.
+const earlierSectionPattern = /^earlier transactions|^upstream dependency/i;
+const earlierAllClearPattern = /(?:\bno earlier\b[\s\S]*?\bunverified\b|\bnothing\b[\s\S]*?\bunverified\b|\ball earlier\b[\s\S]*?\bverified\b)/i;
 
 function displayDocumentName(document?: DocumentLabel): string {
   const filename = document?.filename?.trim();
@@ -165,7 +170,9 @@ export function TransactionResultCard({
   const status = skippedStatus ? transactionStatusLabel('SKIPPED') : transactionStatusLabel(transaction.status);
   const statusClass = skippedStatus ? 'status-skipped' : `status-${String(transaction.status || 'PENDING').toLowerCase()}`;
   const report = typeof transaction.report === 'string' ? transaction.report.trim() : '';
-  const sections = reportSections(report);
+  const sections = reportSections(report).filter(
+    (section) => !(earlierSectionPattern.test(section.heading) && earlierAllClearPattern.test(section.body)),
+  );
 
   return (
     <article className="verification-result-entry" data-testid="transaction-result-card">
