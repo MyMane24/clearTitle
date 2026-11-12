@@ -3960,3 +3960,52 @@
   .ctd-root .phase-a-chain-view .phase-a-chain-entry { padding: 19px 0 21px; }
 
   .ctd-root .verification-property-identity-item { grid-template-columns: 1fr; gap: 3px; }}
+/* -- verification report (generated) --------------------------------------- */
+
+.ctd-root .verify-report { border: 1px solid #e2e8f0; border-radius: 12px; padding: 22px 24px; background: #fff; }
+.ctd-root .verify-report-header { display: flex; align-items: flex-start; gap: 14px; }
+.ctd-root .verify-report-logo { width: 66px; height: auto; flex-shrink: 0; margin-top: 2px; }
+.ctd-root .verify-report-headline { flex: 1; min-width: 0; }
+.ctd-root .verify-report-titlerow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ctd-root .verify-report-title { margin: 0; font-size: 20px; font-weight: 700; color: #1b2a4a; letter-spacing: -0.01em; }
+.ctd-root .verify-report-type { font-size: 10.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; }
+.ctd-root .verify-report-type.is-final { color: #166534; background: #dcfce7; }
+.ctd-root .verify-report-type.is-preliminary { color: #b45309; background: #fef3c7; }
+.ctd-root .verify-report-date { margin: 4px 0 0; font-size: 11.5px; color: #94a3b8; }
+.ctd-root .verify-report-stale { margin-top: 14px; padding: 9px 12px; border: 1px solid #fde68a; background: #fffbeb; color: #b45309; font-size: 12.5px; border-radius: 8px; }
+.ctd-root .verify-report-section { margin-top: 22px; }
+.ctd-root .verify-report-heading { margin: 0 0 10px; padding-bottom: 7px; border-bottom: 1px solid #e2e8f0; font-size: 12px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #1b2a4a; }
+.ctd-root .verify-report-schedule { margin: 0; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+.ctd-root .verify-report-schedule-row { display: grid; grid-template-columns: minmax(170px, 240px) minmax(0, 1fr); }
+.ctd-root .verify-report-schedule-row + .verify-report-schedule-row { border-top: 1px solid #eef1f5; }
+.ctd-root .verify-report-schedule-row dt { margin: 0; padding: 9px 14px; background: #f8fafc; font-size: 12px; font-weight: 650; color: #334155; }
+.ctd-root .verify-report-schedule-row dd { margin: 0; padding: 9px 14px; font-size: 12.5px; color: #1e293b; line-height: 1.55; }
+.ctd-root .verify-report-docs { margin: 0; padding: 0; list-style: none; columns: 2; column-gap: 28px; }
+.ctd-root .verify-report-docs li { break-inside: avoid; margin: 0 0 7px; padding-left: 15px; position: relative; font-size: 12.5px; color: #1e293b; line-height: 1.5; overflow-wrap: anywhere; }
+.ctd-root .verify-report-docs li::before { content: ''; position: absolute; left: 2px; top: 7px; width: 5px; height: 5px; border-radius: 50%; background: #e8763a; }
+.ctd-root .verify-report-doctype { color: #64748b; }
+.ctd-root .verify-report-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.ctd-root .verify-report-chip { font-size: 11.5px; font-weight: 600; color: #fff; padding: 4px 11px; border-radius: 999px; }
+.ctd-root .verify-report-chip.is-critical { background: #dc2626; }
+.ctd-root .verify-report-chip.is-caution { background: #d97706; }
+.ctd-root .verify-report-chip.is-clear { background: #16a34a; }
+.ctd-root .verify-report-cards { display: grid; gap: 9px; }
+.ctd-root .verify-report-card { border: 1px solid #eef1f5; border-left-width: 4px; border-radius: 8px; padding: 11px 14px 12px 16px; }
+.ctd-root .verify-report-card-chip { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.ctd-root .verify-report-card-title { margin: 3px 0 3px; font-size: 13.5px; font-weight: 700; color: #1b2a4a; }
+.ctd-root .verify-report-card-detail { margin: 0; font-size: 12.5px; color: #334155; line-height: 1.6; }
+.ctd-root .verify-report-limits { margin: 0; padding: 0; list-style: none; }
+.ctd-root .verify-report-limits li { margin: 0 0 7px; padding-left: 15px; position: relative; font-size: 12.5px; color: #334155; line-height: 1.6; }
+.ctd-root .verify-report-limits li::before { content: ''; position: absolute; left: 2px; top: 7px; width: 5px; height: 5px; border-radius: 50%; background: #94a3b8; }
+.ctd-root .verify-report-verdict { margin: 0 0 7px; font-size: 15px; font-weight: 700; color: #1b2a4a; }
+.ctd-root .verify-report-summary { margin: 0 0 10px; font-size: 12.5px; color: #334155; line-height: 1.65; }
+.ctd-root .verify-report-conditions { margin: 0 0 10px; padding-left: 20px; }
+.ctd-root .verify-report-conditions li { margin-bottom: 6px; font-size: 12.5px; color: #334155; line-height: 1.6; }
+.ctd-root .verify-report-disclaimer { margin: 4px 0 0; font-size: 11.5px; color: #94a3b8; line-height: 1.5; }
+
+@media (max-width: 680px) {
+  .ctd-root .verify-report-header { flex-direction: column; }
+  .ctd-root .verify-report-docs { columns: 1; }
+  .ctd-root .verify-report-schedule-row { grid-template-columns: 1fr; }
+  .ctd-root .verify-report-schedule-row dt { padding-bottom: 2px; }
+}

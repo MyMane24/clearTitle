@@ -4,13 +4,14 @@ import './dashboard.css';
 import clearTitleLogo from '../assets/clearTitle.png';
 import {
   API, AuthResponse, AuthUser, CaseListItem, CaseResults,
-  HealthStatus, StatusResponse, TitleChainEntry, getToken, setToken,
+  HealthStatus, StatusResponse, TitleChainEntry, VerificationReportState, getToken, setToken,
 } from '../api/backend';
 import { DocSummary } from './utils';
 import { PhaseAChainView } from './PhaseAResult';
 import { requirementsForPausedTransaction } from './transactionResults';
 import { TransactionResultCard } from './TransactionResultCard';
 import { EvidenceRequestDialog } from './EvidenceRequestDialog';
+import { VerificationReportView } from './VerificationReport';
 import {
   AlertTriangle, ArrowLeft, Check, CheckCircle2,
   ChevronDown, ChevronUp, FileText, FileUp,
@@ -676,6 +677,9 @@ export function VerificationDashboard() {
   const [evidenceUploads, setEvidenceUploads] = useState<Record<number, File | undefined>>({});
   const [dismissedPauseKey, setDismissedPauseKey] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [reportState, setReportState] = useState<VerificationReportState | null>(null);
+  const [reportBusy, setReportBusy] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [pipelineStartError, setPipelineStartError] = useState<string | null>(null);
   const [cases, setCases] = useState<CaseListItem[]>([]);
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
@@ -697,6 +701,63 @@ export function VerificationDashboard() {
   const addLog = useCallback((msg: string, cls = 'log-info') => {
     setLogs(prev => [...prev.slice(-200), { text: msg, cls }]);
   }, []);
+
+  // Refresh report readiness whenever the case's verification state moves.
+  const reportCaseKey = `${String(results?.case?.case_id || '')}:${String(results?.agent?.updated_at || '')}`;
+  useEffect(() => {
+    const caseId = String(results?.case?.case_id || '');
+    if (!caseId) { setReportState(null); return; }
+    let cancelled = false;
+    API.getVerificationReport(caseId)
+      .then(state => { if (!cancelled) setReportState(state); })
+      .catch(() => { if (!cancelled) setReportState(null); });
+    return () => { cancelled = true; };
+  }, [reportCaseKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const generateReport = useCallback(async (reportType: 'FINAL' | 'PRELIMINARY') => {
+    const caseId = currentCaseId || results?.case?.case_id;
+    if (!caseId || reportBusy) return;
+    setReportBusy(true);
+    try {
+      await API.generateVerificationReport(caseId, reportType);
+      setReportState(await API.getVerificationReport(caseId));
+      addLog(`Verification ${reportType.toLowerCase()} report generated.`);
+    } catch (error: any) {
+      // A 409 (FINAL gated) also refreshes state so the blockers become visible.
+      try { setReportState(await API.getVerificationReport(caseId)); } catch { /* keep old state */ }
+      alert(error?.message || 'Could not generate the report.');
+    } finally {
+      setReportBusy(false);
+    }
+  }, [currentCaseId, results?.case?.case_id, reportBusy, addLog]);
+
+  const downloadReportPdf = useCallback(async () => {
+    const caseId = currentCaseId || results?.case?.case_id;
+    if (!caseId) return;
+    setPdfBusy(true);
+    try {
+      const headers: Record<string, string> = {};
+      const token = getToken();
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const response = await fetch(`/api/results/${caseId}/verification-report/pdf`, { headers });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.detail || `Request failed (${response.status})`);
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'title-verification-report.pdf';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      alert('Could not download the report. ' + (error?.message || ''));
+    } finally {
+      setPdfBusy(false);
+    }
+  }, [currentCaseId, results?.case?.case_id]);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -1781,6 +1842,47 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                       <RefreshCw size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
                       {analyzing ? 'Analyzing…' : 'Resume Analysis'}
                     </button>
+                  </div>
+
+                  {/* Title verification report — gated generation + preview */}
+                  <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 20, marginBottom: 24 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                      <span className="font-mono" style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                        TITLE VERIFICATION REPORT
+                      </span>
+                      <button
+                        className="btn btn-primary"
+                        disabled={reportBusy || !reportState?.final_ready}
+                        onClick={() => generateReport('FINAL')}
+                        title={reportState?.final_ready ? 'Generate the final verification report' : 'Locked until every transaction is verified'}
+                      >
+                        {reportBusy ? 'Generating…' : 'Generate Final Report'}
+                      </button>
+                      <button
+                        className="btn btn-secondary"
+                        disabled={reportBusy}
+                        onClick={() => generateReport('PRELIMINARY')}
+                        title="Generate a preliminary report while verification is still in progress"
+                      >
+                        Generate Preliminary Report
+                      </button>
+                    </div>
+                    {reportState && !reportState.final_ready ? (
+                      <div style={{ marginTop: 10, fontSize: 12.5, color: '#b45309', lineHeight: 1.55 }}>
+                        Final report is locked until every transaction is verified
+                        {reportState.blockers?.length ? (': ' + reportState.blockers.map(b => `#${b.sequence ?? '?'} ${b.transaction_type}`).join(', ')) : '.'}
+                      </div>
+                    ) : null}
+                    {reportState?.report ? (
+                      <div style={{ marginTop: 16 }}>
+                        <VerificationReportView
+                          report={reportState.report}
+                          logo={clearTitleLogo}
+                          onDownloadPdf={downloadReportPdf}
+                          downloadBusy={pdfBusy}
+                        />
+                      </div>
+                    ) : null}
                   </div>
 
                   {/* Document Extractions — bottom of verification report */}

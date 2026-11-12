@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
+from pydantic import BaseModel
 
 from backend.database.repositories.case_repo import get_case_owner
 from backend.logger import get_logger
@@ -12,6 +13,10 @@ from backend.services.results import build_case_results
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+
+class VerificationReportRequest(BaseModel):
+    report_type: str = "FINAL"
 
 
 def _enforce_access(case_id: str, user: dict | None) -> None:
@@ -28,6 +33,67 @@ async def get_results(case_id: str, user: dict | None = Depends(get_optional_use
         return build_case_results(case_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Case not found")
+
+
+@router.get("/results/{case_id}/verification-report")
+async def get_verification_report(case_id: str, user: dict | None = Depends(get_optional_user)):
+    """Report readiness (FINAL gate) plus the stored report, when one exists."""
+    _enforce_access(case_id, user)
+    from backend.services import final_report
+    try:
+        return final_report.get_report_state(case_id)
+    except final_report.NoCaseResult:
+        raise HTTPException(status_code=404, detail="Case not found or no verification results yet")
+    except Exception as e:
+        logger.error("Report state unavailable for %s: %s", case_id, e)
+        raise HTTPException(status_code=500, detail="Could not load report state")
+
+
+@router.post("/results/{case_id}/verification-report/generate")
+async def generate_verification_report(
+    case_id: str, request: VerificationReportRequest, user: dict | None = Depends(get_optional_user)
+):
+    """Generate the title verification report (FINAL is gated on readiness)."""
+    _enforce_access(case_id, user)
+    from backend.integrations.llm.agent_llm import AgentLLMError
+    from backend.services import final_report
+    try:
+        result = final_report.generate_final_report(case_id, request.report_type)
+    except final_report.NoCaseResult:
+        raise HTTPException(status_code=404, detail="Case not found or no verification results yet")
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except final_report.ReportSynthesisError as e:
+        logger.error("Report synthesis failed for %s: %s", case_id, e)
+        raise HTTPException(status_code=502, detail="Report generation failed — the report engine returned unusable content")
+    except AgentLLMError as e:
+        logger.error("Report LLM call failed for %s: %s", case_id, e)
+        raise HTTPException(status_code=502, detail="Report generation failed — the report engine is unavailable")
+    except Exception as e:
+        logger.error("Final report generation failed for %s: %s", case_id, e)
+        raise HTTPException(status_code=500, detail="Report generation failed")
+    if result.get("status") == "blocked":
+        raise HTTPException(
+            status_code=409,
+            detail="Final report is not available yet — some transactions are still pending or awaiting documents.",
+        )
+    return result
+
+
+@router.get("/results/{case_id}/verification-report/pdf")
+async def get_verification_report_pdf(case_id: str, user: dict | None = Depends(get_optional_user)):
+    """Download the stored verification report PDF."""
+    _enforce_access(case_id, user)
+    from backend.services import final_report
+    try:
+        path = final_report.stored_pdf_path(case_id)
+    except final_report.FinalReportMissing as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return Response(
+        content=path.read_bytes(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{final_report.REPORT_FILENAME}"'},
+    )
 
 
 @router.get("/results/{case_id}/required-documents/pdf")

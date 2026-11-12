@@ -191,6 +191,40 @@ export interface CaseResults {
   agent: AgentReport;
 }
 
+export interface VerificationReportFinding {
+  severity: "CRITICAL" | "CAUTION" | "CLEAR";
+  title: string;
+  detail: string;
+}
+
+export interface VerificationReport {
+  report_type: "FINAL" | "PRELIMINARY";
+  generated_at: string;
+  schedule: Array<{ label: string; value: string }>;
+  documents_examined: Array<{ filename?: string | null; document_type?: string | null }>;
+  counts: { critical: number; caution: number; clear: number };
+  findings: VerificationReportFinding[];
+  cannot_verify: string[];
+  opinion: { verdict_line: string; summary: string; conditions: string[] };
+  stale?: boolean;
+  pdf_available?: boolean;
+}
+
+export interface VerificationReportBlocker {
+  tx_id?: string | null;
+  sequence?: number | null;
+  transaction_type: string;
+  status: string;
+  required_documents: string[];
+}
+
+export interface VerificationReportState {
+  case_id: string;
+  final_ready: boolean;
+  blockers: VerificationReportBlocker[];
+  report: VerificationReport | null;
+}
+
 async function apiError(response: Response, fallback = "Request failed"): Promise<string> {
   const text = await response.text();
   if (!text) return fallback;
@@ -319,5 +353,16 @@ export const API = {
 
   async analyze(caseId: string): Promise<{ case_id: string; status: string }> {
     return request(`/api/results/${caseId}/analyze`, { method: "POST" });
+  },
+
+  async getVerificationReport(caseId: string): Promise<VerificationReportState> {
+    return request<VerificationReportState>(`/api/results/${caseId}/verification-report`);
+  },
+
+  async generateVerificationReport(caseId: string, reportType: "FINAL" | "PRELIMINARY"): Promise<{ case_id: string; status: string }> {
+    return request(`/api/results/${caseId}/verification-report/generate`, {
+      method: "POST",
+      body: JSON.stringify({ report_type: reportType }),
+    });
   },
 };

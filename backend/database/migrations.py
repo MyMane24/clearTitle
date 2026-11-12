@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS title_chains (
 CREATE TABLE IF NOT EXISTS case_results (
     case_id VARCHAR(32) NOT NULL,
     case_result JSON NULL,
+    final_report JSON NULL,
     dossier_meta JSON NULL,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ON UPDATE CURRENT_TIMESTAMP,
@@ -192,6 +193,9 @@ def ensure_tables():
             # M2 (Stage 3): per-tx dossier revision index — the append-only
             # history of superseded dossier snapshots lives here, one JSON doc.
             ("case_results", "dossier_meta", "ALTER TABLE case_results ADD COLUMN dossier_meta JSON NULL"),
+            # Verification report (lean Phase D replacement): the generated
+            # report document, one JSON doc per case (latest wins).
+            ("case_results", "final_report", "ALTER TABLE case_results ADD COLUMN final_report JSON NULL"),
             # Stage 1 (target architecture): case-level phase state and the
             # analysis run that produced the persisted output. Additive only.
             ("cases", "phases", "ALTER TABLE cases ADD COLUMN phases JSON NULL"),
@@ -374,8 +378,7 @@ def ensure_tables():
             "ALTER TABLE verification_results DROP COLUMN latency_ms",
             "ALTER TABLE verification_results DROP COLUMN cost_usd",
             "ALTER TABLE verification_results DROP COLUMN model_used",
-            # Removed Phase C/D stores: consolidated findings + final report.
-            "ALTER TABLE case_results DROP COLUMN final_report",
+            # Removed Phase C stores: consolidated findings + report history.
             "ALTER TABLE case_results DROP COLUMN final_reports",
             "ALTER TABLE case_results DROP COLUMN property_findings",
         ]:
@@ -489,7 +492,7 @@ def downgrade_stage1(conn=None) -> None:
     """Revert the Stage 1 additive migration (docs/architecture §5 M1).
 
     Best-effort and manual: drops the requirements ledger and the
-    final-report/property-findings case columns. Never run as part of the startup path.
+    property-findings/report-history case columns. Never run as part of the startup path.
     """
     if conn is None:
         with _get_conn() as conn:
@@ -502,7 +505,6 @@ def downgrade_stage1(conn=None) -> None:
         "ALTER TABLE cases DROP COLUMN analysis_run_id",
         "ALTER TABLE title_chains DROP COLUMN phase_a_hash",
         "ALTER TABLE case_results DROP COLUMN dossier_meta",
-        "ALTER TABLE case_results DROP COLUMN final_report",
         "ALTER TABLE case_results DROP COLUMN property_findings",
         "ALTER TABLE case_results DROP COLUMN final_reports",
     ):
