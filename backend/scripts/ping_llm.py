@@ -17,7 +17,7 @@ try:
     resp = client.chat.completions.create(
         model=cfg.CLEARTITLE_AGENT_MODEL,
         messages=[{"role": "user", "content": "Reply with the single word: ok"}],
-        max_tokens=5,
+        max_completion_tokens=5,
     )
     print("PING OK:", resp.choices[0].message.content)
 except Exception as exc:
