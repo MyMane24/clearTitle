@@ -1,4 +1,4 @@
-﻿"""Results endpoints: title chain + verification output."""
+"""Results endpoints: title chain + verification output."""
 
 from __future__ import annotations
 

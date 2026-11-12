@@ -32,6 +32,5 @@ PyJWT==2.10.1
 # celery==5.4.0 allows kombu<6.0; kombu>=5.7 needs redis-py>=6.1. Pin so the
 # worker never silently breaks on re-resolve (kombu 5.7 + redis 4.6 crash-loops).
 celery==5.4.0
-kombu==5.6.2
 redis==4.6.0
 openai==1.56.1

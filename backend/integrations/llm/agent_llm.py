@@ -390,18 +390,6 @@ _TOOL_PROVIDERS: dict[str, Callable] = {
 }
 
 
-def register_provider(
-    name: str, *,
-    json_call: Callable | None = None,
-    tool_call: Callable | None = None,
-) -> None:
-    """Register/replace a provider at runtime (tests, future vendors)."""
-    if json_call is not None:
-        _JSON_PROVIDERS[name] = json_call
-    if tool_call is not None:
-        _TOOL_PROVIDERS[name] = tool_call
-
-
 def complete_json(
     prompt: str, *, schema: dict | None = None, system: str | None = None, task: str = "agent"
 ) -> dict:

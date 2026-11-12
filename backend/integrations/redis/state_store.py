@@ -188,37 +188,6 @@ def update_file_in_case(case_id: str, doc_id: str, saved_path: str, filename: st
         print(f"Failed to update Redis cache for case {case_id}: {e}")
 
 
-def get_doc_file_path(case_id: str, doc_id: str) -> str | None:
-    try:
-        for f in get_case_files(case_id):
-            if f["doc_id"] == doc_id and f.get("saved_path"):
-                return f["saved_path"]
-    except Exception:
-        pass
-
-    # Fallback to MySQL
-    try:
-        with _get_conn() as conn:
-            cursor = conn.cursor(dictionary=True)
-            cursor.execute("SELECT file_paths FROM documents WHERE case_id = %s AND doc_id = %s", (case_id, doc_id))
-            row = cursor.fetchone()
-            if row and row.get("file_paths"):
-                paths = row["file_paths"]
-                if isinstance(paths, str):
-                    paths = json.loads(paths)
-                if isinstance(paths, dict) and "raw" in paths:
-                    raw_path = paths["raw"]
-                    try:
-                        update_file_in_case(case_id, doc_id, raw_path, get_doc_filename(case_id, doc_id) or doc_id)
-                    except Exception:
-                        pass
-                    return raw_path
-    except Exception as e:
-        print(f"Fallback to MySQL failed for get_doc_file_path: {e}")
-
-    return None
-
-
 def get_doc_filename(case_id: str, doc_id: str) -> str | None:
     try:
         for f in get_case_files(case_id):

@@ -1,4 +1,4 @@
-﻿"""Celery tasks for the ClearTitle single-agent workflow."""
+"""Celery tasks for the ClearTitle single-agent workflow."""
 
 from __future__ import annotations
 
