@@ -197,15 +197,37 @@ export interface VerificationReportFinding {
   detail: string;
 }
 
+export type VerificationReportLevel = "CLEAR" | "CAUTION" | "CRITICAL";
+
+export interface VerificationReportChainRow {
+  sequence: number;
+  label: string;
+  transaction_type: string;
+  date?: string | null;
+  registration?: string | null;
+  from: string[];
+  to: string[];
+  property_type?: string | null;
+  result: { level: VerificationReportLevel; label: string; state?: string };
+}
+
 export interface VerificationReport {
   report_type: "FINAL" | "PRELIMINARY";
   generated_at: string;
-  schedule: Array<{ label: string; value: string }>;
+  schema_version?: string;
   documents_examined: Array<{ filename?: string | null; document_type?: string | null }>;
-  counts: { critical: number; caution: number; clear: number };
-  findings: VerificationReportFinding[];
-  cannot_verify: string[];
-  opinion: { verdict_line: string; summary: string; conditions: string[] };
+  // Schema 3.0: the application's facts plus a markdown interpretation written for this case.
+  verdict?: { level: VerificationReportLevel; headline: string };
+  property?: { type?: string | null; rows: Array<{ label: string; value: string }> };
+  chain?: VerificationReportChainRow[];
+  narrative_markdown?: string;
+  documents_needed?: Array<{ document: string; reason?: string; for?: string }>;
+  counts?: { verified?: number; issues?: number; awaiting?: number; critical?: number; caution?: number; clear?: number };
+  // Schema 2.0 (reports saved before the redesign still display).
+  schedule?: Array<{ label: string; value: string }>;
+  findings?: VerificationReportFinding[];
+  cannot_verify?: string[];
+  opinion?: { verdict_line: string; summary: string; conditions: string[] };
   stale?: boolean;
   pdf_available?: boolean;
 }

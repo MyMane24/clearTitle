@@ -67,24 +67,16 @@ def _agent_state(chain_ids: list[str] | None = None, skipped: list[str] | None =
 
 
 NARRATIVE = {
-    "schedule": [
-        {"label": "Survey number(s)", "value": "45/2B"},
-        {"label": "Extent / area", "value": "6070 square metres"},
-        {"label": "Village / town and taluk", "value": "Honaga Village, Belagavi Taluk"},
-        {"label": "Classification / current land use", "value": "Converted residential"},
-    ],
-    "findings": [
-        {"severity": "CRITICAL", "title": "Original deed missing", "detail": "The 1996 conveyance is only recited."},
-        {"severity": "CAUTION", "title": "No encumbrance evidence", "detail": "No encumbrance certificate was examined."},
-        {"severity": "CLEAR", "title": "Parcel identity matches", "detail": "All deeds describe the same parcel."},
-        {"severity": "CLEAR", "title": "Registration confirmed", "detail": "Registration particulars are recorded."},
-    ],
-    "cannot_verify": ["possession was not inspected", "no encumbrance search"],
-    "opinion": {
-        "verdict_line": "Chain is verified; one item needs your attention",
-        "summary": "The recorded transfers connect the current owner to the earliest supported root.",
-        "conditions": ["Obtain an encumbrance certificate before you commit."],
-    },
+    "verdict": {"level": "CAUTION", "headline": "Do not pay yet: the 1996 conveyance is only recited."},
+    "property_type": "Agricultural land",
+    "markdown": (
+        "## Bottom line\n\nThe recorded transfers connect the current owner to the earliest supported root, "
+        "but the 1996 deed itself was not examined.\n\n"
+        "## What matters most\n\n- **Missing deed** — The 1996 conveyance is only recited.\n"
+        "- **No encumbrance search** — No encumbrance certificate was examined.\n\n"
+        "| Deed | Extent |\n| --- | --- |\n| 1996 | 6070 sq m |\n| 2004 | 6070 sq m |\n\n"
+        "## Next steps\n\n1. Obtain the 1996 deed.\n2. Obtain an encumbrance certificate."
+    ),
 }
 
 DOCUMENTS = [
@@ -96,27 +88,108 @@ DOCUMENTS = [
 class ReportNarrativeModelTest(unittest.TestCase):
     def test_valid_narrative_parses(self):
         narrative = fr.ReportNarrative.model_validate(NARRATIVE)
-        self.assertEqual(narrative.findings[0].severity, "CRITICAL")
-        self.assertEqual(len(narrative.schedule), 4)
-        self.assertEqual(narrative.opinion.verdict_line, NARRATIVE["opinion"]["verdict_line"])
+        self.assertEqual(narrative.verdict.level, "CAUTION")
+        self.assertIn("## Next steps", narrative.markdown)
 
-    def test_invalid_severity_rejected(self):
-        bad = {**NARRATIVE, "findings": [{"severity": "MAYBE", "title": "x", "detail": "y"}]}
+    def test_invalid_level_rejected(self):
+        bad = {**NARRATIVE, "verdict": {"level": "MAYBE", "headline": "x"}}
         with self.assertRaises(ValidationError):
             fr.ReportNarrative.model_validate(bad)
 
-    def test_missing_opinion_rejected(self):
-        bad = {key: value for key, value in NARRATIVE.items() if key != "opinion"}
+    def test_missing_markdown_rejected(self):
+        bad = {key: value for key, value in NARRATIVE.items() if key != "markdown"}
         with self.assertRaises(ValidationError):
             fr.ReportNarrative.model_validate(bad)
 
-    def test_markdown_bolding_is_stripped_before_validation(self):
-        bolded = {
-            **NARRATIVE,
-            "opinion": {**NARRATIVE["opinion"], "verdict_line": "**Chain is verified**"},
-        }
-        cleaned = fr._strip_markdown(bolded)
-        self.assertEqual(cleaned["opinion"]["verdict_line"], "Chain is verified")
+    def test_markdown_bolding_is_stripped_from_short_values(self):
+        self.assertEqual(fr._strip_markdown("**Chain is verified**"), "Chain is verified")
+
+
+class FactsTest(unittest.TestCase):
+    def _facts(self, case_result, state=None):
+        state = state or _agent_state()
+        readiness = fr._readiness_from(case_result, state)
+        return fr._assemble_facts(case_result, state, readiness), readiness
+
+    def test_chain_rows_use_customer_labels_not_internal_ids(self):
+        facts, _ = self._facts([_tx(tx_id="PA-TC-0001", sequence=1), _tx(tx_id="PA-TC-0002", sequence=2)])
+        self.assertEqual(facts["rows"][0]["label"], "the 1996 sale deed")
+        self.assertEqual(facts["rows"][0]["result"], {"level": "CLEAR", "label": "Verified", "state": "verified"})
+        self.assertNotIn("PA-TC", json.dumps(facts["rows"]))
+
+    def test_floor_is_clear_only_when_everything_is_verified(self):
+        facts, _ = self._facts([_tx(tx_id="PA-TC-0001", sequence=1), _tx(tx_id="PA-TC-0002", sequence=2)])
+        self.assertEqual(facts["floor"], "CLEAR")
+        self.assertEqual(facts["counts"], {"verified": 2, "issues": 0, "awaiting": 0})
+
+    def test_pending_link_raises_the_floor_and_lists_its_documents_once(self):
+        required = [{"document_type": "Sale deed 1985", "reason": "Root title"}]
+        facts, _ = self._facts([
+            _tx(status="PENDING_NOT_VERIFIED", tx_id="PA-TC-0001", sequence=1, required=required),
+            _tx(status="PENDING_NOT_VERIFIED", tx_id="PA-TC-0002", sequence=2, required=required),
+        ])
+        self.assertEqual(facts["floor"], "CAUTION")
+        self.assertEqual(facts["counts"]["awaiting"], 2)
+        self.assertEqual([d["document"] for d in facts["documents_needed"]], ["Sale deed 1985"])
+        self.assertEqual(facts["documents_needed"][0]["for"], "the 1996 sale deed")
+
+    def test_a_critical_finding_forces_critical(self):
+        critical = [{"title": "Forged signature", "text": "x", "severity": "CRITICAL", "is_legal_defect": True,
+                     "significance": "ESTABLISHED", "evidence_gaps": []}]
+        facts, _ = self._facts([_tx(tx_id="PA-TC-0001", sequence=1, findings=critical),
+                                _tx(tx_id="PA-TC-0002", sequence=2)])
+        self.assertEqual(facts["floor"], "CRITICAL")
+
+    def test_skipped_link_is_reported_as_skipped(self):
+        facts, _ = self._facts(
+            [_tx(status="PENDING_NOT_VERIFIED", tx_id="PA-TC-0001", sequence=1), _tx(tx_id="PA-TC-0002", sequence=2)],
+            _agent_state(skipped=["PA-TC-0001"]),
+        )
+        self.assertEqual(facts["rows"][0]["result"]["label"], "Skipped")
+
+    def test_skipped_link_with_open_requests_says_documents_are_needed(self):
+        facts, _ = self._facts(
+            [_tx(status="PENDING_NOT_VERIFIED", tx_id="PA-TC-0001", sequence=1,
+                 required=[{"document_type": "Will 1996", "reason": "Devolution"}]),
+             _tx(tx_id="PA-TC-0002", sequence=2)],
+            _agent_state(skipped=["PA-TC-0001"]),
+        )
+        self.assertEqual(facts["rows"][0]["result"]["label"], "Skipped (documents needed)")
+        self.assertEqual(facts["counts"], {"verified": 1, "issues": 0, "awaiting": 1})
+
+    def test_counts_cover_transfers_only_but_an_open_endpoint_check_still_raises_the_floor(self):
+        state = _agent_state()
+        state["result"]["title_chain"].append({"tx_id": "PA-TC-0003", "chain_position": 3, "documented_transaction": {
+            "transaction_type": "No ownership transfer supported after latest sale", "transferors": [], "transferees": []}})
+        facts, _ = self._facts([_tx(), _tx(tx_id="PA-TC-0002", sequence=2),
+                                _tx(status="PENDING_NOT_VERIFIED", tx_id="PA-TC-0003", sequence=3)], state)
+        self.assertEqual(facts["counts"], {"verified": 2, "issues": 0, "awaiting": 0})
+        self.assertEqual(facts["floor"], "CAUTION")
+
+    def test_property_snapshot_comes_from_the_latest_real_transfer(self):
+        state = _agent_state()
+        state["result"]["title_chain"][-1]["documented_transaction"].update(
+            {"property_type": "Open plot", "property_schedule": "Plot 9, CTS 1360B/9", "transaction_number": "BEL-1"})
+        state["result"]["title_chain"].append({"tx_id": "PA-TC-0003", "chain_position": 3, "documented_transaction": {
+            "transaction_type": "No ownership transfer supported after latest sale", "transferors": [], "transferees": []}})
+        facts, _ = self._facts([_tx(), _tx(tx_id="PA-TC-0002", sequence=2), _tx(tx_id="PA-TC-0003", sequence=3)], state)
+        snapshot = fr._property_snapshot(facts, "fallback")
+        self.assertEqual(snapshot["type"], "Open plot")
+        labels = {row["label"]: row["value"] for row in snapshot["rows"]}
+        self.assertEqual(labels["Schedule"], "Plot 9, CTS 1360B/9")
+        self.assertEqual(labels["Recorded owner(s)"], "Ningappa Kulkarni")
+        self.assertIn("BEL-1", labels["Latest deed"])
+        # The endpoint check is not a transfer: it never becomes the recorded owner.
+        self.assertTrue(facts["rows"][-1]["endpoint_check"])
+
+    def test_digest_carries_outcomes_without_internal_ids(self):
+        facts, readiness = self._facts([_tx(tx_id="PA-TC-0001", sequence=1), _tx(tx_id="PA-TC-0002", sequence=2)])
+        digest = fr._digest(facts, [_tx(), _tx(tx_id="PA-TC-0002", sequence=2)], _agent_state(), readiness, "FINAL")
+        text = json.dumps(digest)
+        self.assertNotIn("PA-TC", text)
+        self.assertNotIn("DOC-SD", text)
+        self.assertEqual(digest["transactions"][0]["label"], "the 1996 sale deed")
+        self.assertEqual(digest["transactions"][0]["findings"][0]["title"], "Parcel identity matches")
 
 
 class ReadinessTest(unittest.TestCase):
@@ -219,21 +292,36 @@ class GenerateTest(unittest.TestCase):
         self.assertEqual(result["status"], "generated")
         self.assertEqual(result["report_type"], "FINAL")
         document = self.persisted[-1]
-        self.assertEqual(document["report_type"], "FINAL")
-        self.assertEqual(document["counts"], {"critical": 1, "caution": 1, "clear": 2})
-        self.assertEqual(len(document["schedule"]), 4)
+        self.assertEqual(document["schema_version"], "3.0")
+        self.assertEqual(document["verdict"], {"level": "CAUTION", "headline": NARRATIVE["verdict"]["headline"]})
+        self.assertEqual(document["property"]["type"], "Agricultural land")
+        self.assertEqual(len(document["chain"]), 2)
+        self.assertEqual(document["narrative_markdown"], NARRATIVE["markdown"])
+        self.assertEqual(document["counts"], {"verified": 2, "issues": 0, "awaiting": 0})
         self.assertEqual(document["documents_examined"][0]["filename"], "KUDA_SaleDeed_1996.pdf")
         self.assertTrue(document["source_case_result_hash"])
+        self.assertNotIn("findings", document)
         pdf = Path(self.tmp.name, "final_report", fr.REPORT_FILENAME).read_bytes()
         self.assertTrue(pdf.startswith(b"%PDF"), "rendered PDF must start with the %PDF magic")
 
     def test_preliminary_generation_discloses_pending(self):
-        self.case_result.append(_tx(status="PENDING_NOT_VERIFIED", tx_id="PA-TC-0003", sequence=3))
+        self.case_result.append(_tx(status="PENDING_NOT_VERIFIED", tx_id="PA-TC-0003", sequence=3,
+                                    required=[{"document_type": "Will 1996", "reason": "Devolution"}]))
         self.state["result"]["title_chain"].append(
             {"tx_id": "PA-TC-0003", "chain_position": 3, "documented_transaction": {"transaction_type": "Sale deed"}})
         result = fr.generate_final_report("CASE1", "PRELIMINARY")
         self.assertEqual(result["status"], "generated")
         self.assertEqual(result["report_type"], "PRELIMINARY")
+        self.assertEqual(self.persisted[-1]["documents_needed"][0]["document"], "Will 1996")
+
+    def test_verdict_is_never_lower_than_the_data_supports(self):
+        optimistic = {**NARRATIVE, "verdict": {"level": "CLEAR", "headline": "All good."}}
+        self.case_result.append(_tx(status="PENDING_NOT_VERIFIED", tx_id="PA-TC-0003", sequence=3))
+        self.state["result"]["title_chain"].append(
+            {"tx_id": "PA-TC-0003", "chain_position": 3, "documented_transaction": {"transaction_type": "Sale deed"}})
+        with patch.object(fr, "complete_json", return_value=optimistic):
+            fr.generate_final_report("CASE1", "PRELIMINARY")
+        self.assertEqual(self.persisted[-1]["verdict"]["level"], "CAUTION")
 
     def test_final_blocked_when_a_transaction_is_pending(self):
         self.case_result.append(_tx(status="PENDING_NOT_VERIFIED", tx_id="PA-TC-0003", sequence=3))
@@ -243,44 +331,92 @@ class GenerateTest(unittest.TestCase):
         self.assertEqual(result["status"], "blocked")
         self.assertEqual([blocker["tx_id"] for blocker in result["blockers"]], ["PA-TC-0003"])
 
-    def test_unusable_llm_output_raises(self):
-        with patch.object(fr, "complete_json", return_value={"nonsense": True}):
+    def test_unusable_llm_output_raises_after_one_retry(self):
+        with patch.object(fr, "complete_json", return_value={"nonsense": True}) as model:
             with self.assertRaises(fr.ReportSynthesisError):
                 fr.generate_final_report("CASE1", "FINAL")
+        self.assertEqual(model.call_count, 2)
+
+    def test_internal_identifiers_trigger_one_rewrite(self):
+        leaky = {**NARRATIVE, "markdown": NARRATIVE["markdown"] + "\n\nSee PA-TC-0002 and DOC_019."}
+        with patch.object(fr, "complete_json", side_effect=[leaky, NARRATIVE]) as model:
+            fr.generate_final_report("CASE1", "FINAL")
+        self.assertEqual(model.call_count, 2)
+        self.assertIn("internal identifiers", model.call_args_list[1].args[0])
+        self.assertNotIn("PA-TC", self.persisted[-1]["narrative_markdown"])
+
+    def test_identifiers_that_survive_the_rewrite_are_scrubbed(self):
+        leaky = {**NARRATIVE, "markdown": NARRATIVE["markdown"] + "\n\nSee PA-TC-0002 (PENDING_NOT_VERIFIED).",
+                 "verdict": {"level": "CAUTION", "headline": "Check REQ-0004 first."}}
+        with patch.object(fr, "complete_json", return_value=leaky):
+            fr.generate_final_report("CASE1", "FINAL")
+        stored = self.persisted[-1]
+        self.assertNotRegex(stored["narrative_markdown"] + stored["verdict"]["headline"],
+                            r"PA-TC|PENDING_NOT_VERIFIED|REQ-")
 
     def test_unsupported_report_type_rejected(self):
         with self.assertRaises(ValueError):
             fr.generate_final_report("CASE1", "DRAFT")
 
-    def test_placeholder_schedule_rows_are_dropped(self):
-        with_placeholder = {
-            **NARRATIVE,
-            "schedule": NARRATIVE["schedule"] + [
-                {"label": "Village / town and taluk", "value": "village and taluk are Not stated in the verified documents"},
-            ],
-        }
-        with patch.object(fr, "complete_json", return_value=with_placeholder):
-            fr.generate_final_report("CASE1", "FINAL")
-        schedule = self.persisted[-1]["schedule"]
-        self.assertEqual([row["label"] for row in schedule], [row["label"] for row in NARRATIVE["schedule"]])
-
 
 class PdfRenderTest(unittest.TestCase):
+    DOCUMENT = {
+        "schema_version": "3.0",
+        "report_type": "PRELIMINARY",
+        "generated_at": "2026-11-12T10:00:00+00:00",
+        "verdict": {"level": "CAUTION", "headline": "Do not pay yet: the chain before 2019 is unverified."},
+        "property": {"type": "Open plot", "rows": [{"label": "Property type", "value": "Open plot"},
+                                                   {"label": "Schedule", "value": "Plot 9, CTS 1360B/9"}]},
+        "chain": [{"sequence": 1, "label": "the 2007 sale", "transaction_type": "Sale", "date": "06 December 2007",
+                   "registration": "BEL-1", "from": ["A"], "to": ["B", "C"], "property_type": "Agricultural land",
+                   "result": {"level": "CAUTION", "label": "Awaiting documents"}}],
+        "narrative_markdown": NARRATIVE["markdown"] + "\n\n> A short <quoted> clause & more.\n\nSome *italic* and `code`.",
+        "documents_needed": [{"document": "Sale deed 1985", "reason": "Root title", "for": "the 2007 sale"}],
+        "documents_examined": [{"filename": "KUDA_SaleDeed_1996.pdf", "document_type": "sale deed"}],
+    }
+
     def test_render_smoke(self):
-        document = {
-            "report_type": "FINAL",
-            "generated_at": "2026-11-12T10:00:00+00:00",
-            "property_line": "Survey No. 45/2B, Honaga Village, Belagavi.",
-            "schedule": NARRATIVE["schedule"],
-            "documents_examined": [{"filename": "KUDA_SaleDeed_1996.pdf", "document_type": "sale deed"}],
-            "findings": NARRATIVE["findings"],
-            "counts": {"critical": 1, "caution": 1, "clear": 2},
-            "cannot_verify": NARRATIVE["cannot_verify"],
-            "opinion": NARRATIVE["opinion"],
-        }
-        pdf = fr.render_final_report_pdf(document)
+        pdf = fr.render_final_report_pdf(self.DOCUMENT)
         self.assertTrue(pdf.startswith(b"%PDF"))
         self.assertGreater(len(pdf), 5000)
+
+    def test_property_column_is_dropped_when_no_link_has_a_type(self):
+        try:
+            import fitz  # PyMuPDF
+        except ImportError:
+            self.skipTest("PyMuPDF not installed")
+        document = {**self.DOCUMENT, "chain": [{**self.DOCUMENT["chain"][0], "property_type": None}]}
+        with fitz.open(stream=fr.render_final_report_pdf(document), filetype="pdf") as pdf:
+            text = " ".join(" ".join(page.get_text().split()) for page in pdf)
+        self.assertNotIn("Property Result", text)
+        self.assertIn("Transfer Result", text)
+
+    def test_a_long_chain_table_does_not_force_a_blank_page(self):
+        try:
+            import fitz  # PyMuPDF
+        except ImportError:
+            self.skipTest("PyMuPDF not installed")
+        row = self.DOCUMENT["chain"][0]
+        document = {**self.DOCUMENT, "chain": [{**row, "sequence": n} for n in range(1, 15)]}
+        with fitz.open(stream=fr.render_final_report_pdf(document), filetype="pdf") as pdf:
+            first_page = " ".join(pdf[0].get_text().split())
+        self.assertIn("TITLE CHAIN AT A GLANCE", first_page)  # starts on page 1, not pushed to page 2
+
+    def test_render_tolerates_a_minimal_document(self):
+        pdf = fr.render_final_report_pdf({"report_type": "FINAL", "verdict": {"level": "CLEAR", "headline": "ok"},
+                                          "narrative_markdown": "Only a paragraph of narrative text here."})
+        self.assertTrue(pdf.startswith(b"%PDF"))
+
+    def test_pdf_text_contains_the_report(self):
+        try:
+            import fitz  # PyMuPDF
+        except ImportError:
+            self.skipTest("PyMuPDF not installed")
+        with fitz.open(stream=fr.render_final_report_pdf(self.DOCUMENT), filetype="pdf") as pdf:
+            text = " ".join(" ".join(page.get_text().split()) for page in pdf)
+        for expected in ("Do not pay yet", "TITLE CHAIN AT A GLANCE", "Awaiting documents", "Next steps",
+                         "Sale deed 1985", "6070 sq m", "KUDA_SaleDeed_1996.pdf", "A short <quoted> clause & more."):
+            self.assertIn(expected, text)
 
 
 class ReportStateTest(unittest.TestCase):
