@@ -293,3 +293,75 @@ test('metadata omits unavailable values and includes traceable transaction conte
   ]);
   assert.deepEqual(transactionMetadataItems({ transaction_type: 'SALE' }), []);
 });
+
+test('flexible markdown renders as tables, numbered steps, quotes, sub-headings and emphasis', () => {
+  const html = render({
+    ...base,
+    report: [
+      '**Verdict:** The sale holds, but the extent differs from the previous deed.',
+      '',
+      '## Extent comparison',
+      '',
+      '| Deed | Extent |',
+      '| --- | --- |',
+      '| Previous deed | **1,500 sq ft** [DOC_019 p.2] |',
+      '| This deed | 1,200 sq ft |',
+      '',
+      '### What to resolve',
+      '',
+      '1. Ask the sellers why the extent fell.',
+      '2. Confirm no co-owner holds the *balance*.',
+      '',
+      '> The deed carries a `reservation` clause.',
+    ].join('\n'),
+  });
+  assert.match(html, /<table class="verification-report-table"/);
+  assert.match(html, /<th>Deed<\/th>/);
+  assert.match(html, /<strong>1,500 sq ft<\/strong>/);
+  assert.match(html, /<h5 class="verification-report-subheading">What to resolve<\/h5>/);
+  assert.match(html, /<ol class="verification-report-list verification-report-steps">/);
+  assert.match(html, /<em>balance<\/em>/);
+  assert.match(html, /<blockquote class="verification-report-quote">/);
+  assert.match(html, /<code>reservation<\/code>/);
+  assert.doesNotMatch(html, /DOC_019(?! p)/);
+  assert.doesNotMatch(html, /\| ---/);
+});
+
+test('plain paragraphs, wrapped bullets and lone pipes keep rendering sensibly', () => {
+  const html = render({
+    ...base,
+    report: ['## Notes', '', 'A line | with a pipe but no table.', '', '- first item', '  wrapped onto a second line', '- second item'].join('\n'),
+  });
+  assert.doesNotMatch(html, /<table/);
+  assert.match(html, /A line \| with a pipe but no table\./);
+  assert.match(html, /first item wrapped onto a second line/);
+});
+
+test('property type and schedule replace the confusing identifier line', () => {
+  assert.deepEqual(transactionMetadataItems({
+    property_type: 'Converted open plot',
+    property_schedule: 'Open Plot No.9, CTS 1360B/9, 30 ft x 40 ft, R.S. No.699A/15, Rani Channamma Nagar, Angol',
+    survey_number: 'R.S. No.699A/15',
+    plot_number: 'Plot No.9',
+    site_flat_number: 'Open site Plot No.9',
+  }), [
+    { label: 'Property type', value: 'Converted open plot' },
+    { label: 'Schedule', value: 'Open Plot No.9, CTS 1360B/9, 30 ft x 40 ft, R.S. No.699A/15, Rani Channamma Nagar, Angol' },
+  ]);
+});
+
+test('results saved before property_type show each identifier once, not "Plot Plot No.9"', () => {
+  // Real values from case 8A14D132, transaction 3.
+  const [property] = transactionMetadataItems({
+    survey_number: 'R.S. No.699A/15',
+    plot_number: 'Plot No.9',
+    site_flat_number: 'Open site Plot No.9',
+    cts_number: '1360B/9',
+  });
+  assert.equal(property.label, 'Property');
+  assert.equal(property.value, 'R.S. No.699A/15 · CTS 1360B/9 · Open site Plot No.9');
+  assert.doesNotMatch(property.value, /Plot Plot|Site\/flat/);
+
+  assert.equal(transactionMetadataItems({ plot_number: '9', site_flat_number: 'G-04' })[0].value, 'Unit G-04 · Plot 9');
+  assert.equal(transactionMetadataItems({ survey_number: '191/4', site_flat_number: 'Open plot' })[0].value, 'Survey 191/4 · Open plot');
+});

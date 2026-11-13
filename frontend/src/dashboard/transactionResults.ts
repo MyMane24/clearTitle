@@ -60,6 +60,91 @@ export function reportSections(report: unknown): Array<{ heading: string; body: 
   return sections;
 }
 
+// **bold**, `code`, *italic* and _italic_ (italic never starts inside a word).
+export const emphasisPattern = /\*\*([^*]+)\*\*|`([^`\n]+)`|(?<![*\w])\*([^*\n]+)\*(?![*\w])|(?<!\w)_([^_\n]+)_(?!\w)/g;
+
+export type ReportBlock =
+  | { kind: 'paragraph'; text: string }
+  | { kind: 'subheading'; text: string }
+  | { kind: 'bullets'; items: string[] }
+  | { kind: 'numbered'; items: string[] }
+  | { kind: 'quote'; text: string }
+  | { kind: 'table'; header: string[]; rows: string[][] };
+
+const BULLET_LINE = /^[-*•]\s+/;
+const NUMBERED_LINE = /^\d+[.)]\s+/;
+const SUBHEADING_LINE = /^#{3,6}\s+/;
+const TABLE_DIVIDER = /^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$/;
+
+function tableCells(line: string): string[] {
+  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(cell => cell.trim());
+}
+
+/**
+ * Small, forgiving markdown block parser for one report section body. The agent
+ * picks the structure that fits its findings (bullets, numbered steps, a
+ * comparison table, a quote, sub-headings); each one is rendered as itself
+ * instead of being flattened into paragraphs.
+ */
+export function parseReportBlocks(body: string): ReportBlock[] {
+  const lines = String(body || '').split('\n').map(line => line.trim());
+  const startsNewBlock = (index: number): boolean => {
+    const line = lines[index];
+    return !line || BULLET_LINE.test(line) || NUMBERED_LINE.test(line) || line.startsWith('>')
+      || SUBHEADING_LINE.test(line)
+      || (line.startsWith('|') && index + 1 < lines.length && TABLE_DIVIDER.test(lines[index + 1]));
+  };
+  const blocks: ReportBlock[] = [];
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index];
+    if (!line) {
+      index += 1;
+    } else if (SUBHEADING_LINE.test(line)) {
+      blocks.push({ kind: 'subheading', text: line.replace(SUBHEADING_LINE, '') });
+      index += 1;
+    } else if (line.startsWith('|') && index + 1 < lines.length && TABLE_DIVIDER.test(lines[index + 1])) {
+      const header = tableCells(line);
+      const rows: string[][] = [];
+      index += 2;
+      while (index < lines.length && lines[index].startsWith('|')) {
+        rows.push(tableCells(lines[index]));
+        index += 1;
+      }
+      blocks.push({ kind: 'table', header, rows });
+    } else if (BULLET_LINE.test(line) || NUMBERED_LINE.test(line)) {
+      const ordered = NUMBERED_LINE.test(line);
+      const marker = ordered ? NUMBERED_LINE : BULLET_LINE;
+      const items: string[] = [];
+      while (index < lines.length && lines[index] && marker.test(lines[index])) {
+        items.push(lines[index].replace(marker, ''));
+        index += 1;
+        // A wrapped continuation line belongs to the item above it.
+        while (index < lines.length && !startsNewBlock(index) && !lines[index].startsWith('|')) {
+          items[items.length - 1] += ` ${lines[index]}`;
+          index += 1;
+        }
+      }
+      blocks.push({ kind: ordered ? 'numbered' : 'bullets', items });
+    } else if (line.startsWith('>')) {
+      const quoted: string[] = [];
+      while (index < lines.length && lines[index].startsWith('>')) {
+        quoted.push(lines[index].replace(/^>\s?/, ''));
+        index += 1;
+      }
+      blocks.push({ kind: 'quote', text: quoted.join(' ') });
+    } else {
+      const paragraph: string[] = [];
+      while (index < lines.length && (paragraph.length === 0 || !startsNewBlock(index))) {
+        paragraph.push(lines[index]);
+        index += 1;
+      }
+      blocks.push({ kind: 'paragraph', text: paragraph.join(' ') });
+    }
+  }
+  return blocks;
+}
+
 export function requiredDocumentsForTransaction(transaction: unknown): RequiredDocument[] {
   if (!transaction || typeof transaction !== 'object') return [];
   const items = (transaction as { required_documents?: unknown }).required_documents;
@@ -128,15 +213,16 @@ export function transactionMetadataItems(metadata: Record<string, unknown> | und
     items.push({ label: 'Registration date', value: registrationDate });
   }
 
-  const identifiers = [
-    ['Survey', metadata.survey_number],
-    ['Plot', metadata.plot_number],
-    ['Site/flat', metadata.site_flat_number],
-  ].flatMap(([label, value]) => {
-    const text = textValue(value);
-    return text ? [`${label} ${text}`] : [];
-  });
-  if (identifiers.length) items.push({ label: 'Property', value: identifiers.join(' · ') });
+  // What this transaction transfers: its type, then its schedule. Results saved
+  // before `property_type` existed fall back to a de-duplicated identifier line.
+  const propertyType = textValue(metadata.property_type);
+  const schedule = textValue(metadata.property_schedule) || textValue(metadata.schedule_property);
+  if (propertyType) items.push({ label: 'Property type', value: propertyType });
+  if (schedule) items.push({ label: 'Schedule', value: schedule });
+  if (!propertyType && !schedule) {
+    const legacy = legacyPropertyIdentifiers(metadata);
+    if (legacy) items.push({ label: 'Property', value: legacy });
+  }
 
   const vendors = partyNames(metadata.vendors);
   const purchasers = partyNames(metadata.purchasers);
@@ -147,6 +233,29 @@ export function transactionMetadataItems(metadata: Record<string, unknown> | und
     items.push({ label: 'Reported parties', value });
   }
   return items;
+}
+
+// Identifier fields written before the property-type field existed often hold
+// descriptions ("Open site Plot No.9") that repeat each other. Show each fact
+// once, with the most descriptive wording, and add a label only when the value
+// is a bare number.
+function legacyPropertyIdentifiers(metadata: Record<string, unknown>): string {
+  const survey = textValue(metadata.survey_number);
+  const cts = textValue(metadata.cts_number);
+  const plot = textValue(metadata.plot_number);
+  const siteFlat = textValue(metadata.site_flat_number);
+
+  const parts: string[] = [];
+  if (survey) parts.push(/survey|r\.?\s?s\.?|s\.?\s?no/i.test(survey) ? survey : `Survey ${survey}`);
+  if (cts) parts.push(/cts/i.test(cts) ? cts : `CTS ${cts}`);
+
+  const unit = [{ value: siteFlat, bare: 'Unit' }, { value: plot, bare: 'Plot' }]
+    .filter(item => item.value)
+    .sort((a, b) => b.value.length - a.value.length)
+    .filter((item, index, all) =>
+      !all.slice(0, index).some(longer => longer.value.toLowerCase().includes(item.value.toLowerCase())));
+  for (const { value, bare } of unit) parts.push(/^[\w./-]{1,8}$/.test(value) ? `${bare} ${value}` : value);
+  return parts.join(' · ');
 }
 
 function textValue(value: unknown): string {

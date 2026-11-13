@@ -2,6 +2,8 @@ import React from 'react';
 import { Upload } from 'lucide-react';
 
 import {
+  emphasisPattern,
+  parseReportBlocks,
   reportSections,
   requiredDocumentsForTransaction,
   transactionMetadataItems,
@@ -23,7 +25,6 @@ type Props = {
 
 const documentIdPattern = /DOC_\d+/g;
 const citationPattern = /\[([^\[\]\n]+)\]/g;
-const boldPattern = /\*\*([^*]+)\*\*/g;
 // The '## Earlier transactions' section is only meaningful when an earlier
 // chain link is actually unverified; an all-clear body (the model writes one
 // even when every upstream link is verified) reads like a defect — hide it.
@@ -110,10 +111,13 @@ function renderBold(text: string, documents: DocumentLabel[], keyPrefix: string)
   const nodes: React.ReactNode[] = [];
   let cursor = 0;
   let index = 0;
-  for (const match of text.matchAll(boldPattern)) {
+  for (const match of text.matchAll(emphasisPattern)) {
     const start = match.index ?? 0;
     if (start > cursor) nodes.push(resolveDocumentRefs(text.slice(cursor, start), documents));
-    nodes.push(<strong key={`${keyPrefix}-b${index++}`}>{match[1]}</strong>);
+    const key = `${keyPrefix}-b${index++}`;
+    if (match[1] !== undefined) nodes.push(<strong key={key}>{match[1]}</strong>);
+    else if (match[2] !== undefined) nodes.push(<code key={key}>{match[2]}</code>);
+    else nodes.push(<em key={key}>{match[3] ?? match[4]}</em>);
     cursor = start + match[0].length;
   }
   if (cursor < text.length) nodes.push(resolveDocumentRefs(text.slice(cursor), documents));
@@ -121,32 +125,77 @@ function renderBold(text: string, documents: DocumentLabel[], keyPrefix: string)
 }
 
 function ReportBody({ body, documents }: { body: string; documents: DocumentLabel[] }) {
-  const blocks = body.split(/\n{2,}/).map(block => block.trim()).filter(Boolean);
   return (
     <>
-      {blocks.map((block, blockIndex) => {
-        const lines = block.split('\n').map(line => line.trim());
-        if (lines.length > 0 && lines.every(line => line.startsWith('-'))) {
-          return (
-            <ul key={blockIndex} className="verification-report-list verification-findings-list">
-              {lines.map((line, lineIndex) => {
-                const { title, text } = splitFinding(line.replace(/^-\s*/, ''));
-                const risky = RISK_PATTERN.test(title) || RISK_PATTERN.test(text);
-                return (
-                  <li key={lineIndex} className={`verification-finding-item${risky ? ' verification-finding-risk' : ''}`}>
-                    {title && <strong>{title}</strong>}
-                    {text && <p>{renderInline(text, documents, `${blockIndex}-${lineIndex}`)}</p>}
-                  </li>
-                );
-              })}
-            </ul>
-          );
+      {parseReportBlocks(body).map((block, blockIndex) => {
+        switch (block.kind) {
+          case 'subheading':
+            return (
+              <h5 key={blockIndex} className="verification-report-subheading">
+                {renderInline(block.text, documents, `h${blockIndex}`)}
+              </h5>
+            );
+          case 'bullets':
+            return (
+              <ul key={blockIndex} className="verification-report-list verification-findings-list">
+                {block.items.map((item, itemIndex) => {
+                  const { title, text } = splitFinding(item);
+                  const risky = RISK_PATTERN.test(title) || RISK_PATTERN.test(text);
+                  return (
+                    <li key={itemIndex} className={`verification-finding-item${risky ? ' verification-finding-risk' : ''}`}>
+                      {title && <strong>{title}</strong>}
+                      {text && <p>{renderInline(text, documents, `${blockIndex}-${itemIndex}`)}</p>}
+                    </li>
+                  );
+                })}
+              </ul>
+            );
+          case 'numbered':
+            return (
+              <ol key={blockIndex} className="verification-report-list verification-report-steps">
+                {block.items.map((item, itemIndex) => (
+                  <li key={itemIndex}>{renderInline(item, documents, `${blockIndex}-${itemIndex}`)}</li>
+                ))}
+              </ol>
+            );
+          case 'quote':
+            return (
+              <blockquote key={blockIndex} className="verification-report-quote">
+                {renderInline(block.text, documents, `q${blockIndex}`)}
+              </blockquote>
+            );
+          case 'table':
+            return (
+              <div key={blockIndex} className="verification-report-table-wrap">
+                <table className="verification-report-table">
+                  <thead>
+                    <tr>
+                      {block.header.map((cell, cellIndex) => (
+                        <th key={cellIndex}>{renderInline(cell, documents, `th${blockIndex}-${cellIndex}`)}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {block.rows.map((row, rowIndex) => (
+                      <tr key={rowIndex}>
+                        {block.header.map((_, cellIndex) => (
+                          <td key={cellIndex}>
+                            {renderInline(row[cellIndex] ?? '', documents, `td${blockIndex}-${rowIndex}-${cellIndex}`)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          default:
+            return (
+              <div key={blockIndex} className="verification-report-paragraph">
+                <p>{renderInline(block.text, documents, `p${blockIndex}`)}</p>
+              </div>
+            );
         }
-        return (
-          <div key={blockIndex} className="verification-report-paragraph">
-            <p>{renderInline(block, documents, `p${blockIndex}`)}</p>
-          </div>
-        );
       })}
     </>
   );
