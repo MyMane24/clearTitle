@@ -69,6 +69,17 @@ CLEARTITLE_VERIFY_MODEL_CALL_MAX = max(16, min(24, int(os.getenv("CLEARTITLE_VER
 CLEARTITLE_VERIFY_MODEL_CALL_BUDGET = max(
     3, min(CLEARTITLE_VERIFY_MODEL_CALL_MAX, int(os.getenv("CLEARTITLE_VERIFY_MODEL_CALL_BUDGET", "16")))
 )
+# Character budget for the case memory (progress ledger + previous-link handoffs)
+# replayed into each transaction's fresh session.
+CLEARTITLE_MEMORY_CHAR_BUDGET = max(4000, int(os.getenv("CLEARTITLE_MEMORY_CHAR_BUDGET", "24000")))
+# Corrective nudges allowed when the model ends a turn without a tool call.
+CLEARTITLE_MAX_NUDGES = max(0, min(5, int(os.getenv("CLEARTITLE_MAX_NUDGES", "2"))))
+# Newest OCR tool results kept verbatim in a transaction session; older ones are
+# replaced by a stub once the model has recorded observations for that document.
+CLEARTITLE_KEEP_OCR_RESULTS = max(1, int(os.getenv("CLEARTITLE_KEEP_OCR_RESULTS", "2")))
+# Newest OCR tool results kept verbatim in a transaction session; older ones are
+# replaced by a stub once the model has recorded observations for that document.
+CLEARTITLE_KEEP_OCR_RESULTS = max(1, int(os.getenv("CLEARTITLE_KEEP_OCR_RESULTS", "2")))
 CLEARTITLE_AGENT_MAX_ATTEMPTS = max(1, int(os.getenv("CLEARTITLE_AGENT_MAX_ATTEMPTS", "5")))
 
 # Separate override for the single-call OCR classification/extraction stage.

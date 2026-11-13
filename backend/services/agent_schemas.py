@@ -100,6 +100,58 @@ class MissingDocument(BaseModel):
     for_transaction: str | None = None
 
 
+# -- handoff memory ------------------------------------------------------------
+
+
+class HandoffFact(BaseModel):
+    """One established fact the next transaction may rely on, with its source."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    fact: str = Field(max_length=300, description="One short established fact.")
+    doc_id: str | None = Field(default=None, description="Document the fact was read from.")
+    pages: str | None = Field(default=None, description="Observed page/range only.")
+
+
+class TransactionHandoff(BaseModel):
+    """Compact memory a completed transaction leaves for the next one.
+
+    The application replays this (not the full report) as the session memory of
+    the next transaction, so keep it short and factual.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    continuity: Literal["ROOT", "CONFIRMED", "BROKEN", "NOT_DOCUMENTED", "UNKNOWN"] = Field(
+        default="UNKNOWN",
+        description=(
+            "Link between the previous transaction's holders and this deed's transferors: "
+            "ROOT (first link), CONFIRMED (same parties), BROKEN (different parties, transfer "
+            "documented), NOT_DOCUMENTED (different parties, no record of the transfer)."
+        ),
+    )
+    holders_after: list[str] = Field(
+        default_factory=list, max_length=12,
+        description="Names holding the interest after this transaction (its transferees).",
+    )
+    property_after: str = Field(
+        default="", max_length=400,
+        description="Survey/plot/extent of the interest held after this transaction.",
+    )
+    established: list[HandoffFact] = Field(default_factory=list, max_length=8)
+    open_issues: list[str] = Field(default_factory=list, max_length=5)
+    relies_on_requirements: list[str] = Field(
+        default_factory=list, description="REQ ids of earlier requests this transaction relies on."
+    )
+    note_for_next: str = Field(
+        default="", max_length=500,
+        description="What the next transaction must know that the fields above do not carry.",
+    )
+    stale: bool = Field(
+        default=False, description="Application-owned: set when an earlier link changed after this was written."
+    )
+
+
 # -- transaction verification (§7 Output B, §9) --------------------------------
 
 
@@ -114,13 +166,13 @@ class TransactionVerification(BaseModel):
     status: VerificationStatus
     report: str = Field(
         description=(
-            "Markdown verification report for this transaction only: open with a "
-            "bold one-line verdict, then short markdown sections named for what "
-            "this transaction turned on - bullets for enumerable facts, prose "
-            "for reasoning, bold decisive facts, inline citations of the form "
-            "[doc_id] or [doc_id p.X-Y]. "
-            "Must contain an '## Earlier transactions' section whenever an earlier "
-            "chain link is unverified."
+            "Short markdown verification report for this transaction only: it opens with a "
+            "bold one-sentence '**Verdict:**' line, then presents the checks performed and "
+            "their outcomes in whatever structure fits the findings (short sections, bullets, "
+            "numbered steps, a comparison table, a quote). Report what was verified, found "
+            "and left open, never a retelling of the deed. Cite inline as [doc_id] or "
+            "[doc_id p.X-Y], one bracket per document. Must contain an '## Earlier "
+            "transactions' section whenever an earlier chain link is unverified."
         )
     )
     cited_documents: list[CitedDocument] = Field(default_factory=list)
@@ -162,6 +214,10 @@ class TransactionVerification(BaseModel):
     upstream_dependencies: list[str] = Field(
         default_factory=list,
         description="Earlier chain transaction IDs this dossier relied on (application-supplied context).",
+    )
+    handoff: TransactionHandoff = Field(
+        default_factory=TransactionHandoff,
+        description="Compact memory for the next transaction in the chain (see TransactionHandoff).",
     )
     verification_metadata: dict[str, Any] = Field(
         default_factory=dict,
@@ -437,6 +493,7 @@ def normalize_transaction_verification(data: Any) -> dict[str, Any]:
             "scope", "effectivity_status", "evidence_status", "findings",
             "executive_summary", "verified_facts", "unverified_facts", "limitations",
             "contradictory_evidence", "upstream_dependencies", "verification_metadata",
+            "handoff",
         ):
             if source.get(additive) is not None:
                 payload[additive] = source[additive]

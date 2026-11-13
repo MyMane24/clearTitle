@@ -312,6 +312,9 @@ class TitleChainEntry(BaseModel):
     registration_date: str | None = None
     registration_number: str | None = None
 
+    property_type: str | None = Field(
+        default=None, description="Kind of property this link transfers (e.g. Agricultural land, Open plot, Apartment unit)."
+    )
     survey_number: str | None = None
     plot_number: str | None = None
     site_flat_number: str | None = None

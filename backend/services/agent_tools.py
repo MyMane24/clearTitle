@@ -19,7 +19,7 @@ from uuid import uuid4
 from backend.database.repositories import agent_repo as repo
 from backend.logger import get_logger
 from backend.schemas.analysis import VerificationFinding, content_hash, is_assigned_tx_id
-from backend.services import chain_identity
+from backend.services import case_memory, chain_identity
 from backend.services.agent_schemas import (
     SCHEMA_VERSION,
     SchemaValidationError,
@@ -99,6 +99,10 @@ class ToolContext:
         self.repeated_tool_calls = 0
         self.additional_model_calls = 0
         self.additional_model_calls_used = False
+        # Working notes the model keeps while reading (they survive OCR pruning)
+        # and the OCR ranges already cleared from the session history.
+        self.observations: list[dict] = []
+        self.pruned_ranges: dict[str, set[tuple[int, int]]] = {}
 
 
 # -- JSON schema for tools: generated from the canonical Pydantic contract ------
@@ -319,9 +323,24 @@ _REQUEST_MORE_CALLS = {
         "next_step": {"type": "string", "minLength": 12, "maxLength": 400},
     }, "required": ["next_step"]},
 }
+_RECORD_OBSERVATION = {
+    "name": "record_observation",
+    "description": (
+        "Keep a working note about a selected document you have read: one material fact "
+        "(parties, shares, numbers, dates, schedule, authority, restrictions) with its page and a short "
+        "verbatim quote. Raw OCR is cleared from the session after review, so these notes are your "
+        "memory of what the document says. Record each material fact once, soon after reading it."
+    ),
+    "parameters": {"type": "object", "additionalProperties": False, "properties": {
+        "doc_id": {"type": "string"},
+        "pages": {"type": "string"},
+        "fact": {"type": "string", "maxLength": 300},
+        "quote": {"type": "string", "maxLength": 400},
+    }, "required": ["doc_id", "fact"]},
+}
 PHASE_A_TOOLS = [_LIST_DOCS, _DOC_TEXT, _SAVE_PHASE_A, _FINISH]
-VERIFY_TOOLS = [_LIST_TX, _GET_TX, _RECORD_REQUIREMENTS,
-                _LIST_DOCS, _DOC_META, _SELECT_DOCUMENTS, _DOC_TEXT, _REQUEST_MORE_CALLS,
+VERIFY_TOOLS = [_GET_TX, _RECORD_REQUIREMENTS,
+                _LIST_DOCS, _DOC_META, _SELECT_DOCUMENTS, _DOC_TEXT, _RECORD_OBSERVATION, _REQUEST_MORE_CALLS,
                 _SAVE_RESULT, _REQ_MISSING, _FINISH]
 
 
@@ -442,8 +461,10 @@ def _h_doc_text(ctx: ToolContext, args: dict) -> dict:
     if not text:
         return {"error": f"no stored OCR text is available for {doc_id!r}; the document cannot be verified from its summary"}
     end_char = min(start_char + max_chars, len(text))
+    cleared = ctx.pruned_ranges.get(doc_id, set())
     if any(start_char < prior_end and end_char > prior_start
-           for prior_start, prior_end, _ in ctx.read_text_ranges.get(doc_id, [])):
+           for prior_start, prior_end, _ in ctx.read_text_ranges.get(doc_id, [])
+           if (prior_start, prior_end) not in cleared):
         return {
             "error": "requested OCR range overlaps text already retrieved; request an unread range using next_start_char"
         }
@@ -475,6 +496,30 @@ def _has_read_full_text(ctx: ToolContext, doc_id: str) -> bool:
             return False
         cursor = max(cursor, end)
     return cursor >= total_chars
+
+
+def _h_record_observation(ctx: ToolContext, args: dict) -> dict:
+    doc_id = str(args.get("doc_id") or "")
+    fact = " ".join(str(args.get("fact") or "").split())
+    if not ctx.current_tx_id:
+        return {"error": "observations are recorded during transaction verification only"}
+    if doc_id not in ctx.by_id:
+        return {"error": f"no document {doc_id!r} in case"}
+    if doc_id not in ctx.read_text_ranges:
+        return {"error": "read the document's OCR before recording an observation about it"}
+    if not fact:
+        return {"error": "fact must not be empty"}
+    quote = " ".join(str(args.get("quote") or "").split())
+    text = " ".join(str(ctx.document_text_cache.get(doc_id) or "").split()).casefold()
+    ctx.observations.append({
+        "doc_id": doc_id, "pages": str(args.get("pages") or "").strip() or None,
+        "fact": fact[:300], "quote": quote[:400] or None,
+    })
+    result = {"recorded": True, "notes_total": len(ctx.observations)}
+    if quote:
+        # OCR is noisy, so a miss is information for the model, not a rejection.
+        result["quote_found_in_ocr"] = quote.casefold() in text
+    return result
 
 
 def _h_save_phase_a_result(ctx: ToolContext, args: dict) -> dict:
@@ -543,7 +588,7 @@ def _h_save_phase_a_result(ctx: ToolContext, args: dict) -> dict:
             if field in transaction and transaction[field] is not None and not chain_identity._string_list_ok(transaction[field]):
                 return {"error": f"title_chain[{index}].documented_transaction.{field} must be a list of party names (or null)"}
         for field in (
-            "registration_date", "registration_office", "property_schedule", "consideration",
+            "registration_date", "registration_office", "property_type", "property_schedule", "consideration",
             "survey_number", "plot_number", "site_flat_number", "cts_number",
         ):
             if field in transaction and transaction[field] is not None and not isinstance(transaction[field], str):
@@ -643,7 +688,7 @@ def _h_list_transactions(ctx: ToolContext, args: dict) -> dict:
     if ctx.phase_a_chain:
         return {"transactions": [
             {
-                "tx_id": f"PA-TC-{index:04d}",
+                "tx_id": entry.get("tx_id") or f"PA-TC-{index:04d}",
                 "sequence": index,
                 "type": (entry.get("documented_transaction") or {}).get("transaction_type"),
                 "executed_date": (entry.get("documented_transaction") or {}).get("executed_date"),
@@ -738,7 +783,7 @@ def _legacy_result(previous: dict, *, tx_id: str, sequence: int) -> dict:
     return normalize_transaction_verification(result)
 
 
-_MAX_REPORT_CHARS = 20000
+_MAX_REPORT_CHARS = 4000
 
 
 def _result_compactness_errors(payload: dict) -> list[str]:
@@ -772,8 +817,9 @@ def _result_compactness_errors(payload: dict) -> list[str]:
 
     if len(report) > _MAX_REPORT_CHARS:
         errors.append(
-            f"report exceeds {_MAX_REPORT_CHARS} characters; keep it transaction-scoped "
-            "and concise while retaining every material fact"
+            f"report exceeds {_MAX_REPORT_CHARS} characters; rewrite it as a short verification "
+            "report (verdict line, then one-line bullets per check) that states outcomes "
+            "and issues instead of retelling the transaction"
         )
 
     # Keep complete required-document names and evidence descriptions. They are
@@ -990,6 +1036,61 @@ def _available_document_request_errors(ctx: ToolContext, requirements: list[dict
     return errors
 
 
+_COMPLETED_STATUSES = {"VERIFIED_WITH_AVAILABLE_EVIDENCE", "ISSUES_IDENTIFIED", "INCONCLUSIVE"}
+
+
+def _validate_handoff(
+    ctx: ToolContext, payload: dict, previous: dict, sequence: int, *, force_pending: bool,
+) -> None:
+    """The handoff is the next transaction's memory: keep it present and honest.
+
+    Model-authored parts (established facts, open issues, note) are validated:
+    every fact's document must have been read in full this run (or be a citation
+    the saved result already retained). What the model leaves out of a completed
+    result - the holders after this transaction and an unambiguous continuity
+    label - is derived deterministically. ``stale`` is app-owned.
+    """
+    handoff = payload.get("handoff")
+    handoff = dict(handoff) if isinstance(handoff, dict) else {}
+    handoff["stale"] = False
+    status = normalize_status(payload.get("status"))
+    if not force_pending and status in _COMPLETED_STATUSES:
+        retained = {
+            ref.get("doc_id") for ref in previous.get("cited_documents") or [] if isinstance(ref, dict)
+        }
+        issues = []
+        for index, fact in enumerate(handoff.get("established") or []):
+            doc_id = fact.get("doc_id") if isinstance(fact, dict) else None
+            if not doc_id:
+                continue
+            if doc_id not in ctx.by_id:
+                issues.append(f"handoff.established[{index}] cites a document outside this case: {doc_id}")
+            elif doc_id not in retained and not (
+                doc_id in ctx.selected_document_ids and _has_read_full_text(ctx, doc_id)
+            ):
+                issues.append(
+                    f"handoff.established[{index}] cites a document whose complete OCR was not reviewed: {doc_id}"
+                )
+        if issues:
+            raise SchemaValidationError("TransactionVerification", issues)
+        entry = _phase_a_entry_for_id(ctx, ctx.current_tx_id or "") or {}
+        previous_entry = ctx.phase_a_chain[sequence - 2] if 1 < sequence <= len(ctx.phase_a_chain) + 1 else None
+        previous_result = None
+        if previous_entry is not None:
+            try:
+                previous_result = repo.get_transaction_result(
+                    ctx.case_id, str(previous_entry.get("tx_id") or f"PA-TC-{sequence - 1:04d}")
+                )
+            except Exception:
+                logger.warning("previous result unavailable for handoff derivation %s", ctx.case_id)
+        handoff = case_memory.derive_handoff(
+            handoff, sequence=sequence, entry=entry,
+            previous_result=previous_result, previous_entry=previous_entry,
+        )
+        handoff["stale"] = False
+    payload["handoff"] = handoff
+
+
 def _canonical_verification(ctx: ToolContext, args: dict, *, force_pending: bool = False) -> dict:
     tx_id = ctx.current_tx_id
     if not tx_id:
@@ -1057,7 +1158,7 @@ def _canonical_verification(ctx: ToolContext, args: dict, *, force_pending: bool
     }:
         for content_key in (
             "findings", "executive_summary", "verified_facts", "unverified_facts",
-            "limitations", "contradictory_evidence",
+            "limitations", "contradictory_evidence", "handoff",
         ):
             if content_key not in args and previous.get(content_key):
                 payload[content_key] = previous[content_key]
@@ -1149,6 +1250,7 @@ def _canonical_verification(ctx: ToolContext, args: dict, *, force_pending: bool
     # -- are excluded from the saved result (logged here, reported back in the
     # -- save response) so one bad observation can never destroy good ones.
     _validated_findings(ctx, tx_id, payload)
+    _validate_handoff(ctx, payload, previous, expected_sequence, force_pending=force_pending)
     # Scope is application data (what this dossier was verified against); any
     # model-supplied value is overwritten here (master rule: app owns all IDs
     # and state).
@@ -1175,6 +1277,7 @@ def _current_transaction_metadata(ctx: ToolContext, tx_id: str) -> dict:
         key: transaction.get(key) for key in (
             "transaction_type", "executed_date", "registration_number", "registration_date",
             "registration_office", "consideration", "transaction_number", "vendors", "purchasers",
+            "property_type", "property_schedule", "cts_number",
             "survey_number", "plot_number", "site_flat_number", "property_location", "schedule_property",
             "conveyed_portion", "chain_position", "is_current_owner_transaction",
         ) if transaction.get(key) is not None
@@ -1346,6 +1449,7 @@ _HANDLERS: dict[str, Callable[[ToolContext, dict], dict]] = {
     "get_document_text": _h_doc_text,
     "record_evidence_requirements": _h_record_requirements,
     "select_documents": _h_select_documents,
+    "record_observation": _h_record_observation,
     "save_phase_a_result": _h_save_phase_a_result,
     "list_transactions": _h_list_transactions,
     "get_transaction": _h_get_transaction,

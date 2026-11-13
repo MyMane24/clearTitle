@@ -25,7 +25,11 @@ import json
 import re
 from uuid import uuid4
 
-from backend.config import CLEARTITLE_VERIFY_MODEL_CALL_BUDGET, PIPELINE_LOCK_ENABLED
+from backend.config import (
+    CLEARTITLE_MEMORY_CHAR_BUDGET,
+    CLEARTITLE_VERIFY_MODEL_CALL_BUDGET,
+    PIPELINE_LOCK_ENABLED,
+)
 from backend.database.repositories import agent_repo as repo
 from backend.database.repositories.case_repo import set_case_verification_status
 from backend.integrations.llm.agent_llm import AgentLLMError, complete_json
@@ -33,6 +37,7 @@ from backend.integrations.redis.lock import RedisLock
 from backend.logger import get_logger
 from backend.prompts.loader import load_prompt
 from backend.schemas.analysis import is_assigned_tx_id, phase_a_hash
+from backend.services import case_memory
 from backend.services.agent_runtime import run_tool_loop
 from backend.services.agent_schemas import (
     SCHEMA_VERSION,
@@ -170,13 +175,24 @@ def _build_upstream_context(case_id: str, phase_a: dict, current_sequence: int) 
         entry = {"tx_id": tx_id, "sequence": sequence, "status": status}
         resolved = bool(result) and _is_terminal_transaction_result(result)
         report_text = str(result.get("report") or "")
+        handoff = result.get("handoff") if isinstance(result.get("handoff"), dict) else {}
+        has_handoff = bool(
+            handoff.get("holders_after") or handoff.get("established") or handoff.get("note_for_next")
+        )
         if sequence == current_sequence - 1:
-            if report_text:
+            if has_handoff:
+                # The structured handoff replaces the prose report as the
+                # previous session's memory; legacy results keep the report.
+                entry["handoff"] = case_memory.compact_handoff(handoff, lite=False)
+            elif report_text:
                 entry["report"] = report_text
-        elif not resolved:
-            excerpt = _report_excerpt(report_text)
-            if excerpt:
-                entry["report_excerpt"] = excerpt
+        else:
+            if has_handoff:
+                entry["handoff"] = case_memory.compact_handoff(handoff, lite=True)
+            elif not resolved:
+                excerpt = _report_excerpt(report_text)
+                if excerpt:
+                    entry["report_excerpt"] = excerpt
         if not resolved:
             entry["outstanding_required_documents"] = [
                 {"document_type": item.get("document_type"), "reason": item.get("reason")}
@@ -184,7 +200,7 @@ def _build_upstream_context(case_id: str, phase_a: dict, current_sequence: int) 
             ]
         context.append(entry)
     _attach_requirement_ids(case_id, context)
-    return context
+    return _fit_memory_budget(context, CLEARTITLE_MEMORY_CHAR_BUDGET)
 
 
 def _attach_requirement_ids(case_id: str, context: list[dict]) -> None:
@@ -251,7 +267,65 @@ def _already_requested_block(upstream_context: list[dict]) -> str:
     )
 
 
-def _verify_instruction(tx: dict, upstream_context: list[dict] | None = None) -> str:
+def _fit_memory_budget(context: list[dict], budget: int) -> list[dict]:
+    """Trim the oldest links' memory first until the context fits ``budget`` chars.
+
+    Order: older established facts, then older handoffs, then older excerpts.
+    The immediately previous link and every status/requirement entry are kept.
+    """
+    def size() -> int:
+        return len(json.dumps(context, ensure_ascii=False, default=str))
+
+    older = context[:-1]
+    for key_path in (("handoff", "established"), ("handoff", None), ("report_excerpt", None), ("report", None)):
+        for entry in older:
+            if size() <= budget:
+                return context
+            outer, inner = key_path
+            if outer in entry:
+                if inner and isinstance(entry[outer], dict):
+                    entry[outer].pop(inner, None)
+                elif not inner:
+                    entry.pop(outer, None)
+    return context
+
+
+def _case_memory_block(case_id: str, phase_a: dict, transaction: dict) -> str:
+    """Progress ledger and the holders entering the active transaction.
+
+    Compiled from persisted results only. The continuity line is a hint the
+    model must confirm or contest against the documents.
+    """
+    sequence = int(transaction.get("sequence") or 0)
+    if sequence <= 1:
+        return ""
+    chain = phase_a.get("title_chain") or []
+    lines, previous_result, previous_entry = [], None, None
+    for transaction_row in _phase_a_transactions(phase_a):
+        seq = int(transaction_row.get("sequence") or 0)
+        if not seq or seq >= sequence:
+            continue
+        entry = chain[seq - 1] if seq - 1 < len(chain) else None
+        result = repo.get_transaction_result(case_id, transaction_row["tx_id"]) or {}
+        lines.append(case_memory.ledger_line(seq, result, entry))
+        if seq == sequence - 1:
+            previous_result, previous_entry = result, entry
+    holders, source = case_memory.holders_entering(previous_result, previous_entry)
+    transferors = [str(name) for name in transaction.get("transferors") or transaction.get("vendors") or []]
+    hint = case_memory.continuity_hint(holders, transferors)
+    block = "\nPROGRESS LEDGER (earlier links, application-compiled):\n" + "\n".join(lines)
+    if holders:
+        block += (
+            "\n\nHOLDERS ENTERING THIS TRANSACTION (from the previous link's saved memory, "
+            f"source={source}): " + "; ".join(holders)
+            + "\nCONTINUITY HINT (name match only - confirm or contest it against the documents): "
+            + hint["state"]
+            + (f"; transferors not matched to a prior holder: {', '.join(hint['unmatched'])}" if hint["unmatched"] else "")
+        )
+    return block
+
+
+def _verify_instruction(tx: dict, upstream_context: list[dict] | None = None, memory_block: str = "") -> str:
     instruction = (
         load_prompt("agent_verify_task")
         + "\n\nMANDATORY TRANSACTION-VERIFICATION SKILL\n\n"
@@ -264,8 +338,9 @@ def _verify_instruction(tx: dict, upstream_context: list[dict] | None = None) ->
             "\n\n--- UPSTREAM CHAIN CONTEXT ---\n"
             "Saved verification state of the earlier chain links, compiled by the "
             "application from persisted results. Each entry lists a link's tx_id, "
-            "sequence, and status; the immediately previous link also carries a "
-            "short excerpt of its saved report, and unresolved links carry their "
+            "sequence, and status; the immediately previous link also carries its "
+            "saved handoff memory (or, for older results, its report), earlier links "
+            "carry a short handoff, and unresolved links carry their "
             "outstanding_required_documents, each entry tagged with its stable "
             "application-assigned requirement_id (REQ-nnnn) from the case's "
             "evidence ledger. "
@@ -374,15 +449,22 @@ def _verify_transaction(
         logger.warning("upstream context unavailable for %s/%s: %s", case_id, tx_id, e)
         upstream_context = []
     try:
+        memory_block = _case_memory_block(case_id, phase_a, transaction)
+    except Exception as e:
+        logger.warning("case memory block unavailable for %s/%s: %s", case_id, tx_id, e)
+        memory_block = ""
+    try:
         run_tool_loop(
             ctx=ctx, phase="verify", system=load_prompt("agent_system"),
-            instruction=_verify_instruction(transaction, upstream_context=upstream_context),
+            instruction=_verify_instruction(
+                transaction, upstream_context=upstream_context, memory_block=memory_block,
+            ),
             max_steps=_VERIFY_MAX_STEPS,
         )
     except AgentLLMError as e:
         logger.warning("verification pass failed for %s tx %s: %s", case_id, tx_id, e)
     if (
-        ctx.stop_reason in {"model_call_budget_exhausted", "repeated_tool_call_limit"}
+        ctx.stop_reason in {"model_call_budget_exhausted", "model_stopped_without_result"}
         and not ctx.saved_results and not ctx.missing_requests
     ):
         existing = None if fresh_reverification else repo.get_transaction_result(case_id, tx_id)
@@ -876,6 +958,10 @@ def _refresh_downstream_results(
             updated = dict(saved)
             updated["report"] = report
             updated["transaction_metadata"] = metadata
+            if isinstance(updated.get("handoff"), dict):
+                # The handoff was written against the old upstream state; flag it
+                # so the next session treats its continuity as unconfirmed.
+                updated["handoff"] = {**updated["handoff"], "stale": True}
             repo.save_transaction_result(case_id=case_id, tx_id=tx_id, verification=updated)
         except Exception as e:
             # The refresh is a best-effort textual update; authoritative statuses

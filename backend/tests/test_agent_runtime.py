@@ -96,6 +96,7 @@ class TestBoundedAgentRuntime(unittest.TestCase):
         self.assertEqual(model.call_count, 2)
         self.assertEqual(dispatch.call_count, 2)
 
+    @patch("backend.services.agent_runtime.CLEARTITLE_MAX_NUDGES", 0)
     @patch("backend.services.agent_runtime.dispatch", wraps=dispatch)
     @patch("backend.services.agent_runtime.complete_with_tools")
     def test_explicit_budget_extension_grants_one_bounded_continuation(self, model, _dispatch):
@@ -137,14 +138,85 @@ class TestBoundedAgentRuntime(unittest.TestCase):
         self.assertTrue(ctx.additional_model_calls_used)
         self.assertEqual(ctx.stop_reason, "persisted_result")
 
+    @patch("backend.services.agent_runtime.CLEARTITLE_MAX_NUDGES", 2)
     @patch("backend.services.agent_runtime.complete_with_tools")
-    def test_no_tool_result_does_not_trigger_result_nudges(self, model):
+    def test_prose_only_turns_are_nudged_a_bounded_number_of_times(self, model):
         model.return_value = {"tool_calls": [], "content": "Prose only"}
         ctx = self._context()
         run_tool_loop(ctx=ctx, phase="verify", system="system", instruction="task", max_steps=8)
 
-        model.assert_called_once()
+        self.assertEqual(model.call_count, 3)  # first turn + 2 nudged retries
         self.assertEqual(ctx.stop_reason, "model_stopped_without_result")
+        last_messages = model.call_args.args[0]
+        self.assertIn("without calling a tool", last_messages[-1]["content"])
+
+    @patch("backend.services.agent_runtime.CLEARTITLE_MAX_NUDGES", 2)
+    @patch("backend.services.agent_runtime.dispatch")
+    @patch("backend.services.agent_runtime.complete_with_tools")
+    def test_nudged_model_can_still_persist_its_result(self, model, dispatch):
+        ctx = self._context()
+        model.side_effect = [
+            {"tool_calls": [], "content": "All done."},
+            {"tool_calls": [{"id": "save", "name": "save_transaction_result", "args": {}}]},
+        ]
+
+        def persist(context, _name, _args):
+            context.saved_results.append({"tx_id": "TX1"})
+            context.finished = True
+            return {"saved": True}
+
+        dispatch.side_effect = persist
+        run_tool_loop(ctx=ctx, phase="verify", system="system", instruction="task", max_steps=8)
+
+        self.assertEqual(model.call_count, 2)
+        self.assertEqual(ctx.stop_reason, "persisted_result")
+
+    @patch("backend.services.agent_runtime.CLEARTITLE_MAX_NUDGES", 0)
+    @patch("backend.services.agent_runtime.dispatch", return_value={"ok": True})
+    @patch("backend.services.agent_runtime.complete_with_tools")
+    def test_tool_results_report_remaining_budget_and_last_call_is_restricted(self, model, _dispatch):
+        model.return_value = {"tool_calls": [{"id": "c", "name": "list_documents", "args": {}}]}
+        run_tool_loop(ctx=self._context(), phase="verify", system="system", instruction="task", max_steps=4)
+
+        final_call = model.call_args_list[-1]
+        offered = {tool["name"] for tool in final_call.kwargs["tools"]}
+        self.assertEqual(offered, {"save_transaction_result", "request_missing_documents"})
+        self.assertTrue(any("FINAL CALL" in str(m.get("content")) for m in final_call.args[0]))
+        tool_messages = [m for m in final_call.args[0] if m.get("role") == "tool"]
+        self.assertIn('"calls_remaining": 0', tool_messages[-1]["content"])
+
+    @patch("backend.services.agent_runtime.CLEARTITLE_KEEP_OCR_RESULTS", 1)
+    def test_old_ocr_is_cleared_only_after_observations_are_recorded(self):
+        import json as _json
+        from backend.services.agent_runtime import _prune_stale_ocr
+
+        ctx = ToolContext("CASE1", [], current_tx_id="TX1")
+
+        def ocr(doc_id, start):
+            return {"role": "tool", "name": "get_document_text", "tool_call_id": doc_id + str(start),
+                    "content": _json.dumps({"doc_id": doc_id, "start_char": start, "total_chars": 99,
+                                            "has_more": True, "next_start_char": start + 4, "text": "abcd"})}
+
+        messages = [ocr("DOC1", 0), ocr("DOC2", 0), ocr("DOC2", 4)]
+        # Nothing noted yet: nothing may be dropped.
+        self.assertEqual(_prune_stale_ocr(ctx, messages), 0)
+        ctx.observations.append({"doc_id": "DOC1", "fact": "A sold to B", "pages": None, "quote": None})
+        self.assertEqual(_prune_stale_ocr(ctx, messages), 1)
+        self.assertTrue(_json.loads(messages[0]["content"])["pruned"])
+        self.assertIn("text", _json.loads(messages[1]["content"]))  # DOC2 has no notes yet
+        self.assertEqual(ctx.pruned_ranges["DOC1"], {(0, 4)})
+
+    def test_record_observation_requires_read_document_and_reports_quote_match(self):
+        docs = [{"doc_id": "DOC1", "filename": "a.pdf", "status": "structured"}]
+        ctx = ToolContext("CASE1", docs, current_tx_id="TX1")
+        self.assertIn("error", dispatch(ctx, "record_observation", {"doc_id": "DOC1", "fact": "x"}))
+        ctx.read_text_ranges["DOC1"] = [(0, 20, 20)]
+        ctx.document_text_cache["DOC1"] = "Sold  to  Ramesh   Kumar"
+        ok = dispatch(ctx, "record_observation", {"doc_id": "DOC1", "fact": "Buyer", "quote": "sold to ramesh kumar"})
+        self.assertTrue(ok["recorded"])
+        self.assertTrue(ok["quote_found_in_ocr"])
+        miss = dispatch(ctx, "record_observation", {"doc_id": "DOC1", "fact": "Seller", "quote": "not in text"})
+        self.assertFalse(miss["quote_found_in_ocr"])
 
     @patch("backend.services.agent_runtime.dispatch", return_value={
         "error": "invalid transaction result",
@@ -175,6 +247,7 @@ class TestBoundedAgentRuntime(unittest.TestCase):
         self.assertEqual(calls, ["called"])
         self.assertEqual(ctx.repeated_tool_calls, 1)
 
+    @patch("backend.services.agent_runtime.CLEARTITLE_MAX_NUDGES", 0)
     @patch("backend.services.agent_tools._HANDLERS")
     @patch("backend.services.agent_runtime.complete_with_tools")
     def test_repeated_call_reuses_cached_response_and_loop_continues(self, model, handlers):
