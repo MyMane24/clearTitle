@@ -1,218 +1,226 @@
 # Transaction Verification Strategy
 
-Use this skill when verifying a transaction in a Karnataka property title chain.
+Use this skill when verifying one transaction in a Karnataka property title chain.
 
 ## How to use this skill
 
-The task instructions script the verification workflow. This skill supplies the
-type-specific verification strategy for it. Apply the section below that matches
-the active transaction type, together with the general rules here, and execute
-each section's checks in the order given.
+The task instructions script the workflow and the result format; this skill
+supplies the type-specific verification strategy. Identify the transaction kind
+and the type of property it conveys, apply the matching sections below together
+with the general rules, and run each section's checks in order.
 
 ## General evidence rules
 
-Never verify using summaries alone or use structured extraction JSON as a
-substitute for documentary evidence. Verify the active transaction on its own
-instrument plus only the documents it uniquely depends on: a recital describing
-an upstream chain transaction points to an already-verified upstream result,
-never to re-reading that upstream instrument; at a root transaction the
-vendors' own pre-chain title documents recited by the instrument (a prior deed,
-a will) are this transaction's evidence; other transactions' instruments and
-later chain events stay with their own verifications. Keep the result limited
-to the active transaction's own evidence. Never infer legal
-validity merely from registration, mutation, or possession. When a transferor is
-a firm, company, trust, or representative capacity, check the supplied evidence
-for entity existence, signatory capacity, and authority to convey where material.
-The chain being property-specific does not make the property unchanged: a
-transfer from A to B and B to C does not by itself prove that a later flat
-conveyed by C is the same legally traceable interest in the original land —
-look for the documentary bridge and surface every unsupported step.
-
-Verify, do not transcribe: the result reports checks and their outcomes — what
-the evidence proves, contradicts, or leaves unestablished — never a retelling
-of the instrument's text, and never narration of which documents were selected
-or skipped.
-
-Never scan all case OCR to discover candidates. Check alternate filenames before
-requesting missing evidence. If a matching summary exists, select that candidate
-and inspect its complete OCR before deciding it is missing or insufficient. Do
-not request a document already supplied under a different name; select and
-inspect it. Do not demand certified copies when an uploaded copy can be
-examined; mention certification only as a follow-up limitation when it matters.
-
-For each candidate, use available metadata and summary to confirm it is plausibly
-relevant, then use OCR to establish what the document actually says. If metadata
-retrieval, OCR retrieval, or persistence fails, treat the tool error as a failure
-and never infer document contents from its summary.
+- Summaries are navigation aids only. Never verify from a summary, and never use
+  structured extraction JSON as a substitute for the document's OCR.
+- Use the upstream chain context returned by the application to avoid
+  re-auditing completed links. Retrieve OCR for an earlier event only for a
+  genuine dependency, newly supplied evidence or an explicit re-review.
+- Verify, do not transcribe: the result reports checks and their outcomes (what
+  the evidence proves, contradicts or leaves unestablished), never a retelling of
+  the instrument's text.
+- A candidate whose summary plausibly matches is selected and read in full before
+  you decide it is missing or insufficient. Check alternate filenames before
+  requesting anything, and never request a document already supplied under a
+  different name. An uploaded copy is examined as is; mention certification only
+  as a follow-up limitation when it matters.
+- If metadata retrieval, OCR retrieval or persistence fails, treat the tool error
+  as a failure and never infer the document's contents from its summary.
+- When a transferor is a firm, company, trust or acts in a representative
+  capacity, check the supplied evidence for the entity's existence, the
+  signatory's capacity and the authority to convey, where material.
+- A chain being property-specific does not make the property unchanged. A
+  transfer A to B and B to C does not prove that a later flat sold by C is the
+  same legally traceable interest in the original land; look for the documentary
+  bridge and surface every unsupported step.
 
 ## Registration evidence outcomes
 
-- Instrument found: examine the corresponding instrument; report the registration
-  particulars actually stated and whether each available particular matches the
-  title-chain claim.
-- Registration mentioned elsewhere: report only what the inspected recital/document
-  states. If the underlying instrument was not examined, do not claim that
-  instrument or its registration was independently verified.
-- Instrument found, registration uncertain: state exactly which registration
-  fact/status is not established by the supplied evidence.
-- Instrument missing: request that specific instrument, set `PENDING_NOT_VERIFIED`,
-  and do not infer invalidity from its absence.
-- Conflicting particulars: record material conflicts (number, date, office,
-  parties, or other particulars) as evidence-backed report statements with
-  references to the relevant sources.
+- Instrument found: examine it; report the registration particulars actually
+  stated and whether each matches the title-chain claim.
+- Registration mentioned elsewhere: report only what the inspected recital or
+  document states. If the underlying instrument was not examined, do not claim it
+  or its registration was independently verified.
+- Instrument found, registration uncertain: state exactly which registration fact
+  or status the supplied evidence does not establish.
+- Instrument missing: request that specific instrument, set
+  `PENDING_NOT_VERIFIED`, and do not infer invalidity from its absence.
+- Conflicting particulars (number, date, office, parties): record the material
+  conflict with references to both sources.
 
-Whenever the available evidence does not establish registration, state that
-registration remains unverified and identify what is missing or uncertain. Do not
-claim that a registration authority was checked unless an available tool actually
-retrieves authoritative registration evidence. Registration alone does not
-establish title or legal validity. Do not call different registration numbers a
-conflict unless the documents purport to identify the same instrument. A
-declaration and a separate sale deed ordinarily have distinct registration
-numbers; explain their relationship before alleging a number mismatch.
-Distinguish OCR uncertainty from a confirmed source-document contradiction.
+Where the evidence does not establish registration, say that registration remains
+unverified and what is missing. Do not claim a registration authority was checked
+unless a tool actually retrieved authoritative registration evidence. Registration
+alone does not establish title. Do not call different registration numbers a
+conflict unless the documents purport to identify the same instrument: a
+declaration and a separate sale deed ordinarily carry distinct numbers, so explain
+their relationship before alleging a mismatch. Distinguish OCR uncertainty from a
+confirmed contradiction in the source documents.
 
-## Strategy by transaction type
+## Strategy by transaction kind
 
-### Sale, conveyance, gift, release, or other transfer
+### Sale, conveyance or other transfer for consideration
 
-- Identify transferor(s), transferee(s), the stated act, instrument/date and
-  registration particulars where present.
-- Compare the complete schedule and conveyed share with the target property and
-  preceding/succeeding chain links; note changes in identifiers, area, boundaries,
-  or undivided shares without assuming they are equivalent.
-- Check what the cited evidence says about the transferor's interest or authority
-  and the transferee's acquisition. Treat consideration and payment terms as
-  documentary facts, not proof by themselves of title.
-- Distinguish an inspected instrument from details only recited in another deed.
-- Compare the transaction's stated registration number, registration/execution
-  dates, registering office, and available endorsements against the instrument.
-  A registration number mentioned in a recital is not independent proof of the
-  referenced instrument's registration.
-- Apply the Registration evidence outcomes above to this transaction's
-  registration particulars.
-- Inspect the deed, transferor-interest/authority evidence, parcel/share match,
-  and only transaction-specific material events or encumbrances.
-- Test the chain link in both directions: whether the transferor's supported
-  interest covers what is conveyed, and whether the recipient's later transfer
-  (if any) concerns the same property/share. Identify co-owners, partial shares,
-  reservations, conditions, or authority limitations that could affect the buyer.
+1. Identify transferors, transferees, the stated act, and the instrument,
+   execution and registration particulars (number, dates, registering office,
+   endorsements). A registration number in a recital is not independent proof of
+   the referenced instrument's registration.
+2. Compare the full schedule and conveyed share with the target property and with
+   the neighbouring links; note changes in identifiers, area, boundaries or
+   undivided shares without assuming they are equivalent.
+3. Test the link in both directions: whether the transferor's supported interest
+   covers what is conveyed, and whether the transferee's later transfer, if any,
+   concerns the same property or share. Identify co-owners, partial shares,
+   reservations, conditions and limits on authority.
+4. Treat consideration and payment terms as documentary facts, not proof of title.
+5. Distinguish an inspected instrument from details only recited in another deed.
 
-### Succession, inheritance, or death-related devolution
+### Gift, settlement or release
 
-- Identify the deceased owner, reported date, claimed successors, relationship,
-  shares, and stated legal/documentary basis.
-- Look for the source evidence supporting death, heirship, and devolution. A
-  mutation/name entry is corroborative record
-  evidence; do not treat it alone as conclusive proof of inheritance or title.
-- Keep recital-reported succession explicitly qualified when primary evidence is
-  absent; identify the missing record when material to the case assessment.
-- Check the case-specific material questions (death, successor identity, claimed
-  share, or parcel continuity) and request essential evidence if it is missing.
+1. Confirm donor and donee (or releasor and beneficiary), their relationship where
+   the deed states one, and that the instrument is registered and accepted or
+   effective as the deed provides.
+2. Check that the donor or releasor held the interest conveyed, including whether
+   the gift or release covers only a share, and whether co-owners joined.
+3. Note reservations, life interests, conditions, revocation clauses and any
+   later cancellation. Consideration is usually nominal; its absence is not a
+   defect.
+4. For a release among co-owners, confirm which share moves to whom and that the
+   parcel matches the chain.
 
-### Partition, family arrangement, or allocation
+### Succession, inheritance or will
 
-- Identify parties and their existing interests, the nature/date of the
-  arrangement, the specific allotment to each party, and the supporting
-  instrument or record.
-- Compare boundaries, survey/subdivision, area, and shares before and after the
-  arrangement. Do not assume a mutation entry itself proves a partition.
-- Distinguish an arrangement among owners from a later sale or apartment
-  conveyance; retain any mismatch or missing original instrument as unresolved.
-- Check material interest/allocation, schedule/boundary, and corroborating records
-  where applicable.
+1. Identify the deceased owner, the reported date of death, the claimed heirs,
+   relationships, shares and the stated documentary basis.
+2. Look for primary evidence of death, heirship and devolution (death certificate,
+   legal-heir certificate, family tree, probated or registered will, court
+   order). A mutation or khata entry corroborates; alone it does not prove
+   inheritance.
+3. For a will, check execution, attestation, probate or registration where
+   stated, and whether all claimed heirs and shares reconcile.
+4. Keep recital-reported succession explicitly qualified when primary evidence is
+   absent, and request the missing record when it is material.
 
-### Apartment declaration, development, construction, or unit allocation
+### Partition or family arrangement
 
-- Check the link between parent land, project/building, unit identifier, undivided
-  land share, and the later unit conveyance.
-- Identify who had authority to develop or convey units and what each document
-  actually does. A power of attorney, building permission, completion record, or
-  declaration is not automatically an ownership transfer.
-- Compare unit number, floor, area, parking, PID/khata and schedule across the
-  documents; preserve conflicting measurements or identifiers.
-- Check development/conveyance authority and project-to-unit mapping when the
-  transaction raises them.
-- Where agricultural or other parent land becomes a layout/project/apartment,
-  verify the available documentary bridge: parent survey numbers and extent;
-  non-agricultural conversion order and permitted use where relevant; approved
-  subdivision/layout or sanctioned building plan as applicable; project land and
-  development/conveyance authority; and the exact flat, floor, schedule, and
-  undivided land share in the buyer's unit deed. Consider RERA project registration,
-  project phase, status/extensions, and completion information where applicable.
-  Check applicability rather than assuming RERA or a particular approval is
-  required in every case. A conversion order, plan approval, RERA record, khata,
-  completion/occupancy record, or apartment declaration is not itself proof of
-  ownership or of every other approval. Flag a parent-land/project/unit mapping
-  gap even if the latest flat sale deed is registered.
-  If a firm or other entity is named as transferor/developer, inspect available
-  partnership/incorporation and authority records when they bear on the entity's
-  existence, partners/signatories, or capacity to execute the active instrument.
-  A deed naming an entity does not by itself establish the signer's authority.
+1. Identify the parties and their existing interests, the nature and date of the
+   arrangement, each party's allotment, and the supporting instrument or record.
+2. Compare boundaries, survey or subdivision, area and shares before and after.
+   A mutation entry alone does not prove a partition.
+3. Distinguish an arrangement among owners from a later sale or flat conveyance;
+   keep any mismatch or missing original unresolved.
 
-### Mortgage, charge, or other encumbrance
+### Power of attorney or authority to convey
 
-- Treat it as an encumbrance, not an ownership-changing transaction.
-- Identify borrower, lender, secured property, instrument/deposit date and
-  registration reference from the charge instrument, and any evidence of release
-  or continuation.
-- Record date or schedule discrepancies and the effect on the title-chain
-  assessment. Do not describe an encumbrance as cleared without release evidence.
-- Check the relevant creation instrument, property match, and release or
-  continuation evidence where applicable.
-- For the current/proposed seller, examine the underlying charge instrument and
-  supplied lender/release/no-dues records. Report any charge whose creation,
-  property match, or discharge remains unsupported as unresolved; do not infer
+1. Establish that the grantor held the interest, that the power covers this act,
+   and that it was valid and in force on the execution date (registration,
+   revocation, death or incapacity of the principal where the record shows it).
+2. Check that the attorney's signature and capacity appear on the deed and that
+   the deed recites the power correctly.
+
+### Court order, decree or sale
+
+1. Identify the court, case number, parties and date, and what the order
+   actually directs.
+2. Check that the order concerns this property and share, and whether a
+   registered instrument or mutation followed where one is needed.
+
+## Strategy by property type
+
+### Land converted, laid out or developed into a project or apartments
+
+When parent land becomes a layout, project or apartment building, verify the
+documentary bridge:
+- parent survey numbers and extent;
+- the non-agricultural conversion order and permitted use, where relevant;
+- the approved subdivision, layout or sanctioned building plan, as applicable;
+- project land, and who had authority to develop and convey units;
+- the exact flat, floor, schedule and undivided land share in the buyer's unit
+  deed;
+- RERA project registration, phase, status and extensions, and completion or
+  occupancy information, where applicable.
+
+Check whether each approval is applicable instead of assuming every project needs
+every approval. A conversion order, plan approval, RERA record, khata, completion
+record, power of attorney or apartment declaration is not itself proof of
+ownership or of any other approval. Compare unit number, floor, area, parking,
+PID or khata and schedule across the documents and preserve conflicting
+measurements or identifiers. Flag a parent-land, project or unit mapping gap even
+when the latest flat deed is registered. When a firm or other entity is the
+developer or transferor, inspect available partnership or incorporation and
+authority records that bear on its existence, signatories and capacity; a deed
+naming an entity does not establish the signer's authority.
+
+### Same house, flat or plot passing between owners
+
+Test continuity and identity of that property across the deeds: same schedule,
+extent, boundaries and unit details, and no unexplained change of identifier.
+
+## Encumbrances and charges
+
+- A mortgage, charge or lien is an encumbrance, not an ownership change.
+- From the charge instrument identify borrower, lender, secured property,
+  instrument and registration references, and any evidence of release, discharge
+  or continuation. Record date or schedule discrepancies and their effect on the
+  assessment.
+- Never describe a charge as cleared without release evidence. When creation,
+  property match or discharge is unsupported, report it as unresolved; do not infer
   its legal status from chain-discovery data alone.
 
-### Mutation, conversion, permission, tax, or other administrative record
+## Administrative records
 
-- Determine what the record establishes, its date/authority, and how its property
-  description maps to the target. Treat it as corroboration or a property event
-  unless the evidence establishes a different legal effect.
-- Do not create an ownership transfer solely from an administrative entry.
-- Examine an administrative record only when material to this transaction; never
-  misclassify it as a conveyance.
-- At the current-owner endpoint, review supplied current property-tax receipts,
-  demand/arrears or no-dues records, and khata/PID/RTC or equivalent records when
-  relevant to the property type and jurisdiction. State the period covered and any
-  unpaid or inconsistent amount/identity. These records are administrative or
-  corroborative; they do not cure a broken title chain or independently establish
-  ownership. Association, utility, or other dues should be raised only when the
-  property type or supplied records make them relevant.
+Mutation, conversion, permission, tax and khata records corroborate or document a
+property event; they never create an ownership transfer on their own. Determine
+what the record establishes, its date and authority, and how its property
+description maps to the target. Examine one only when it is material to this
+transaction, and never misclassify it as a conveyance.
 
-### Recital-reported link (any type)
+## Current-owner endpoint records
 
-- Verify exactly what the examined later document recites and cite that document.
-- State clearly that the underlying event's original instrument/record was not
-  examined. Do not upgrade the link to an inspected or independently corroborated
-  transaction. Request specific missing evidence only when it is material to the
-  assessment; otherwise preserve the limitation.
-- Distinguish confirming what a recital says from inspecting the underlying
-  original/certified record. Request that record if essential and absent.
+For the last transaction, examine the records that show what the seller's title
+carries, using only supplied non-EC documents:
+- khata, PID, RTC or pahani: the named holder and whether the property
+  description matches the schedule;
+- property-tax receipts, demand and no-dues records: period covered, any unpaid
+  or inconsistent amount;
+- charge instruments and release, discharge or lender no-dues records, per the
+  section above;
+- utility, association or development dues only when the property type or the
+  supplied records make them relevant;
+- for an apartment or layout plot, the completion or occupancy record and
+  building plan the latest deed relies on.
 
-### Full instrument and evidence quality
+These records neither cure a broken chain nor independently establish ownership.
+State the period each covers and any gap or inconsistency.
 
-- Read all OCR chunks for each relevant selected instrument before making a
-  completed verification or reporting a material discrepancy. Inspect beyond fields
-  copied into the title chain: recitals, full schedule, conditions, exceptions,
-  restrictions, corrections, cancellations, endorsements, and other clauses that
-  could affect this transaction.
-- Identify an additional material clause only when it is present in the reviewed
-  text; explain its relevance without turning ordinary legal wording into a defect.
-- If OCR is truncated, contradictory, illegible, or ambiguous, distinguish that
-  insufficient evidence from a missing document and request a clearer/complete
-  source when necessary. Cite observed document ID and page/section locator where
-  the OCR or retrieval tool provides one. Never invent page references.
+## Recital-reported links
 
-## Discipline guardrails
+- Verify exactly what the examined later document recites, and cite that
+  document.
+- State clearly that the underlying instrument was not examined; do not upgrade
+  the link to an inspected or corroborated transaction.
+- Request the underlying record only when it is material and absent; otherwise
+  keep the limitation.
 
-- Use the upstream chain context returned by the application to avoid re-auditing
-  completed links; retrieve OCR only for a genuine dependency, new evidence, or
-  explicit re-review.
-- If an uploaded candidate is marked skipped/unprocessed, distinguish that from
-  an absent document and report that the existing upload could not be examined;
-  do not silently request a duplicate.
-- Distinguish an absent instrument from an uploaded but insufficient instrument;
-  missing or insufficient evidence is not itself evidence of a defect.
+## Instrument and evidence quality
+
+- Read all OCR chunks of each relevant instrument before a completed
+  verification or a reported discrepancy. Look beyond the fields copied into the
+  chain: recitals, the full schedule, conditions, exceptions, restrictions,
+  corrections, cancellations and endorsements. Report an extra clause only when it
+  is present in the reviewed text and affects this transaction, without turning
+  ordinary legal wording into a defect.
+- If OCR is truncated, contradictory, illegible or ambiguous, distinguish that
+  insufficiency from a missing document and request a clearer or complete source
+  when necessary. Cite the document ID and the page or section locator the tools
+  provide; never invent page references.
+
+## Guardrails
+
+- An uploaded document marked skipped or unprocessed is not an absent document.
+  Report that the existing upload could not be examined; do not request a
+  duplicate.
+- Distinguish an absent instrument from an uploaded but insufficient one. Missing
+  or insufficient evidence is not evidence of a defect.
 - Never label a transaction fraudulent, forged, invalid, or title clear without
   adequate basis.

@@ -350,7 +350,11 @@ class TestDirectTransactionVerification(unittest.TestCase):
         # links are trusted from their saved results, never re-read.
         self.assertIn("SELECTION SCOPE", task)
         self.assertIn(normalized("no verified upstream result already establishes"), task_n)
-        self.assertIn(normalized("never re-read the documents its report cites"), task_n)
+        self.assertIn(normalized("never re-read the documents behind them"), task_n)
+        # Session memory, working notes and the current-owner endpoint are part of the contract.
+        for phrase in ("record_observation", "HOLDERS ENTERING THIS TRANSACTION", "CURRENT-OWNER ENDPOINT",
+                       "is_current_owner_transaction: true", "budget.calls_remaining"):
+            self.assertIn(normalized(phrase), task_n)
         self.assertIn(normalized("Never select or read the upstream instrument"), task_n)
         self.assertIn(normalized("At a root transaction there is no upstream link"), task_n)
         self.assertNotIn("do not silently omit", task_n)
