@@ -41,3 +41,7 @@ docker-compose.override.yml
 skills-lock.json
 opencode.json
 outputs-unused/
+
+# Personal AI agent instructions — local only
+AGENTS.md
+CLAUDE.md
