@@ -1085,7 +1085,6 @@ class TestDirectTransactionVerification(unittest.TestCase):
         self.assertNotIn("summary", schema["properties"])
         self.assertIn("findings", schema["properties"])  # model-emittable from Stage 5
         self.assertNotIn("scope", schema["properties"])
-        self.assertNotIn("revision", schema["properties"])
 
     @patch("backend.services.agent_tools.repo.save_transaction_result")
     @patch("backend.services.agent_tools.repo.get_transaction_result", return_value=None)

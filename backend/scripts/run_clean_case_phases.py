@@ -35,8 +35,7 @@ def main() -> None:
     for r in results:
         findings = r.get("findings") or []
         print(f"  {r.get('tx_id')} seq={r.get('sequence')} {r.get('status')}"
-              f" findings={len(findings)} reqs={len(r.get('required_documents') or [])}"
-              f" rev={r.get('revision')}")
+              f" findings={len(findings)} reqs={len(r.get('required_documents') or [])}")
 
 
 if __name__ == "__main__":

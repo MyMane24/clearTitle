@@ -69,35 +69,6 @@ class TestTitleChainEntry(unittest.TestCase):
             A.TitleChainEntry(**self._entry(source_doc_ids=[]))
 
 
-class TestRequirementIdsAndContracts(unittest.TestCase):
-    def test_new_requirement_id_bounds(self):
-        self.assertEqual(A.new_requirement_id(1), "REQ-0001")
-        self.assertEqual(A.new_requirement_id(9999), "REQ-9999")
-        with self.assertRaises(ValueError):
-            A.new_requirement_id(0)
-        with self.assertRaises(ValueError):
-            A.new_requirement_id(10000)
-
-    def test_open_requirement_needs_owner(self):
-        with self.assertRaises(ValidationError):
-            A.EvidenceRequirement(requirement_id="REQ-0001", document_type="Sale deed 1985")
-
-    def test_satisfied_requirement_may_be_ownerless(self):
-        req = A.EvidenceRequirement(
-            requirement_id="REQ-0002",
-            document_type="Sale deed 1985",
-            status="SATISFIED",
-            match={"status": "MATCHED", "doc_id": "DOC_030"},
-        )
-        self.assertEqual(req.match.status, A.MatchStatus.MATCHED)
-
-    def test_rejects_foreign_requirement_id_shape(self):
-        with self.assertRaises(ValidationError):
-            A.EvidenceRequirement(
-                requirement_id="REQ-1", owner_tx_id="PA-TC-0001", document_type="Map"
-            )
-
-
 class TestVerificationFinding(unittest.TestCase):
     def test_established_requires_evidence(self):
         with self.assertRaises(ValidationError):

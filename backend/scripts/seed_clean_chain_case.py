@@ -458,8 +458,7 @@ DOCUMENTS = (
 def _cleanup() -> None:
     with _get_conn() as conn:
         cursor = conn.cursor()
-        for table in ("documents", "title_chains", "case_results", "case_memory",
-                      "evidence_requirements"):
+        for table in ("documents", "title_chains", "case_results", "case_memory"):
             try:
                 cursor.execute(f"DELETE FROM {table} WHERE case_id = %s", (CASE_ID,))
             except Exception as exc:  # table not migrated yet on this DB — skip it

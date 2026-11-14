@@ -178,7 +178,7 @@ class TransactionVerification(BaseModel):
     cited_documents: list[CitedDocument] = Field(default_factory=list)
     verified_at: str | None = None
     schema_version: Literal["3.0"] = SCHEMA_VERSION
-    # -- dossier dimensions + versioning (Stage 3, additive; app-owned defaults) --
+    # -- dossier dimensions (Stage 3, additive; app-owned defaults) ----------------
     scope: DossierScope = Field(
         default_factory=DossierScope,
         description="Chain and context the dossier was verified against (app-assigned).",
@@ -223,12 +223,6 @@ class TransactionVerification(BaseModel):
         default_factory=dict,
         description="App-owned ledger of contract mappings/provenance recorded at save time.",
     )
-    revision: int = Field(
-        default=1,
-        ge=1,
-        description="Application-assigned revision number; overwritten at every save.",
-    )
-
     @model_validator(mode="after")
     def check_result_invariants(self):
         seen = set()
@@ -249,8 +243,6 @@ class TransactionVerification(BaseModel):
             citation_keys.add(key)
         if self.status == VerificationStatus.ISSUES_IDENTIFIED and not self.cited_documents:
             raise ValueError("ISSUES_IDENTIFIED requires at least one cited document")
-        if self.revision < 1:
-            raise ValueError("revision must be at least 1")
         return self
 
 

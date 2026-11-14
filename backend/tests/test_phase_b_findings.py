@@ -277,7 +277,6 @@ class TestSaveBoundaryFindings(unittest.TestCase):
         schema_props = _verification_props()["properties"]
         self.assertIn("findings", schema_props)
         self.assertNotIn("scope", schema_props)
-        self.assertNotIn("revision", schema_props)
 class TestContradictoryEvidence(unittest.TestCase):
     """Review defect 2: case-membership validation + completed-update inheritance
     for ``contradictory_evidence``. A reference outside the case is rejected
@@ -399,8 +398,7 @@ class TestFindingLifecycle(unittest.TestCase):
     """Review §5: the documented content-key lifecycle. A finding's identity key
     is (transaction, category, title, cited document ids). Enriching evidence
     rotates the id; status-only changes (OPEN → RESOLVED → SUPERSEDED) and refs
-    moved into resolution_evidence keep it. Retired ids are never reissued, so
-    historical revisions' ids stand untouched (see test_dossier_versioning)."""
+    moved into resolution_evidence keep it. Retired ids are never reissued."""
     def setUp(self):
         self.phase_a = {
             "property_identity": {"details": []},

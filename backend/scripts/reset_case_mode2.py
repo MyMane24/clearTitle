@@ -2,8 +2,8 @@
 
 Explicitly NOT touching: `documents` rows (uploaded evidence, OCR, summaries).
 Wiped (after a JSON backup to backups/): title_chains, case_results
-(verification history + findings container + reports), evidence_requirements,
-case_memory — exactly the state a from-zero Phase A→B→C run must not reuse.
+(verification history + findings container + reports), case_memory — exactly
+the state a from-zero Phase A→B→C run must not reuse.
 Run with the dev DB: set MYSQL_PORT=3307 before starting python.
 """
 import json
@@ -18,7 +18,7 @@ import backend.config as cfg  # noqa: E402  (env must be set before this import)
 from mysql.connector import connect  # noqa: E402
 
 CASE = sys.argv[1] if len(sys.argv) > 1 else "8A14D132"
-TABLES = ("title_chains", "case_results", "case_memory", "evidence_requirements")
+TABLES = ("title_chains", "case_results", "case_memory")
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 conn = connect(host=cfg.MYSQL_HOST, port=int(cfg.MYSQL_PORT), user=cfg.MYSQL_USER,

@@ -29,7 +29,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 ANALYSIS_CONTRACT_VERSION = "1.0"
 
 TX_ID_RE = r"PA-TC-\d{4}"
-REQUIREMENT_ID_RE = r"REQ-\d{4}"
 # Per-dossier (Phase B) finding reference. A 4th digit exists only so
 # allocation never fails a save after 999 findings; pre-existing TF-### ids
 # are unchanged.
@@ -66,13 +65,6 @@ def phase_a_hash(payload: object) -> str:
         "property_identity": data.get("property_identity"),
         "title_chain": data.get("title_chain"),
     })
-
-
-def new_requirement_id(sequence: int) -> str:
-    """REQ-0001 style; `sequence` is the next app-assigned number for a case."""
-    if sequence < 1 or sequence > 9999:
-        raise ValueError(f"requirement sequence out of range: {sequence}")
-    return f"REQ-{sequence:04d}"
 
 
 def new_tx_finding_id(sequence: int) -> str:
@@ -112,20 +104,6 @@ class EntrySourceKind(str, Enum):
     DOCUMENT = "DOCUMENT"
     RECITAL = "RECITAL"
     INFERRED = "INFERRED"
-
-
-class RequirementStatus(str, Enum):
-    OPEN = "OPEN"
-    SATISFIED = "SATISFIED"
-    SUPERSEDED = "SUPERSEDED"
-    WITHDRAWN = "WITHDRAWN"
-
-
-class MatchStatus(str, Enum):
-    MATCHED = "MATCHED"
-    PARTIALLY_MATCHED = "PARTIALLY_MATCHED"
-    NOT_MATCHED = "NOT_MATCHED"
-    AMBIGUOUS = "AMBIGUOUS"
 
 
 class Significance(str, Enum):
@@ -352,42 +330,6 @@ class TitleChainEntry(BaseModel):
         return self
 
 
-# -- evidence requirements (stable identity) --------------------------------------
-
-
-class RequirementMatch(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    status: MatchStatus
-    doc_id: str | None = None
-    evidence_refs: list[DocumentEvidenceReference] = Field(default_factory=list)
-    note: str | None = None
-
-
-class EvidenceRequirement(BaseModel):
-    """One requested document with a stable identity owned by one transaction."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    requirement_id: str = Field(pattern=REQUIREMENT_ID_RE, description="Application-assigned.")
-    owner_tx_id: str | None = Field(
-        default=None,
-        pattern=TX_ID_RE,
-        description="Transaction that asked for this evidence, when known.",
-    )
-    document_type: str
-    reason: str | None = None
-    what_it_establishes: str | None = None
-    status: RequirementStatus = RequirementStatus.OPEN
-    match: RequirementMatch | None = None
-
-    @model_validator(mode="after")
-    def check_open_owner(self):
-        if self.status is RequirementStatus.OPEN and not self.owner_tx_id:
-            raise ValueError("an OPEN requirement must carry its owning transaction")
-        return self
-
-
 # -- verification dossier dimensions (Phase B, additive) ---------------------------
 
 
@@ -488,16 +430,11 @@ __all__ = [
     "EffectivityStatus",
     "EntrySourceKind",
     "EvidenceBasis",
-    "EvidenceRequirement",
     "FindingCategory",
-    "MatchStatus",
     "PropertyFindingStatus",
     "PropertyIdentity",
     "PropertyIdentityDetail",
     "Provenance",
-    "REQUIREMENT_ID_RE",
-    "RequirementMatch",
-    "RequirementStatus",
     "RunPhaseLabel",
     "RunPhaseStatus",
     "Severity",
@@ -511,7 +448,6 @@ __all__ = [
     "VerificationFinding",
     "content_hash",
     "is_assigned_tx_id",
-    "new_requirement_id",
     "new_tx_finding_id",
     "phase_a_hash",
 ]

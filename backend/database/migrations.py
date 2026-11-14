@@ -8,14 +8,14 @@ Tables:
   title_chains          — Phase A property identity, graph, and detailed chain
   case_results          — one case-level verification result document
   case_memory           — one concise text checkpoint per case
-  evidence_requirements — Stage 1 ledger: one stable-ID row per requested document
 
-Obsolete tables (cross_doc_verifications, human_feedback, llm_calls and the
-daily_cost_summary view) are dropped best-effort so an existing DB upgrades
-cleanly, as are abandoned columns: documents.verification_notes,
-documents.stage_started_at, documents.stage_completed_at, documents.trace_id,
-and the unused token/cost/metadata columns on title_chains and
-verification_results that are no longer surfaced to any consumer.
+Obsolete tables (cross_doc_verifications, human_feedback, llm_calls, the
+evidence_requirements ledger and the daily_cost_summary view) are dropped
+best-effort so an existing DB upgrades cleanly, as are abandoned columns:
+documents.verification_notes, documents.stage_started_at, documents.stage_completed_at,
+documents.trace_id, case_results.dossier_meta, and the unused token/cost/metadata
+columns on title_chains and verification_results that are no longer surfaced to
+any consumer.
 """
 
 from __future__ import annotations
@@ -24,7 +24,6 @@ import json
 
 from backend.database.connection import _get_conn
 from backend.logger import get_logger
-from backend.schemas import new_requirement_id
 
 logger = get_logger(__name__)
 
@@ -110,7 +109,6 @@ CREATE TABLE IF NOT EXISTS case_results (
     case_id VARCHAR(32) NOT NULL,
     case_result JSON NULL,
     final_report JSON NULL,
-    dossier_meta JSON NULL,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (case_id)
@@ -123,26 +121,6 @@ CREATE TABLE IF NOT EXISTS case_memory (
         ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (case_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Stage 1 (target architecture): one row per requested document with a stable
--- identity, owned by the transaction that asked for it. Additive only, revert
--- with downgrade_stage1().
-CREATE TABLE IF NOT EXISTS evidence_requirements (
-    case_id VARCHAR(32) NOT NULL,
-    requirement_id VARCHAR(32) NOT NULL,
-    owner_tx_id VARCHAR(32) NULL,
-    document_type VARCHAR(255) NOT NULL,
-    reason TEXT NULL,
-    what_it_establishes TEXT NULL,
-    status VARCHAR(24) NOT NULL DEFAULT 'OPEN',
-    match_status VARCHAR(24) NULL,
-    matched_doc_id VARCHAR(32) NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-        ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (case_id, requirement_id),
-    KEY ix_evidence_requirements_status (case_id, status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 """
 
 
@@ -151,6 +129,7 @@ DROP_OBSOLETE_SQL = [
     "DROP TABLE IF EXISTS llm_calls",
     "DROP TABLE IF EXISTS human_feedback",
     "DROP TABLE IF EXISTS cross_doc_verifications",
+    "DROP TABLE IF EXISTS evidence_requirements",
 ]
 
 
@@ -190,9 +169,6 @@ def ensure_tables():
             ("title_chains", "title_chain_graph", "ALTER TABLE title_chains ADD COLUMN title_chain_graph LONGTEXT NULL"),
             ("title_chains", "detailed_chain", "ALTER TABLE title_chains ADD COLUMN detailed_chain JSON NULL"),
             ("case_memory", "case_memory", "ALTER TABLE case_memory ADD COLUMN case_memory LONGTEXT NULL"),
-            # M2 (Stage 3): per-tx dossier revision index — the append-only
-            # history of superseded dossier snapshots lives here, one JSON doc.
-            ("case_results", "dossier_meta", "ALTER TABLE case_results ADD COLUMN dossier_meta JSON NULL"),
             # Verification report (lean Phase D replacement): the generated
             # report document, one JSON doc per case (latest wins).
             ("case_results", "final_report", "ALTER TABLE case_results ADD COLUMN final_report JSON NULL"),
@@ -381,44 +357,13 @@ def ensure_tables():
             # Removed Phase C stores: consolidated findings + report history.
             "ALTER TABLE case_results DROP COLUMN final_reports",
             "ALTER TABLE case_results DROP COLUMN property_findings",
+            "ALTER TABLE case_results DROP COLUMN dossier_meta",
         ]:
             try:
                 cursor.execute(sql)
                 conn.commit()
             except Exception:
                 conn.rollback()
-
-        # Stage 1 backfill (target architecture): materialize one
-        # evidence_requirements row per persisted required document, in
-        # transaction-sequence order, with deterministic app-assigned IDs.
-        # Idempotent: cases that already have ledger rows are skipped.
-        try:
-            cursor.execute("SELECT case_id, case_result FROM case_results")
-            for case_id, raw in cursor.fetchall():
-                cursor.execute(
-                    "SELECT COUNT(*) FROM evidence_requirements WHERE case_id = %s", (case_id,)
-                )
-                if (cursor.fetchone() or [0])[0] > 0:
-                    continue
-                try:
-                    transactions = json.loads(raw) if isinstance(raw, str) else (raw or [])
-                    if isinstance(transactions, dict):
-                        transactions = transactions.get("transactions") or []
-                except (TypeError, ValueError):
-                    continue
-                rows = derive_evidence_requirements(case_id, transactions if isinstance(transactions, list) else [])
-                if not rows:
-                    continue
-                cursor.executemany(
-                    "INSERT IGNORE INTO evidence_requirements "
-                    "(case_id, requirement_id, owner_tx_id, document_type, reason) "
-                    "VALUES (%s, %s, %s, %s, %s)",
-                    rows,
-                )
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            logger.warning("evidence_requirements backfill skipped (non-fatal)", exc_info=True)
 
         # Split Phase A results previously stored as one JSON object in chain.
         try:
@@ -443,56 +388,11 @@ def ensure_tables():
     _tables_initialized = True
 
 
-def derive_evidence_requirements(case_id: str, transactions: list[dict]) -> tuple[tuple, ...]:
-    """Pure derivation for the Stage 1 requirements ledger backfill.
-
-    One row per persisted ``required_documents`` entry, deterministically
-    numbered (transaction sequence order, then item order) so the same
-    persisted case always yields the same stable IDs:
-
-        rows = [ (case_id, requirement_id, owner_tx_id, document_type, reason), ... ]
-
-    Existing rows are never renumbered (``INSERT IGNORE`` + case-level skip in
-    ``ensure_tables`` / ``agent_repo.sync_case_requirements`` keeps earlier
-    appends intact).
-    """
-    def _fold(value: str | None) -> str:
-        return (value or "").strip().casefold()
-
-    rows: list[tuple] = []
-    seen_keys: set[tuple] = set()
-    number = 0
-    ordered = sorted(
-        (item for item in (transactions or []) if isinstance(item, dict)),
-        key=lambda item: int(item.get("sequence") or 0),
-    )
-    for tx in ordered:
-        tx_id = str(tx.get("tx_id") or "").strip() or None
-        for item in tx.get("required_documents") or []:
-            if not isinstance(item, dict):
-                continue
-            document_type = str(item.get("document_type") or "").strip()
-            if not document_type:
-                continue
-            reason = str(item.get("reason") or "").strip() or None
-            owner = str(item.get("for_transaction") or "").strip() or tx_id
-            key = (_fold(owner), _fold(document_type), _fold(reason))
-            if key in seen_keys:
-                continue
-            number += 1
-            if number > 9999:
-                logger.error("requirement ID exhaustion for case %s; stopping backfill", case_id)
-                return tuple(rows)
-            seen_keys.add(key)
-            rows.append((case_id, new_requirement_id(number), owner, document_type, reason))
-    return tuple(rows)
-
-
 def downgrade_stage1(conn=None) -> None:
     """Revert the Stage 1 additive migration (docs/architecture §5 M1).
 
-    Best-effort and manual: drops the requirements ledger and the
-    property-findings/report-history case columns. Never run as part of the startup path.
+    Best-effort and manual: drops the property-findings/report-history case
+    columns. Never run as part of the startup path.
     """
     if conn is None:
         with _get_conn() as conn:
@@ -500,11 +400,9 @@ def downgrade_stage1(conn=None) -> None:
             return
     cursor = conn.cursor()
     for sql in (
-        "DROP TABLE IF EXISTS evidence_requirements",
         "ALTER TABLE cases DROP COLUMN phases",
         "ALTER TABLE cases DROP COLUMN analysis_run_id",
         "ALTER TABLE title_chains DROP COLUMN phase_a_hash",
-        "ALTER TABLE case_results DROP COLUMN dossier_meta",
         "ALTER TABLE case_results DROP COLUMN property_findings",
         "ALTER TABLE case_results DROP COLUMN final_reports",
     ):

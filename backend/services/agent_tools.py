@@ -134,9 +134,9 @@ def _verification_props() -> dict:
 
 # Dossier fields the persistence contract accepts but the model never supplies:
 # they are app-assigned and overwritten at save. `findings` is model-emittable
-# from the verification stage onward (prompt-instructed); `scope` and
-# `revision` stay app-only, always overwritten at save.
-APP_OWNED_RESULT_FIELDS = ["scope", "revision"]
+# from the verification stage onward (prompt-instructed); `scope` stays
+# app-only, always overwritten at save.
+APP_OWNED_RESULT_FIELDS = ["scope"]
 
 # Finding-level fields the application stamps (task §5): never trusted from the
 # model, always assigned when the dossier result is canonicalized.
@@ -848,11 +848,6 @@ def _upstream_chain_context(case_id: str, phase_a_chain: list[dict], sequence: i
     progress, or carries a non-terminal verification checkpoint.
     """
     unverified = []
-    index: dict[tuple[str, str, str], str] = {}
-    try:
-        index = repo.requirement_ids_index(case_id)
-    except Exception:
-        logger.warning("requirement id index unavailable for %s (non-fatal)", case_id)
     for entry in phase_a_chain or []:
         entry_sequence = int(entry.get("chain_position") or entry.get("sequence") or 0)
         if not entry_sequence or entry_sequence >= sequence:
@@ -870,12 +865,6 @@ def _upstream_chain_context(case_id: str, phase_a_chain: list[dict], sequence: i
             {"document_type": item.get("document_type"), "reason": item.get("reason")}
             for item in (result.get("required_documents") or []) if isinstance(item, dict)
         ]
-        for item in missing:
-            requirement_id = index.get(repo.requirement_content_key(
-                upstream_id, item.get("document_type"), item.get("reason")
-            ))
-            if requirement_id:
-                item["requirement_id"] = requirement_id
         unverified.append({
             "tx_id": upstream_id,
             "status": status,

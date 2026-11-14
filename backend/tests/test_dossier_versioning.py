@@ -1,9 +1,7 @@
-"""Stage 3: dossier versioning — revisions, history, dossier dimensions, scope."""
-import json
+"""Stage 3: dossier dimensions and scope."""
 import unittest
 from unittest.mock import patch
 from pydantic import ValidationError
-from backend.database.repositories import agent_repo
 from backend.schemas.analysis import content_hash
 from backend.services.agent_schemas import (
     normalize_transaction_verification,
@@ -20,34 +18,11 @@ def _verification(tx_id="PA-TC-0001", status="VERIFIED_WITH_AVAILABLE_EVIDENCE",
     if extra:
         payload.update(extra)
     return payload
-class FakeCursor:
-    def __init__(self, case_result=None, dossier_meta=None):
-        self.case_result = case_result
-        self.dossier_meta = dossier_meta
-        self.calls = []
-    def execute(self, sql, params=None):
-        self.calls.append((sql, params))
-    def fetchone(self):
-        if self.case_result is None:
-            return None
-        return (json.dumps(self.case_result), json.dumps(self.dossier_meta or {}))
-class FakeConnection:
-    def __init__(self, cursor):
-        self._cursor = cursor
-    def __enter__(self):
-        return self
-    def __exit__(self, *_args):
-        return False
-    def cursor(self, **_kwargs):
-        return self._cursor
-    def commit(self):
-        pass
 class TestDossierDimensions(unittest.TestCase):
     def test_defaults_on_minimal_payload(self):
         model = TransactionVerification(**_verification())
         self.assertEqual(model.effectivity_status.value, "NOT_EXAMINED")
         self.assertEqual(model.evidence_status.value, "UNDETERMINED")
-        self.assertEqual(model.revision, 1)
         self.assertIsNone(model.scope.phase_a_hash)
         self.assertEqual(model.findings, [])
     def test_invalid_dimension_values_are_rejected(self):
@@ -69,60 +44,6 @@ class TestDossierDimensions(unittest.TestCase):
             }],
         }))
         self.assertEqual(ok.findings[0].significance.value, "ESTABLISHED")
-    def test_revision_must_be_positive(self):
-        with self.assertRaises(ValidationError):
-            TransactionVerification(**_verification(extra={"revision": 0}))
-class TestRevisionPersistence(unittest.TestCase):
-    def _save(self, cursor, verification, tx_id="PA-TC-0001"):
-        # Ledger sync is its own feature (test_stage1_migration): stub it so
-        # these fakes only exercise the revision-persistence write path.
-        with patch.object(agent_repo, "_get_conn", return_value=FakeConnection(cursor)), \
-                patch.object(agent_repo, "sync_case_requirements"):
-            agent_repo.save_transaction_result(case_id="CASE1", tx_id=tx_id, verification=verification)
-    def _last_write(self, cursor):
-        sql, params = cursor.calls[-1]
-        self.assertIn("dossier_meta", sql)
-        return json.loads(params[1]), json.loads(params[2])
-    def test_first_save_assigns_revision_one_and_creates_meta(self):
-        cursor = FakeCursor(case_result=[])
-        self._save(cursor, _verification())
-        saved, meta = self._last_write(cursor)
-        self.assertEqual(saved[0]["revision"], 1)
-        self.assertEqual(meta["PA-TC-0001"], {"revision": 1, "history": []})
-    def test_resave_appends_prior_snapshot_and_increments_revision(self):
-        cursor = FakeCursor(
-            case_result=[_verification()],
-            dossier_meta={"PA-TC-0001": {"revision": 1, "history": []}},
-        )
-        self._save(cursor, _verification(report="Verdict: revised after new evidence."))
-        saved, meta = self._last_write(cursor)
-        self.assertEqual(saved[0]["revision"], 2)
-        self.assertEqual(saved[0]["report"], "Verdict: revised after new evidence.")
-        history = meta["PA-TC-0001"]["history"]
-        self.assertEqual(len(history), 1)
-        self.assertEqual(history[0]["report"], "Verdict: valid.")
-        self.assertEqual(history[0]["revision"], 1)
-        self.assertTrue(history[0]["superseded_at"])
-    def test_history_is_append_only_and_uncapped(self):
-        cursor = FakeCursor(
-            case_result=[{**_verification(), "revision": 2, "report": "Verdict: v2."}],
-            dossier_meta={"PA-TC-0001": {
-                "revision": 2,
-                "history": [{"revision": 1, "report": "Verdict: valid.", "superseded_at": "t1"}],
-            }},
-        )
-        self._save(cursor, _verification(report="Verdict: v3."))
-        saved, meta = self._last_write(cursor)
-        self.assertEqual(saved[0]["revision"], 3)
-        tx_meta = meta["PA-TC-0001"]
-        self.assertEqual([item["revision"] for item in tx_meta["history"]], [1, 2])
-        self.assertEqual(tx_meta["history"][-1]["report"], "Verdict: v2.")
-    def test_pre_stage3_entry_without_revision_gets_coherent_numbering(self):
-        cursor = FakeCursor(case_result=[_verification()])  # persisted before revisions existed
-        self._save(cursor, _verification(report="Verdict: reposted."))
-        saved, meta = self._last_write(cursor)
-        self.assertEqual(saved[0]["revision"], 2)
-        self.assertEqual(meta["PA-TC-0001"]["history"][0]["revision"], 1)
 class TestScopeStamping(unittest.TestCase):
     def _ctx(self, tx_id="PA-TC-0001", phase_a_hash=None):
         from backend.services.agent_tools import ToolContext
@@ -198,6 +119,5 @@ class TestLegacyNormalizationPassThrough(unittest.TestCase):
         normalized = normalize_transaction_verification(legacy)
         self.assertEqual(normalized["effectivity_status"], "NOT_EXAMINED")
         self.assertEqual(normalized["evidence_status"], "UNDETERMINED")
-        self.assertEqual(normalized["revision"], 1)
 if __name__ == "__main__":
     unittest.main()

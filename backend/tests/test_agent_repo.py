@@ -47,8 +47,7 @@ class TestAgentRepository(unittest.TestCase):
             "tx_id": "PA-TC-0001", "sequence": 1, "status": "PENDING_NOT_VERIFIED",
             "report": "Updated", "required_documents": [],
         }
-        with patch.object(agent_repo, "_get_conn", return_value=connection), \
-                patch.object(agent_repo, "sync_case_requirements"):  # ledger covered elsewhere
+        with patch.object(agent_repo, "_get_conn", return_value=connection):
             agent_repo.save_transaction_result(case_id="CASE1", tx_id="PA-TC-0001", verification=update)
         saved = json.loads(cursor.calls[-1][1][1])
         self.assertEqual([item["tx_id"] for item in saved], ["PA-TC-0001", "PA-TC-0002"])

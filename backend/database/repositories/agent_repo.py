@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import json
-import re
 
 from backend.database.connection import _get_conn
 from backend.logger import get_logger
-from backend.schemas.analysis import new_requirement_id
 
 logger = get_logger(__name__)
 
@@ -26,25 +24,11 @@ def _load(value):
         return None
 
 
-def requirement_content_key(owner: str | None, document_type: str | None, reason: str | None) -> tuple[str, str, str]:
-    """Stable content identity of an evidence ask (Stage 1 dedup contract).
-
-    The requirement ledger keys rows by (owner, document_type, reason): a
-    re-verified transaction that re-asks for the same record keeps its
-    requirement_id, while a reworded ask deliberately becomes a new identity.
-    """
-
-    def _fold(value: str | None) -> str:
-        return (str(value) if value is not None else "").strip().casefold()
-
-    return (_fold(owner), _fold(document_type), _fold(reason))
-
-
 def is_terminal_transaction_result(result: dict, documents: list[dict] | None = None) -> bool:
     """True when a verification result is complete and not merely checkpointed.
 
-    Moved here from services.cleartitle_agent so the dossier logic and the
-    requirement lifecycle consult one single terminal-state rule.
+    Moved here from services.cleartitle_agent so the dossier logic consults one
+    single terminal-state rule.
     """
     from backend.services.agent_schemas import normalize_status
 
@@ -276,16 +260,7 @@ def _case_result(case_id: str) -> list[dict]:
 
 
 def save_transaction_result(*, case_id: str, tx_id: str, verification: dict) -> None:
-    """Validate and upsert one canonical transaction result in the case row.
-
-    Dossier versioning (Stage 3 / M2): every save rewrites the tx's entry with
-    an app-assigned ``revision`` and appends the superseded previous version,
-    untouched, to ``case_results.dossier_meta`` for that tx. All revisions are
-    kept (decided: uncapped); prior snapshots are app-generated, never
-    model-supplied.
-    """
-    from datetime import datetime, timezone
-
+    """Validate and upsert one canonical transaction result in the case row."""
     from backend.services.agent_schemas import validate_transaction_verification
 
     canonical = validate_transaction_verification(verification).model_dump()
@@ -294,44 +269,23 @@ def save_transaction_result(*, case_id: str, tx_id: str, verification: dict) -> 
     with _get_conn() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT case_result, dossier_meta FROM case_results WHERE case_id = %s FOR UPDATE",
+            "SELECT case_result FROM case_results WHERE case_id = %s FOR UPDATE",
             (case_id,),
         )
         row = cursor.fetchone()
         state = _load(row[0]) if row else None
-        meta = _load(row[1]) if row and len(row) > 1 else None
         transactions = state if isinstance(state, list) else (
             state.get("transactions", []) if isinstance(state, dict) else []
         )
-        prior = next((item for item in transactions if isinstance(item, dict) and item.get("tx_id") == tx_id), None)
-        meta = meta if isinstance(meta, dict) else {}
-        tx_meta = meta.get(tx_id) if isinstance(meta.get(tx_id), dict) else {}
-        history = tx_meta.get("history") if isinstance(tx_meta.get("history"), list) else []
-        if prior:
-            prior_revision = int(prior.get("revision") or 1)
-            snapshot = dict(prior)
-            snapshot["revision"] = prior_revision
-            snapshot["superseded_at"] = datetime.now(timezone.utc).isoformat()
-            history.append(snapshot)
-            canonical["revision"] = prior_revision + 1
-        else:
-            canonical["revision"] = int(tx_meta.get("revision") or 0) + 1
-        meta = {**meta, tx_id: {"revision": canonical["revision"], "history": history}}
         transactions[:] = [item for item in transactions if item.get("tx_id") != tx_id]
         transactions.append(canonical)
         transactions.sort(key=lambda item: int(item.get("sequence") or 0))
         cursor.execute(
-            "INSERT INTO case_results (case_id, case_result, dossier_meta) VALUES (%s, %s, %s) "
-            "ON DUPLICATE KEY UPDATE case_result = VALUES(case_result), dossier_meta = VALUES(dossier_meta)",
-            (case_id, _dump(transactions), _dump(meta)),
+            "INSERT INTO case_results (case_id, case_result) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE case_result = VALUES(case_result)",
+            (case_id, _dump(transactions)),
         )
         conn.commit()
-    # Keep the requirements ledger in step; must also run when the saved result
-    # asks for nothing — that is when previously OPEN rows get closed.
-    try:
-        sync_case_requirements(case_id)
-    except Exception:
-        logger.exception("requirements ledger sync failed for case %s (non-fatal)", case_id)
 
 
 def get_transaction_result(case_id: str, tx_id: str) -> dict | None:
@@ -383,206 +337,6 @@ def list_persisted_transaction_results(case_id: str) -> list[dict]:
         if isinstance(transactions, list):
             return transactions
     raise ValueError(f"case transaction results for case {case_id} have an unexpected shape")
-
-
-# -- evidence requirements ledger (target architecture §3.3, Stage 1) -------------
-# One stable-ID row per requested document; owned by the transaction that asked.
-# The ledger is derived, idempotent state: it is re-synced from case_results on
-# every save and INSERT IGNORE guarantees earlier assignments are preserved.
-
-
-def sync_case_requirements(case_id: str) -> int:
-    """Full requirement-ledger lifecycle sync; returns rows inserted.
-
-    Stage 4: row identity is content-based — the same ask (owner,
-    document_type, reason) keeps its requirement_id for the life of the case;
-    newly seen asks receive the next unused case number. Positional derivation
-    numbering is only used for rows that do not exist yet, so an ask that
-    disappears mid-sequence can no longer make a later ask renumber onto an
-    already-occupied INSERT IGNORE id and be silently dropped.
-
-    Idempotent pass over the persisted transaction results:
-      1. INSERT ledger rows for asks never seen before.
-      2. WITHDRAWN for OPEN rows whose owner transaction no longer asks.
-      3. SATISFIED for OPEN rows whose owning transaction reached a terminal
-         status (verification completed; the ask no longer needs user action).
-    Replay mutates nothing.
-    """
-    from backend.database.migrations import derive_evidence_requirements
-
-    transactions = list_transaction_results(case_id)
-    rows = derive_evidence_requirements(case_id, transactions)
-    # No early return on empty `rows`: an empty ask list is exactly when OPEN
-    # rows must close (SATISFIED/WITHDRAWN), so the reconcile always runs.
-
-    current_keys = {
-        requirement_content_key(owner, document_type, reason)
-        for (_, _, owner, document_type, reason) in rows
-    }
-    documents = get_agent_documents(case_id)
-    owner_terminal = {
-        str(result.get("tx_id") or ""): is_terminal_transaction_result(result, documents)
-        for result in transactions
-        if result.get("tx_id")
-    }
-
-    inserts: list[tuple] = []
-    satisfied: list[str] = []
-    withdrawn: list[str] = []
-    with _get_conn() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT requirement_id, owner_tx_id, document_type, reason, status "
-            "FROM evidence_requirements WHERE case_id = %s",
-            (case_id,),
-        )
-        existing = cursor.fetchall() or []
-        key_to_id: dict[tuple[str, str, str], str] = {}
-        max_number = 0
-        for requirement_id, owner, document_type, reason, status in existing:
-            key_to_id.setdefault(
-                requirement_content_key(owner, document_type, reason), requirement_id
-            )
-            match_ = re.fullmatch(r"REQ-(\d{4})", str(requirement_id or ""))
-            if match_:
-                max_number = max(max_number, int(match_.group(1)))
-            if status != "OPEN":
-                continue
-            if owner_terminal.get(str(owner or "")):
-                satisfied.append(requirement_id)
-            elif (
-                requirement_content_key(owner, document_type, reason) not in current_keys
-            ):
-                withdrawn.append(requirement_id)
-        # A once-withdrawn ask returning verbatim revives its stable row —
-        # otherwise the reused id would hide a live requirement forever.
-        # Terminal owners stay closed (SATISFIED already covers the evidence).
-        reopening = [
-            (requirement_id, requirement_content_key(owner, document_type, reason))
-            for (requirement_id, owner, document_type, reason, status) in existing
-            if status == "WITHDRAWN"
-            and requirement_content_key(owner, document_type, reason) in current_keys
-            and not owner_terminal.get(str(owner or ""))
-        ]
-        for _case, _derived_id, owner, document_type, reason in rows:
-            key = requirement_content_key(owner, document_type, reason)
-            if key in key_to_id:
-                continue
-            if max_number >= 9999:
-                logger.error("requirement ID exhaustion for case %s; stopping sync", case_id)
-                break
-            max_number += 1
-            requirement_id = new_requirement_id(max_number)
-            key_to_id[key] = requirement_id
-            inserts.append((case_id, requirement_id, owner, document_type, reason))
-        if inserts:
-            cursor.executemany(
-                "INSERT IGNORE INTO evidence_requirements "
-                "(case_id, requirement_id, owner_tx_id, document_type, reason) "
-                "VALUES (%s, %s, %s, %s, %s)",
-                inserts,
-            )
-        if satisfied or withdrawn:
-            # Only OPEN rows flip; satisfied/withdrawn rows keep their history.
-            cursor.executemany(
-                "UPDATE evidence_requirements SET status = %s "
-                "WHERE case_id = %s AND requirement_id = %s AND status = 'OPEN'",
-                [(
-                    status,
-                    case_id,
-                    requirement_id,
-                ) for status, requirement_id in [
-                    * (("SATISFIED", requirement_id) for requirement_id in satisfied),
-                    * (("WITHDRAWN", requirement_id) for requirement_id in withdrawn),
-                ]],
-            )
-        if reopening:
-            cursor.executemany(
-                "UPDATE evidence_requirements SET status = 'OPEN' "
-                "WHERE case_id = %s AND requirement_id = %s AND status = 'WITHDRAWN'",
-                [(case_id, requirement_id) for (requirement_id, _key) in reopening],
-            )
-        conn.commit()
-    return len(inserts)
-
-
-def open_requirements(case_id: str) -> list[dict]:
-    """UX-facing outstanding requirement rows with their match state."""
-    skip = {"created_at", "updated_at"}
-    return [
-        {key: value for key, value in row.items() if key not in skip}
-        for row in list_requirements(case_id, status="OPEN")
-    ]
-
-
-def requirement_ids_index(case_id: str) -> dict[tuple[str, str, str], str]:
-    """Content-key -> requirement_id lookup for stable REQ tagging.
-
-    Resumption context, request registers, and dossier checks reference asks
-    by their stable ledger id, never by position. First id wins (rows come
-    requirement_id-ordered), so content reuse never picks a duplicate.
-    """
-    index: dict[tuple[str, str, str], str] = {}
-    for row in list_requirements(case_id):
-        index.setdefault(
-            requirement_content_key(
-                row.get("owner_tx_id"), row.get("document_type"), row.get("reason")
-            ),
-            str(row.get("requirement_id") or ""),
-        )
-    return index
-
-
-def apply_requirement_matches(case_id: str, matches: list[dict]) -> int:
-    """Record deterministic match decisions on OPEN rows; returns rows written.
-
-    Idempotent: replaying identical decisions rewrites equal values. Updates
-    are restricted to status='OPEN' so closed rows keep their recorded match.
-    """
-    rows = [
-        (
-            str(match["status"]),
-            str(match["doc_id"]) if match.get("doc_id") else None,
-            case_id,
-            str(match["requirement_id"]),
-        )
-        for match in matches
-        if match.get("requirement_id") and match.get("status")
-    ]
-    if not rows:
-        return 0
-    with _get_conn() as conn:
-        cursor = conn.cursor()
-        cursor.executemany(
-            "UPDATE evidence_requirements SET match_status = %s, matched_doc_id = %s "
-            "WHERE case_id = %s AND requirement_id = %s AND status = 'OPEN'",
-            rows,
-        )
-        conn.commit()
-    return len(rows)
-
-
-def list_requirements(case_id: str, status: str | None = None) -> list[dict]:
-    """Requirement rows for a case, newest owner-first; optional status filter."""
-    with _get_conn() as conn:
-        cursor = conn.cursor(dictionary=True)
-        if status:
-            cursor.execute(
-                "SELECT case_id, requirement_id, owner_tx_id, document_type, reason, "
-                "what_it_establishes, status, match_status, matched_doc_id, created_at, updated_at "
-                "FROM evidence_requirements WHERE case_id = %s AND status = %s "
-                "ORDER BY requirement_id ASC",
-                (case_id, status),
-            )
-        else:
-            cursor.execute(
-                "SELECT case_id, requirement_id, owner_tx_id, document_type, reason, "
-                "what_it_establishes, status, match_status, matched_doc_id, created_at, updated_at "
-                "FROM evidence_requirements WHERE case_id = %s "
-                "ORDER BY requirement_id ASC",
-                (case_id,),
-            )
-        return [dict(row) for row in cursor.fetchall()]
 
 
 # -- agent status + final result -----------------------------------------------
