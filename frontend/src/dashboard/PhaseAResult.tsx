@@ -78,6 +78,20 @@ function GraphSection({ graph }: { graph: string }) {
   );
 }
 
+function PropertyIdentitySection({ identity }: { identity: unknown }) {
+  if (!hasValue(identity)) return null;
+  return (
+    <section className="verification-property-identity" aria-labelledby="phase-a-property-identity-title">
+      <div className="verification-property-identity-heading">
+        <span className="verification-property-identity-kicker">TARGET PROPERTY</span>
+        <h2 id="phase-a-property-identity-title">Property identity</h2>
+        <p>Identifiers recorded from the property's documents.</p>
+      </div>
+      <ValueView value={identity} />
+    </section>
+  );
+}
+
 function pointText(point: unknown): string | null {
   if (typeof point === 'string') return point;
   if (point && typeof point === 'object' && typeof (point as Record<string, unknown>).text === 'string') {
@@ -240,8 +254,9 @@ export function PhaseAChainView({
           <h1>Title-chain details</h1>
       <p>{chain.length} entries · earliest supported link to current ownership</p>
         </div>
-        <button className="phase-a-back-button" type="button" onClick={onBack}>← Property overview</button>
+        <button className="phase-a-back-button" type="button" onClick={onBack}>← Back to upload</button>
       </header>
+      <PropertyIdentitySection identity={result.property_identity} />
       <GraphSection graph={result.title_chain_graph || ''} />
       <div className="phase-a-chain-intro">
         <h2>Documents behind the chain</h2>

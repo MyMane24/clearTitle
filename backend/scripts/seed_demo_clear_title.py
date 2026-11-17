@@ -26,7 +26,6 @@ from backend.database.connection import _get_conn  # noqa: E402
 from backend.database.repositories.case_repo import (  # noqa: E402
     init_case,
     set_case_status,
-    set_case_verification_status,
     update_case_status,
 )
 from backend.database.repositories.document_repo import (  # noqa: E402
@@ -34,7 +33,6 @@ from backend.database.repositories.document_repo import (  # noqa: E402
     update_document_status,
 )
 from backend.database.repositories.title_chain_repo import save_title_chain  # noqa: E402
-from backend.database.repositories.verification_results_repo import save_verification_results  # noqa: E402
 
 CASE_ID = "DEMO-CLEAR-TITLE"
 
@@ -322,91 +320,6 @@ def _title_chain() -> tuple[list, dict]:
     return chain, source
 
 
-def _verification() -> tuple[dict, list]:
-    def v(field, sd, ec, khata, status="VERIFIED", notes="Values agree and no problem is described in the notes."):
-        return {"field": field, "sd_value": sd, "ec_value": ec, "khata_value": khata,
-                "status": status, "notes": notes}
-
-    items = [
-        v("Property survey/CTS number",
-          "CTS 1360B/9, R.S. 699A/15", "CTS 1360B/9", "CTS 1360B/9, R.S. 699A/15",
-          notes="Identifier matches across all three documents."),
-        v("Property locality",
-          LOCATION, LOCATION, LOCATION,
-          notes="Locality matches on every document."),
-        v("Execution/registration date",
-          "15/07/2019 (BLG-5-515-2019)", "15/07/2019 (BLG-5-515-2019)", "Not found in Khata",
-          notes="The Sale Deed execution is recorded at ledger transaction 5."),
-        v("Vendors (prior chain)",
-          "Shantakumar Hiremath & Anusuya Hiremath", "Same owners since 2005", None,
-          notes="The vendors were the registered purchasers of the 2005 sale — chain is complete."),
-        v("Purchasers (current owners)",
-          "Prakash Gudage & Rakshita Gudage", "Prakash Gudage & Rakshita Gudage (tx 5)",
-          "Prakash Gudage & Rakshita Gudage",
-          notes="The SD purchasers hold the khata — mutation is recorded."),
-        v("Consideration amount",
-          "₹ 16,50,000", "₹ 16,50,000", "Not found in Khata",
-          notes="Consideration matches the EC ledger."),
-        v("Subsequent encumbrance after SD date",
-          "None", "No transaction after 15/07/2019", None,
-          notes="EC search runs to 31/08/2026 and shows nothing after the sale."),
-        v("Khata holder / mutation",
-          "Prakash Gudage & Rakshita Gudage", None, "Prakash Gudage & Rakshita Gudage (A-Khata)",
-          notes="Khata stands in the purchasers' names — the sale is mutated."),
-        v("Khata type & tax dues",
-          None, None, "A-Khata (Nomune 2), tax paid to 31-03-2026, no arrears",
-          notes="Authorised A-Khata; no pending municipal dues."),
-        v("Land area (dimensions vs declared)",
-          "9.14 X 12.19 m", None, None,
-          notes="Dimensions product 111.42 sq m matches declared 111.48 sq m (within 5%)."),
-        v("Land area (SD vs EC)",
-          "111.48 sq m (1200 sq ft)", "1200 sq ft", None,
-          notes="SD and EC agree — 1200 sq ft = 111.48 sq m."),
-        v("Land area (SD vs Khata)",
-          "111.48 sq m", None, "111.48 sq m",
-          notes="SD and Khata agree in square metres."),
-        v("Boundaries (SD vs EC)",
-          "N: 1360B/7, E: 1360B/8, W: 6 M Road, S: 1360B/10", "N: 1360B/7, E: 1360B/8, W: 6 M Road, S: 1360B/10", None,
-          notes="All four sides agree."),
-        v("Boundaries (SD vs Khata)",
-          "N: 1360B/7, E: 1360B/8, W: 6 M Road, S: 1360B/10", None, "N: 1360B/7, E: 1360B/8, W: 6 M Road, S: 1360B/10",
-          notes="All four sides agree."),
-    ]
-    summary = {
-        "counts": {"VERIFIED": len(items), "FLAG": 0, "NEEDS_REVIEW": 0, "N/A": 0},
-        "total": len(items),
-        "verified_share": 1.0,
-        "verdict": "CLEAR_TITLE",
-        "status_line": "VERIFICATION COMPLETED, TITLE IS CLEAR",
-        "headline": (
-            "TITLE IS CLEAR — Plot 09, CTS 1360B/9, Parvati Nagar matches the EC "
-            "history and the A-Khata in the purchasers' names. The last registered "
-            "transaction is the 15 Jul 2019 sale; nothing follows it."
-        ),
-        "summary_text": (
-            "The Sale Deed was checked against the 35-year EC ledger and the Belagavi "
-            "A-Khata. All identifiers — survey, CTS, plot number and locality — agree, "
-            "as do the purchasers, who hold the khata, and the consideration of "
-            "₹ 16,50,000. The bank mortgage of 2015 (Deposit of Title Deeds) was fully "
-            "released on 30 Apr 2019, before the sale closed.\n\n"
-            "The area is consistent across all documents: dimensions 9.14 x 12.19 m "
-            "equate to 111.42 sq m ≈ 1200 sq ft, matching the declared 111.48 sq m, and "
-            "all four boundary descriptions agree. The EC search runs to 31 Aug 2026 and "
-            "records no transaction after 15 Jul 2019.\n\n"
-            "No discrepancy, gap, or liability remains for the buyer. The title is "
-            "clear and marketable as it stands."
-        ),
-        "overall_comment": (
-            "The title to Plot No. 09, CTS No. 1360B/9, R.S. No. 699A/15, Rani Chennamma "
-            "Nagar 2nd Stage, Parvati Nagar, Belagavi is clear and marketable. The chain is "
-            "complete from the 1993 allotment through the 2019 sale; the 2015 mortgage stands "
-            "released. All field checks — identifiers, parties, area, boundaries and khata — "
-            "are VERIFIED. No further action is required."
-        ),
-    }
-    return summary, items
-
-
 def main() -> None:
     _bundle_cleanup()
 
@@ -431,14 +344,7 @@ def main() -> None:
     chain, source = _title_chain()
     save_title_chain(case_id=CASE_ID, status="complete", chain=chain, source=source)
 
-    summary, items = _verification()
-    save_verification_results(
-        case_id=CASE_ID, status="complete", verdict="CLEAR_TITLE",
-        summary=summary, items=items,
-    )
-    set_case_verification_status(case_id=CASE_ID, verification_status="complete", verdict="CLEAR_TITLE")
-
-    print(f"Seeded {CASE_ID}: case complete, {len(items)}/{len(items)} checks CLEAR_TITLE")
+    print(f"Seeded {CASE_ID}: case complete")
 
 
 if __name__ == "__main__":

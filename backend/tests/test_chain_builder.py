@@ -128,7 +128,6 @@ class ChainBuilderCase(unittest.TestCase):
         documents=(EC,),
         texts=None,
         prior_chain=(),
-        prior_results=(),
         chain_error=None,
     ):
         """Run ``build_chain`` against a scripted model and patched persistence."""
@@ -150,11 +149,6 @@ class ChainBuilderCase(unittest.TestCase):
                 "get_persisted_title_chain_entries",
                 side_effect=chain_error,
                 return_value=list(prior_chain),
-            ),
-            patch.object(
-                chain_builder.repo,
-                "list_persisted_transaction_results",
-                return_value=list(prior_results),
             ),
             patch.object(chain_builder.repo, "save_phase_a_result") as self.save,
             capture_run_messages() as self.messages,
@@ -1003,13 +997,6 @@ class TestIdentityAndSave(ChainBuilderCase):
             [entry["tx_id"] for entry in result["title_chain"]], ["PA-TC-0002", "PA-TC-0001"]
         )
 
-    def test_an_id_held_by_a_saved_result_is_never_given_to_another_transaction(self):
-        prior_results = [{"tx_id": "PA-TC-0001"}, {"tx_id": "PA-TC-0003"}]
-        result = self.build([READ_EC, [("result", self.TWO_SALES)]], prior_results=prior_results)
-        self.assertEqual(
-            [entry["tx_id"] for entry in result["title_chain"]], ["PA-TC-0002", "PA-TC-0004"]
-        )
-
     def test_an_unreadable_identity_history_aborts_without_saving(self):
         with self.assertRaises(chain_builder.ChainBuildError) as raised:
             self.build([READ_EC, [("result", ONE_SALE)]], chain_error=RuntimeError("db down"))
@@ -1045,34 +1032,17 @@ def saved_chain(chain_doc_ids=("DOC_001", "DOC_002")):
 
 
 class TestOrchestration(unittest.TestCase):
-    def run_agent(self, *, documents, stored, transaction_ids=None):
-        terminal = {
-            "tx_id": "PA-TC-0001",
-            "status": "VERIFIED_WITH_AVAILABLE_EVIDENCE",
-            "report": "ok",
-        }
+    def run_agent(self, *, documents, stored, force=False):
         with (
             patch.object(cleartitle_agent.repo, "get_agent_documents", return_value=documents),
-            patch.object(cleartitle_agent.repo, "get_agent_memory", return_value={}),
             patch.object(cleartitle_agent.repo, "get_agent_result", return_value=stored),
-            patch.object(cleartitle_agent.repo, "set_agent_status"),
-            patch.object(
-                cleartitle_agent.repo,
-                "list_transaction_results",
-                return_value=[terminal] if stored else [],
-            ),
-            patch.object(cleartitle_agent.repo, "get_transaction_result", return_value=terminal),
-            patch.object(
-                cleartitle_agent.repo, "resequence_transaction_results"
-            ) as self.resequence,
-            patch.object(cleartitle_agent, "_save_state") as self.save_state,
-            patch.object(cleartitle_agent, "_sync_case_verdict"),
+            patch.object(cleartitle_agent.repo, "set_agent_status") as self.set_status,
             patch.object(cleartitle_agent, "ensure_summaries"),
             patch.object(
                 cleartitle_agent, "build_chain", return_value=saved_chain()
             ) as self.build_chain,
         ):
-            return cleartitle_agent._run("CASE1", transaction_ids=transaction_ids)
+            return cleartitle_agent._run("CASE1", force=force)
 
     def test_no_history_documents_pauses_and_asks_for_the_ec(self):
         outcome = self.run_agent(documents=[DEED], stored={})
@@ -1081,19 +1051,18 @@ class TestOrchestration(unittest.TestCase):
         self.assertEqual(
             outcome["missing_documents"][0]["document_type"], "Encumbrance Certificate"
         )
-        memory, status = self.save_state.call_args.args[1:]
-        self.assertEqual(memory["stage"], "awaiting_history_documents")
-        self.assertIn("Encumbrance Certificate", memory["next_action"])
-        self.assertEqual(status, cleartitle_agent.STATUS_PAUSED)
+        self.assertEqual(
+            self.set_status.call_args.kwargs,
+            {"case_id": "CASE1", "status": cleartitle_agent.STATUS_PAUSED},
+        )
 
     def test_the_builder_is_given_the_case_documents_once_a_history_document_exists(self):
         self.run_agent(documents=[DEED, EC, RECEIPT], stored={})
         self.build_chain.assert_called_once_with("CASE1", [DEED, EC, RECEIPT])
 
-    def test_a_new_history_document_rebuilds_the_chain_and_renumbers_results(self):
+    def test_a_new_history_document_rebuilds_the_chain(self):
         outcome = self.run_agent(documents=[DEED, EC, MUTATION], stored=saved_chain())
         self.build_chain.assert_called_once_with("CASE1", [DEED, EC, MUTATION])
-        self.resequence.assert_called_once_with(case_id="CASE1", sequences={"PA-TC-0001": 1})
         self.assertEqual(outcome["status"], cleartitle_agent.STATUS_DONE)
 
     def test_a_new_title_deed_rebuilds_the_chain(self):
@@ -1105,18 +1074,14 @@ class TestOrchestration(unittest.TestCase):
         self.run_agent(documents=[DEED, EC, RECEIPT], stored=saved_chain())
         self.build_chain.assert_not_called()
 
-    def test_a_scoped_run_never_rebuilds_the_chain(self):
-        self.run_agent(
-            documents=[DEED, EC, MUTATION],
-            stored=saved_chain(),
-            transaction_ids={"PA-TC-0001"},
-        )
-        self.build_chain.assert_not_called()
-
     def test_a_chain_saved_before_source_tracking_is_never_rebuilt_automatically(self):
         legacy = saved_chain(chain_doc_ids=None)
         self.run_agent(documents=[DEED, EC, MUTATION], stored=legacy)
         self.build_chain.assert_not_called()
+
+    def test_a_manual_rebuild_rebuilds_even_without_new_documents(self):
+        self.run_agent(documents=[DEED, EC, RECEIPT], stored=saved_chain(), force=True)
+        self.build_chain.assert_called_once_with("CASE1", [DEED, EC, RECEIPT])
 
 
 if __name__ == "__main__":

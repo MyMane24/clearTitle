@@ -12,14 +12,8 @@ from backend.logger import get_logger
 logger = get_logger(__name__)
 
 
-def _should_start_agent(docs: list[dict], memory: dict) -> bool:
-    has_structured_documents = any(doc.get("status") == "structured" for doc in docs)
-    has_pending_verification = bool(
-        memory.get("paused_transaction") or memory.get("pending_tx_ids")
-        or memory.get("evidence_retry_tx_id")
-        or (memory.get("status") == "PENDING_NOT_VERIFIED" and memory.get("current_tx_id"))
-    )
-    return has_structured_documents or has_pending_verification
+def _should_build_chain(docs: list[dict]) -> bool:
+    return any(doc.get("status") == "structured" for doc in docs)
 
 
 # -- Case finalization task (chord callback) -----------------------------------
@@ -67,31 +61,11 @@ def finalize_case_task(results: list, case_id: str):
     except Exception as e:
         logger.error("Failed to release pipeline lock for case %s: %s", case_id, e)
 
-    # Start title-chain construction and verification once document processing
-    # finishes. Pending cases resume only after new evidence is fully processed.
+    # Build (or rebuild) the title chain once document processing finishes.
     try:
-        from backend.database.repositories import agent_repo
-        memory = agent_repo.get_agent_memory(case_id) or {}
-    except Exception as e:
-        logger.error("Failed to load agent memory for %s: %s", case_id, e)
-        memory = {}
-
-    try:
-        if _should_start_agent(get_case_documents(case_id), memory):
+        if _should_build_chain(get_case_documents(case_id)):
             from backend.workers.title_chain_tasks import run_case_analysis_task
-            retry_skipped_tx_id = memory.get("evidence_retry_tx_id")
-            paused_tx_id = memory.get("paused_transaction") or (
-                memory.get("current_tx_id")
-                if memory.get("current_stage") == "paused"
-                and memory.get("status") == "PENDING_NOT_VERIFIED"
-                else None
-            )
-            resume_paused = bool(paused_tx_id) and not retry_skipped_tx_id
-            run_case_analysis_task.delay(case_id, resume_paused, retry_skipped_tx_id)
-            action = "Retrying selected skipped transaction" if retry_skipped_tx_id else (
-                "Resuming the paused transaction" if resume_paused
-                else "Starting title-chain construction and transaction verification"
-            )
-            append_pipeline_log(case_id, f"-- {action} --")
+            run_case_analysis_task.delay(case_id)
+            append_pipeline_log(case_id, "-- Starting title-chain construction --")
     except Exception as e:
-        logger.error("Failed to queue title-chain analysis for %s: %s", case_id, e)
+        logger.error("Failed to queue title-chain construction for %s: %s", case_id, e)

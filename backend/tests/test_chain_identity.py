@@ -4,7 +4,10 @@ matching across reruns, ambiguity handling, and per-case id uniqueness against
 persisted transaction results — all against the pure chain_identity module.
 """
 import unittest
+
 from backend.services import chain_identity as CI
+
+
 def _entry(position, transaction_type="Sale deed", *, reg_number=None, executed_date=None,
            transferors=None, transferees=None, source_refs=(), registration_office=None,
            survey_number=None):
@@ -230,22 +233,6 @@ class TestMultiParentUpstream(unittest.TestCase):
         self.assertIsNone(chain[0].get("upstream_tx_ids"))
         self.assertEqual(chain[1].get("upstream_tx_ids"), ["PA-TC-0001"])
         self.assertIsNone(chain[2].get("upstream_tx_ids"))
-class TestTxFindingIdAllocationOverflow(unittest.TestCase):
-    """Corrective patch (review finding §6): exhausting the three-digit counter
-    must not fail the save; ids widen to TF-1000+ without changing TF-### ids."""
-    def test_allocation_beyond_tf_999_continues_at_tf_1000(self):
-        finding = {"title": "Thousandth observation", "category": "CHAIN_GAP", "evidence": []}
-        CI.assign_finding_ids("PA-TC-0001", [finding], {}, set(range(1, 1000)))
-        self.assertEqual(finding["finding_id"], "TF-1000")
-    def test_four_digit_ids_round_trip_through_the_registry(self):
-        content = {"title": "Same observation", "category": "CHAIN_GAP",
-                   "evidence": [{"doc_id": "DOC1"}]}
-        rows = [{"tx_id": "PA-TC-0001", "findings": [dict(content, finding_id="TF-1000")]}]
-        registry, used = CI.finding_registry(rows)
-        self.assertEqual(used, {1000})
-        assigned = dict(content)
-        CI.assign_finding_ids("PA-TC-0001", [assigned], registry, used)
-        self.assertEqual(assigned["finding_id"], "TF-1000")
 class TestUpstreamMatchingSafety(unittest.TestCase):
     """Part 2 (reliability review): party-name overlap alone is trusted only
     for the adjacent chain link; non-adjacent predecessors need corroborating

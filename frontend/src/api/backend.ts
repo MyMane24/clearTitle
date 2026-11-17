@@ -95,19 +95,6 @@ export interface AgentMissingDoc {
   for_transaction?: string;
 }
 
-export interface AgentTransaction {
-  tx_id: string;
-  sequence: number;
-  status: string;
-  summary: string;
-  transaction_metadata?: Record<string, unknown>;
-  required_documents: AgentMissingDoc[];
-  reviewed_document_ids: string[];
-  verified_at: string | null;
-  schema_version: string;
-  findings: { title: string; details: string; evidence: { doc_id: string; pages?: string | null }[] }[];
-}
-
 export interface TitleChainTransaction {
   tx_id?: string;
   sequence?: number;
@@ -122,56 +109,13 @@ export interface TitleChainTransaction {
   inferred?: boolean;
 }
 
-export interface TitleChainEntry {
-  tx_id?: string;
-  sequence?: number;
-  document_type?: string | null;
-  transaction_type?: string | null;
-  executed_date?: string | null;
-  registration_number?: string | null;
-  registration_date?: string | null;
-  vendors?: any[];
-  purchasers?: any[];
-  survey_number?: string | null;
-  plot_number?: string | null;
-  site_flat_number?: string | null;
-  property_location?: string | null;
-  market_value?: string | null;
-  consideration?: string | null;
-  schedule_property?: string | null;
-  conveyed_portion?: string | null;
-  source_doc_ids?: string[];
-  inferred?: boolean;
-  uncertainty?: string[];
-  transaction_index?: number | null;
-  execution_date?: string | null;
-  registration_reference?: string | null;
-  parties?: any;
-  financials?: any;
-  property_details?: any;
-  source?: string;
-  chain_role?: string;
-  is_sale_deed_entry?: boolean;
-  is_title_transfer?: boolean;
-  is_agreement_to_sell?: boolean;
-  portion?: string | null;
-  share_fraction?: string | null;
-  property_identity?: string | null;
-  explanation?: string | null;
-}
-
 export interface AgentReport {
   status: string;
-  stage?: string | null;
+  next_action?: string | null;
   property_identity?: unknown;
   title_chain_graph?: string;
   title_chain?: unknown;
-  paused_transaction?: string | null;
-  next_action?: string | null;
-  overall_status?: string | null;
-  transactions?: AgentTransaction[];
-  updated_at?: string | null;
-  skipped_tx_ids?: string[];
+  missing_documents?: AgentMissingDoc[];
 }
 
 export interface CaseResults {
@@ -181,70 +125,12 @@ export interface CaseResults {
     total_docs: number;
     completed_docs: number;
     failed_docs: number;
-    verification_status?: string | null;
-    verdict?: string | null;
     created_at?: string;
     updated_at?: string;
   };
   documents: any[];
   needs_action?: any[];
   agent: AgentReport;
-}
-
-export interface VerificationReportFinding {
-  severity: "CRITICAL" | "CAUTION" | "CLEAR";
-  title: string;
-  detail: string;
-}
-
-export type VerificationReportLevel = "CLEAR" | "CAUTION" | "CRITICAL";
-
-export interface VerificationReportChainRow {
-  sequence: number;
-  label: string;
-  transaction_type: string;
-  date?: string | null;
-  registration?: string | null;
-  from: string[];
-  to: string[];
-  property_type?: string | null;
-  result: { level: VerificationReportLevel; label: string; state?: string };
-}
-
-export interface VerificationReport {
-  report_type: "FINAL" | "PRELIMINARY";
-  generated_at: string;
-  schema_version?: string;
-  documents_examined: Array<{ filename?: string | null; document_type?: string | null }>;
-  // Schema 3.0: the application's facts plus a markdown interpretation written for this case.
-  verdict?: { level: VerificationReportLevel; headline: string };
-  property?: { type?: string | null; rows: Array<{ label: string; value: string }> };
-  chain?: VerificationReportChainRow[];
-  narrative_markdown?: string;
-  documents_needed?: Array<{ document: string; reason?: string; for?: string }>;
-  counts?: { verified?: number; issues?: number; awaiting?: number; critical?: number; caution?: number; clear?: number };
-  // Schema 2.0 (reports saved before the redesign still display).
-  schedule?: Array<{ label: string; value: string }>;
-  findings?: VerificationReportFinding[];
-  cannot_verify?: string[];
-  opinion?: { verdict_line: string; summary: string; conditions: string[] };
-  stale?: boolean;
-  pdf_available?: boolean;
-}
-
-export interface VerificationReportBlocker {
-  tx_id?: string | null;
-  sequence?: number | null;
-  transaction_type: string;
-  status: string;
-  required_documents: string[];
-}
-
-export interface VerificationReportState {
-  case_id: string;
-  final_ready: boolean;
-  blockers: VerificationReportBlocker[];
-  report: VerificationReport | null;
 }
 
 async function apiError(response: Response, fallback = "Request failed"): Promise<string> {
@@ -312,10 +198,9 @@ export const API = {
     return request<UploadResponse>("/api/upload", { method: "POST", body: fd });
   },
 
-  async uploadMore(caseId: string, files: File[], transactionId?: string): Promise<UploadResponse> {
+  async uploadMore(caseId: string, files: File[]): Promise<UploadResponse> {
     const fd = new FormData();
     files.forEach(f => fd.append("files", f));
-    if (transactionId) fd.append("transaction_id", transactionId);
     return request<UploadResponse>(`/api/case/${caseId}/upload`, { method: "POST", body: fd });
   },
 
@@ -353,10 +238,6 @@ export const API = {
     return request(`/api/case/${caseId}/link`, { method: "POST" });
   },
 
-  async skipAgentTransaction(caseId: string, txRef: string): Promise<{ case_id: string; status: string }> {
-    return request(`/api/results/${caseId}/agent/skip/${txRef}`, { method: "POST" });
-  },
-
   async listCases(): Promise<CasesResponse> {
     try {
       return await request<CasesResponse>("/api/cases");
@@ -373,18 +254,7 @@ export const API = {
     return request<OcrTextResponse>(`/api/results/${caseId}/ocr`);
   },
 
-  async analyze(caseId: string): Promise<{ case_id: string; status: string }> {
-    return request(`/api/results/${caseId}/analyze`, { method: "POST" });
-  },
-
-  async getVerificationReport(caseId: string): Promise<VerificationReportState> {
-    return request<VerificationReportState>(`/api/results/${caseId}/verification-report`);
-  },
-
-  async generateVerificationReport(caseId: string, reportType: "FINAL" | "PRELIMINARY"): Promise<{ case_id: string; status: string }> {
-    return request(`/api/results/${caseId}/verification-report/generate`, {
-      method: "POST",
-      body: JSON.stringify({ report_type: reportType }),
-    });
+  async buildChain(caseId: string): Promise<{ case_id: string; status: string }> {
+    return request(`/api/results/${caseId}/chain`, { method: "POST" });
   },
 };

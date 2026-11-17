@@ -32,7 +32,6 @@ from backend.database.repositories import agent_repo as repo
 from backend.integrations.llm.agent_models import build_agent_model
 from backend.logger import get_logger
 from backend.prompts.loader import load_prompt
-from backend.schemas.analysis import is_assigned_tx_id
 from backend.schemas.chain import ChainLink, ChainResult, DocumentedTransaction
 from backend.services import chain_identity
 from backend.shared.constants import CHAIN_DEED_DOC_TYPES, CHAIN_HISTORY_DOC_TYPES
@@ -714,22 +713,16 @@ def _task(history: list[dict], deeds: list[dict]) -> str:
 def _assign_identity(case_id: str, chain: list[dict]) -> list[str]:
     """Stamp stable transaction ids and upstream links onto the chain, in place.
 
-    A link that matches a previously saved link keeps its id, so verification
-    results stay attached to the same transaction across rebuilds. The saved
-    state is read strictly: an unreadable history is unknown, not empty, and
-    numbering from empty could hand a saved result's id to another transaction.
+    A link that matches a previously saved link keeps its id, so a rebuilt chain
+    keeps the same transaction identity. The saved state is read strictly: an
+    unreadable history is unknown, not empty, and numbering from empty could
+    hand a saved id to another transaction.
     """
     try:
         prior_chain = repo.get_persisted_title_chain_entries(case_id)
-        prior_results = repo.list_persisted_transaction_results(case_id)
     except Exception as error:
         raise ChainBuildError(
             f"cannot safely assign transaction ids; nothing was saved: {error}"
         ) from error
-    taken_ids = {
-        str(item.get("tx_id"))
-        for item in prior_results
-        if isinstance(item, dict) and is_assigned_tx_id(item.get("tx_id"))
-    }
-    notes = chain_identity.assign_chain_tx_ids(chain, prior_chain, taken_ids)
+    notes = chain_identity.assign_chain_tx_ids(chain, prior_chain, set())
     return notes + chain_identity.attach_upstream_ids(chain)

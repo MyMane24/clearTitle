@@ -7,7 +7,6 @@ celery_app = Celery(
     broker=REDIS_URL,
     backend=REDIS_URL,
     include=[
-        "backend.workers.agent_tasks",
         "backend.workers.finalize",
         "backend.workers.tasks",
         "backend.workers.title_chain_tasks",

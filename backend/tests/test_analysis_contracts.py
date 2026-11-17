@@ -6,7 +6,6 @@ from pydantic import ValidationError
 
 from backend.schemas import analysis as A
 
-
 REF = {"doc_id": "DOC_001"}
 
 
@@ -67,34 +66,6 @@ class TestTitleChainEntry(unittest.TestCase):
     def test_rejects_entry_without_sources(self):
         with self.assertRaises(ValidationError):
             A.TitleChainEntry(**self._entry(source_doc_ids=[]))
-
-
-class TestVerificationFinding(unittest.TestCase):
-    def test_established_requires_evidence(self):
-        with self.assertRaises(ValidationError):
-            A.VerificationFinding(significance="ESTABLISHED", title="T", text="Body")
-        finding = A.VerificationFinding(
-            significance="ESTABLISHED", title="T", text="Body", evidence=[REF]
-        )
-        self.assertFalse(finding.is_legal_defect)
-
-    def test_unresolved_cannot_assert_legal_defect(self):
-        with self.assertRaises(ValidationError):
-            A.VerificationFinding(
-                significance="UNRESOLVED", title="T", text="Body", is_legal_defect=True
-            )
-
-    def test_contested_needs_no_evidence_but_nonempty_text(self):
-        with self.assertRaises(ValidationError):
-            A.VerificationFinding(significance="CONTESTED", title="T", text="  ")
-
-
-class TestRunMetadata(unittest.TestCase):
-    def test_analysis_run_metadata(self):
-        run = A.AnalysisRunMetadata(run_id="fra1n2u3-4", case_id="CASE1", started_at="t")
-        self.assertEqual(run.phases, [])
-        with self.assertRaises(ValidationError):
-            A.AnalysisRunMetadata(run_id="short", case_id="CASE1", started_at="t")
 
 
 if __name__ == "__main__":

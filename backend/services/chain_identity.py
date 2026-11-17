@@ -1,29 +1,22 @@
-"""Application-owned identity for Phase A chain entries and Phase B findings.
+"""Application-owned identity for Phase A chain entries.
 
 Pure functions only — no database, LLM, or framework imports. The persistence
 and tool layers import from here; the reverse never happens, so the identity
 rules stay testable in isolation.
 
-Phase A strategy (audit D2 / task §3): stable ``PA-TC-####`` ids are stamped at
-save time. A rerun preserves an earlier id only when the entry can be matched
-to exactly one previous entry by content (registration reference, or
-transaction type + date + party continuity / source-document set). Array
-position never dictates identity. Ambiguous matches are recorded and resolved
-safely with a brand-new id; ids already used by any persisted transaction
-result are never reassigned, so historical results stay associated with the
-same transaction.
-
-Phase B strategy: a dossier finding's stable ``TF-###`` id is derived from the
-same content key Phase C uses to dedup observations — (transaction, category,
-title, cited document ids) — so an unchanged finding keeps its id across
-result updates while genuinely new observations get a fresh id.
+Strategy (audit D2 / task §3): stable ``PA-TC-####`` ids are stamped at save
+time. A rerun preserves an earlier id only when the entry can be matched to
+exactly one previous entry by content (registration reference, or transaction
+type + date + party continuity / source-document set). Array position never
+dictates identity. Ambiguous matches are recorded and resolved safely with a
+brand-new id; ids passed in as taken are never reassigned.
 """
 
 from __future__ import annotations
 
 import re
 
-from backend.schemas.analysis import TX_ID_RE, is_assigned_tx_id, new_tx_finding_id
+from backend.schemas.analysis import TX_ID_RE, is_assigned_tx_id
 
 _TX_ID = re.compile(TX_ID_RE)
 
@@ -306,85 +299,3 @@ def entry_chain_id(chain: list[dict], index: int) -> str:
     entry = chain[index] if 0 <= index < len(chain) else None
     tx_id = str((entry or {}).get("tx_id") or "")
     return tx_id if _TX_ID.fullmatch(tx_id) else ""
-
-
-# -- Phase B finding content identity -------------------------------------------
-
-
-def finding_content_key(tx_id: str, finding: dict) -> tuple[str, str, str, tuple[str, ...]]:
-    """Phase C's dedup identity (category, title, cited docs), scoped to one transaction."""
-    doc_ids = tuple(sorted({
-        str(ref.get("doc_id") or "")
-        for ref in (finding.get("evidence") or finding.get("resolution_evidence") or [])
-        if isinstance(ref, dict) and ref.get("doc_id")
-    }))
-    return (str(tx_id), _norm(finding.get("category", "OTHER")), _norm(finding.get("title")), doc_ids)
-
-
-def finding_registry(results: list[dict]) -> tuple[dict[tuple[str, str, str, tuple[str, ...]], str], set[int]]:
-    """Per-case map of content key -> finding id, plus every number already used.
-
-    ``results`` are persisted transaction-result rows (each with ``tx_id`` and
-    ``findings``); ids the model may have invented are ignored here — the save
-    path strips them before registry use.
-    """
-    registry: dict[tuple[str, str, str, tuple[str, ...]], str] = {}
-    used: set[int] = set()
-    for result in results or []:
-        if not isinstance(result, dict):
-            continue
-        tx_id = str(result.get("tx_id") or "")
-        for finding in (result.get("findings") or []):
-            if not isinstance(finding, dict):
-                continue
-            finding_id = str(finding.get("finding_id") or "")
-            if not _TX_FINDING.fullmatch(finding_id):
-                continue
-            registry[finding_content_key(tx_id, finding)] = finding_id
-            used.add(_tx_finding_number(finding_id))
-    return registry, used
-
-
-_TX_FINDING = re.compile(r"TF-\d{3,4}")  # matches TF-### and overflow TF-#### ids
-
-
-def _tx_finding_number(finding_id: str) -> int:
-    try:
-        return int(finding_id.removeprefix("TF-"))
-    except ValueError:
-        return 0
-
-
-def _next_tx_finding_id(used_numbers: set[int]) -> str:
-    number = 1
-    while number in used_numbers:
-        number += 1
-    return new_tx_finding_id(number)
-
-
-def assign_finding_ids(
-    tx_id: str,
-    findings: list[dict],
-    registry: dict[tuple[str, str, str, tuple[str, ...]], str],
-    used_numbers: set[int],
-) -> list[dict]:
-    """Stamp app-owned ``finding_id`` on each finding dict, in place.
-
-    Same content identity (transaction + category + title + cited docs) keeps
-    its existing id; anything else gets the next unused per-case number, so a
-    batch with two identical content keys still gets distinct ids.
-    """
-    claimed_keys: set[tuple[str, str, str, tuple[str, ...]]] = set()
-    claimed_ids: set[str] = set()
-    for finding in findings:
-        key = finding_content_key(tx_id, finding)
-        finding_id = registry.get(key) if key not in claimed_keys else None
-        if finding_id and finding_id in claimed_ids:
-            finding_id = None
-        if finding_id is None:
-            finding_id = _next_tx_finding_id(used_numbers)
-        used_numbers.add(_tx_finding_number(finding_id))
-        claimed_keys.add(key)
-        claimed_ids.add(finding_id)
-        finding["finding_id"] = finding_id
-    return findings

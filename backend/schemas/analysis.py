@@ -1,19 +1,12 @@
-"""Canonical analysis-layer contracts (target architecture, Stage 1).
-
-Single source of truth for the contracts introduced by the ClearTitle
-redesign (docs/architecture/CLEARTITLE_TARGET_ARCHITECTURE.md §4):
+"""Canonical Phase A contracts and identifier helpers.
 
 * shared provenance + evidence-reference primitives,
-* Phase A identity/chain canonical shapes,
-* evidence requirements with stable identities (Stage 4 consumers).
+* Phase A property identity and chain shapes,
+* application-assigned transaction identifiers and content hashes.
 
-`backend.services.agent_schemas` stays the Phase A/B *persistence* contract:
-its existing v3.0 wire shapes are preserved; later stages validate against,
-or additively extend, the models defined here. Free-form LLM output must
-never reach persistence without passing one of these models first.
-
-Identifier discipline (application-assigned only — never trusted from a
-model): PA-TC-\\d{4} transactions and REQ-\\d{4} evidence requirements.
+Free-form LLM output must never reach persistence without passing one of these
+models first. Transaction ids (``PA-TC-\\d{4}``) are application-assigned only —
+never trusted from a model.
 """
 
 from __future__ import annotations
@@ -29,10 +22,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 ANALYSIS_CONTRACT_VERSION = "1.0"
 
 TX_ID_RE = r"PA-TC-\d{4}"
-# Per-dossier (Phase B) finding reference. A 4th digit exists only so
-# allocation never fails a save after 999 findings; pre-existing TF-### ids
-# are unchanged.
-TX_FINDING_ID_RE = r"TF-\d{3,4}"
 
 # Application-assigned transaction identifiers that are allowed to survive
 # renumbering: the current PA-TC ids plus LEGACY-* assignments made at the
@@ -67,18 +56,6 @@ def phase_a_hash(payload: object) -> str:
     })
 
 
-def new_tx_finding_id(sequence: int) -> str:
-    """App-assigned dossier-finding reference (TF-001 / TF-1000 style), per case.
-
-    Width-3 through TF-999 keeps every historical id byte-identical; 1000-9999
-    render at natural width so exhausting the three-digit counter degrades to
-    four-digit ids instead of failing the save.
-    """
-    if sequence < 1 or sequence > 9999:
-        raise ValueError(f"transaction finding sequence out of range: {sequence}")
-    return f"TF-{sequence:03d}" if sequence <= 999 else f"TF-{sequence}"
-
-
 # -- controlled enumerations ----------------------------------------------------
 
 
@@ -104,58 +81,6 @@ class EntrySourceKind(str, Enum):
     DOCUMENT = "DOCUMENT"
     RECITAL = "RECITAL"
     INFERRED = "INFERRED"
-
-
-class Significance(str, Enum):
-    """Verification dimension of a dossier finding (evidence-grounded only)."""
-
-    ESTABLISHED = "ESTABLISHED"
-    SUPPORTED = "SUPPORTED"
-    CONTESTED = "CONTESTED"
-    UNRESOLVED = "UNRESOLVED"
-
-
-class FindingCategory(str, Enum):
-    PROPERTY_IDENTITY = "property_identity"
-    REGISTRATION = "registration"
-    AUTHORITY = "authority"
-    ENCUMBRANCE = "encumbrance"
-    LIABILITY = "liability"
-    CONVERSION = "conversion"
-    BUILDING = "building"
-    LITIGATION = "litigation"
-    CHAIN_GAP = "chain_gap"
-    OTHER = "other"
-
-
-class Severity(str, Enum):
-    CRITICAL = "CRITICAL"
-    CAUTION = "CAUTION"
-    POSITIVE = "POSITIVE"
-    INFORMATION = "INFORMATION"
-
-
-class PropertyFindingStatus(str, Enum):
-    OPEN = "OPEN"
-    PARTIALLY_RESOLVED = "PARTIALLY_RESOLVED"
-    RESOLVED = "RESOLVED"
-    SUPERSEDED = "SUPERSEDED"
-    # Additive members; persisted findings carrying these values keep validating.
-    PENDING_EVIDENCE = "PENDING_EVIDENCE"
-    DISPUTED = "DISPUTED"
-
-
-class RunPhaseLabel(str, Enum):
-    A = "A"
-    B = "B"
-
-
-class RunPhaseStatus(str, Enum):
-    RUNNING = "RUNNING"
-    DONE = "DONE"
-    PAUSED = "PAUSED"
-    ERROR = "ERROR"
-    SKIPPED = "SKIPPED"
 
 
 # -- shared primitives ----------------------------------------------------------
@@ -196,49 +121,6 @@ class DocumentEvidenceReference(BaseModel):
         if not self.doc_id.strip():
             raise ValueError("doc_id must not be empty")
         return self
-
-
-class SourceHashes(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    phase_a: str | None = None
-    case_result: str | None = None
-    findings: str | None = None
-
-
-# -- dossier scope + dimensions (Phase B, additive) -------------------------------
-
-
-class DossierScope(BaseModel):
-    """What the dossier was verified against — app-assigned, never model-sent."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    phase_a_hash: str | None = Field(
-        default=None, description="phase_a_hash of the chain at verification time."
-    )
-    chain_context_hash: str | None = Field(
-        default=None,
-        description="Hash of the persisted upstream chain-context record (None for the root).",
-    )
-
-
-class EffectivityStatus(str, Enum):
-    """How far a dossier examined the evidence it selected."""
-
-    NOT_EXAMINED = "NOT_EXAMINED"
-    PARTIALLY_EXAMINED = "PARTIALLY_EXAMINED"
-    FULLY_EXAMINED = "FULLY_EXAMINED"
-    EXAMINED_UNVERIFIED = "EXAMINED_UNVERIFIED"
-
-
-class EvidenceBasis(str, Enum):
-    """Aggregate basis of a dossier's statements: instruments vs recitals."""
-
-    DIRECT = "DIRECT"
-    RECITAL = "RECITAL"
-    MIXED = "MIXED"
-    UNDETERMINED = "UNDETERMINED"
 
 
 # -- Phase A canonical shapes ----------------------------------------------------
@@ -330,124 +212,20 @@ class TitleChainEntry(BaseModel):
         return self
 
 
-# -- verification dossier dimensions (Phase B, additive) ---------------------------
-
-
-class VerificationFinding(BaseModel):
-    """One evidence-grounded verification observation inside a dossier.
-
-    ``finding_id`` and ``transaction_id`` are application-stamped at save time
-    (never trusted from a model output); ``finding_id`` stays stable for the
-    same content identity across dossier updates.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    significance: Significance
-    category: FindingCategory = FindingCategory.OTHER
-    title: str = Field(max_length=120)
-    text: str
-    evidence: list[DocumentEvidenceReference] = Field(default_factory=list)
-    is_legal_defect: bool = False
-    severity: Severity = Severity.INFORMATION
-    status: PropertyFindingStatus = PropertyFindingStatus.OPEN
-    confidence: ConfidenceLevel = ConfidenceLevel.MEDIUM
-    finding_id: str = Field(
-        default="",
-        description="TF-nnn, assigned by the application; must not be set by the model.",
-    )
-    transaction_id: str = Field(
-        default="",
-        description="Owning transaction; stamped by the application = the dossier's tx_id.",
-    )
-    affected_parties: list[str] = Field(default_factory=list)
-    legal_or_property_implication: str | None = Field(
-        default=None,
-        description="Why the finding matters for title or the property — grounded in the cited facts.",
-    )
-    recommended_action: str | None = None
-    resolution_evidence: list[DocumentEvidenceReference] = Field(default_factory=list)
-    evidence_gaps: list[str] = Field(
-        default_factory=list,
-        description="When no evidence reference can be cited: the records whose absence is the gap.",
-    )
-
-    @model_validator(mode="after")
-    def check_finding_grounding(self):
-        if not self.text.strip():
-            raise ValueError("finding text must not be empty")
-        if self.significance in {Significance.ESTABLISHED, Significance.SUPPORTED} and not self.evidence:
-            raise ValueError(f"{self.significance.value} findings require at least one evidence reference")
-        if self.is_legal_defect and self.significance is Significance.UNRESOLVED:
-            raise ValueError("an UNRESOLVED finding cannot assert a legal defect")
-        if self.finding_id and not re.fullmatch(TX_FINDING_ID_RE, self.finding_id):
-            raise ValueError(f"finding_id must match {TX_FINDING_ID_RE} when supplied: {self.finding_id!r}")
-        if self.transaction_id and not re.fullmatch(TX_ID_RE, self.transaction_id):
-            raise ValueError(f"transaction_id must match {TX_ID_RE} when supplied: {self.transaction_id!r}")
-        if self.status is PropertyFindingStatus.RESOLVED and not self.resolution_evidence:
-            raise ValueError("a RESOLVED finding requires resolution evidence")
-        if self.severity is Severity.CRITICAL and not (
-            self.legal_or_property_implication and self.evidence
-        ):
-            raise ValueError(
-                "a CRITICAL finding requires cited evidence and a defect-grounded implication; "
-                "missing evidence alone is never a defect"
-            )
-        return self
-
-
-# -- run metadata ----------------------------------------------------------------------
-
-
-class AnalysisRunPhase(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    phase: RunPhaseLabel
-    status: RunPhaseStatus
-    model: str | None = None
-    prompt_version: str | None = None
-
-
-class AnalysisRunMetadata(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    run_id: str = Field(min_length=8, description="Application-assigned UUID for this agent run.")
-    case_id: str = Field(min_length=1)
-    started_at: str
-    finished_at: str | None = None
-    phases: list[AnalysisRunPhase] = Field(default_factory=list)
-    counts: dict[str, int] = Field(default_factory=dict)
-
-
 __all__ = [
     "ANALYSIS_CONTRACT_VERSION",
-    "AnalysisRunMetadata",
-    "AnalysisRunPhase",
     "ASSIGNED_TX_ID_PATTERN",
+    "TX_ID_RE",
     "ConfidenceLevel",
     "DocumentEvidenceReference",
-    "DossierScope",
-    "EffectivityStatus",
     "EntrySourceKind",
-    "EvidenceBasis",
-    "FindingCategory",
-    "PropertyFindingStatus",
     "PropertyIdentity",
     "PropertyIdentityDetail",
     "Provenance",
-    "RunPhaseLabel",
-    "RunPhaseStatus",
-    "Severity",
-    "Significance",
-    "SourceHashes",
     "TitleChainEntry",
     "TitleChainEvent",
     "TransferCategory",
-    "TX_FINDING_ID_RE",
-    "TX_ID_RE",
-    "VerificationFinding",
     "content_hash",
     "is_assigned_tx_id",
-    "new_tx_finding_id",
     "phase_a_hash",
 ]

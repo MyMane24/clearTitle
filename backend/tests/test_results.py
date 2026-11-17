@@ -1,82 +1,46 @@
 from unittest.mock import patch
 
-from backend.services.results import _agent_block, _transaction_for_api, classification_action_message
+from backend.services.results import _agent_block, classification_action_message
+
+REPO = "backend.database.repositories.agent_repo"
 
 
-def test_paused_checkpoint_exposes_transaction_id_and_canonical_requirements():
-    with patch("backend.database.repositories.agent_repo.get_agent_state", return_value={
-        "status": "paused",
-        "memory": {
-            "case_id": "CASE1", "current_tx_id": "PA-TC-0001",
-            "current_stage": "paused", "status": "PENDING_NOT_VERIFIED",
-            "result_ref": "PA-TC-0001",
-        },
-        "result": {"title_chain": []},
-        "case_result": [{
-            "tx_id": "PA-TC-0001", "sequence": 1,
-            "status": "PENDING_NOT_VERIFIED",
-            "required_documents": [{"document_type": "Sale deed", "reason": "Verify conveyance"}],
-        }],
-    }):
+def test_paused_without_a_chain_asks_for_the_encumbrance_certificate():
+    with patch(f"{REPO}.get_agent_status", return_value="paused"), \
+            patch(f"{REPO}.get_agent_result", return_value=None):
         agent = _agent_block("CASE1")
 
-    assert agent["paused_transaction"] == "PA-TC-0001"
-    assert agent["stage"] == "paused"
-    assert "missing_documents" not in agent
-    assert agent["transactions"][0]["required_documents"][0]["document_type"] == "Sale deed"
+    assert agent["status"] == "paused"
+    assert "Encumbrance Certificate" in agent["next_action"]
+    assert agent["title_chain"] == []
 
 
-def test_legacy_transaction_result_is_normalized_without_losing_distinct_values():
-    adapted = _transaction_for_api({
-        "tx_id": "PA-TC-0001", "status": "PENDING_NOT_VERIFIED",
-        "conclusion": "Legacy summary A", "summary": "Legacy summary B",
-        "missing_documents": [{"document_type": "Deed", "reason": "Verify transfer"}],
-        "required_documents": [], "findings": [], "reviewed_document_ids": ["DOC_001"],
-    })
-    assert "Legacy summary A" in adapted["report"]
-    assert "Legacy summary B" in adapted["report"]
-    assert adapted["required_documents"][0]["document_type"] == "Deed"
-    assert adapted["schema_version"] == "3.0"
-    assert adapted["reviewed_document_ids"] == ["DOC_001"]
-
-
-def test_paused_requirements_are_derived_from_the_paused_persisted_transaction():
-    with patch("backend.database.repositories.agent_repo.get_agent_state", return_value={
-        "status": "paused",
-        "memory": {"current_tx_id": "PA-TC-0002", "current_stage": "paused", "status": "PENDING_NOT_VERIFIED"},
-        "result": {},
-        "case_result": [
-            {"tx_id": "PA-TC-0001", "sequence": 1, "status": "PENDING_NOT_VERIFIED", "report": "One", "required_documents": [{"document_type": "Deed 1"}]},
-            {"tx_id": "PA-TC-0002", "sequence": 2, "status": "PENDING_NOT_VERIFIED", "report": "Two", "required_documents": [{"document_type": "Death record"}]},
-        ],
-    }):
+def test_built_chain_is_returned_without_a_next_action():
+    chain = [{"tx_id": "PA-TC-0001", "documented_transaction": {"transaction_type": "Sale"}}]
+    with patch(f"{REPO}.get_agent_status", return_value="done"), \
+            patch(f"{REPO}.get_agent_result",
+                  return_value={"title_chain": chain, "property_identity": {"details": []}}):
         agent = _agent_block("CASE1")
 
-    assert agent["paused_transaction"] == "PA-TC-0002"
-    assert "missing_documents" not in agent
-    paused = next(tx for tx in agent["transactions"] if tx["tx_id"] == agent["paused_transaction"])
-    assert [item["document_type"] for item in paused["required_documents"]] == ["Death record"]
+    assert agent["status"] == "done"
+    assert agent["next_action"] is None
+    assert agent["title_chain"] == chain
 
 
-def test_one_verified_transaction_does_not_mark_the_entire_chain_verified():
-    with patch("backend.database.repositories.agent_repo.get_agent_state", return_value={
-        "status": "done", "memory": {}, "result": {},
-        "case_result": [
-            {"tx_id": "PA-TC-0001", "sequence": 1, "status": "VERIFIED_WITH_AVAILABLE_EVIDENCE", "report": "First link supported."},
-            {"tx_id": "PA-TC-0002", "sequence": 2, "status": "PENDING_NOT_VERIFIED", "report": "Second link remains open."},
-        ],
-    }):
+def test_chain_is_exposed_even_before_a_status_is_recorded():
+    chain = [{"tx_id": "PA-TC-0001", "documented_transaction": {"transaction_type": "Sale"}}]
+    with patch(f"{REPO}.get_agent_status", return_value=None), \
+            patch(f"{REPO}.get_agent_result", return_value={"title_chain": chain}):
         agent = _agent_block("CASE1")
 
-    assert agent["transactions"][0]["status"] == "VERIFIED_WITH_AVAILABLE_EVIDENCE"
-    assert agent["transactions"][1]["status"] == "PENDING_NOT_VERIFIED"
-    assert agent["overall_status"] != "VERIFIED_WITH_AVAILABLE_EVIDENCE"
+    assert agent["status"] == "done"
+    assert agent["next_action"] is None
 
 
 def test_classification_action_message_explains_why_and_offers_next_step():
     message = classification_action_message({
         "document_type": "FIRM_REGISTRATION_CERTIFICATE",
-        "error": "This document registers a business and does not provide property or title information.",
+        "error": "This document registers a business, not property or title information.",
     })
 
     assert "registers a business" in message

@@ -1,8 +1,7 @@
-"""Run the ClearTitle agent end-to-end on DEMO-CLEAN-001 (Phases A + B only).
+"""Run the title-chain build (Phase A) on DEMO-CLEAN-001.
 
-Phase A (title chain) + Phase B (per-transaction verification) happen inside
-run_agent. Phases C/D (consolidation + final report) were removed — this
-script stops at the persisted transaction results.
+Stops at the persisted title chain. Transaction verification is not part of this
+application.
 """
 import json
 import os
@@ -14,28 +13,24 @@ sys.path.insert(0, str(REPO_ROOT))
 os.environ["MYSQL_PORT"] = "3307"  # hard-set: a global MYSQL_PORT=3306 env var exists on this machine and setdefault would silently target the stale local MySQL
 
 from backend.database.repositories import agent_repo  # noqa: E402
-from backend.services.cleartitle_agent import run_agent  # noqa: E402
+from backend.services.cleartitle_agent import run_case_analysis  # noqa: E402
 
 CASE = "DEMO-CLEAN-001"
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
-def brief(value, keys):
-    return {k: value.get(k) for k in keys if isinstance(value, dict)}
-
-
 def main() -> None:
-    print(f"=== running agent on {CASE} (phases A+B) ===", flush=True)
-    outcome = run_agent(CASE)
-    print("agent outcome:", json.dumps(brief(outcome, (
-        "case_id", "status", "overall_status")), default=str))
+    print(f"=== building title chain for {CASE} ===", flush=True)
+    outcome = run_case_analysis(CASE)
+    print("chain outcome:", json.dumps(outcome, default=str))
 
-    results = agent_repo.list_transaction_results(CASE) or []
-    print(f"\n=== phase B: {len(results)} persisted transaction results ===")
-    for r in results:
-        findings = r.get("findings") or []
-        print(f"  {r.get('tx_id')} seq={r.get('sequence')} {r.get('status')}"
-              f" findings={len(findings)} reqs={len(r.get('required_documents') or [])}")
+    chain = agent_repo.get_agent_result(CASE) or {}
+    links = chain.get("title_chain") or []
+    print(f"\n=== phase A: {len(links)} persisted chain links ===")
+    for link in links:
+        transaction = link.get("documented_transaction") or {}
+        print(f"  {link.get('tx_id')} {transaction.get('transaction_type')}"
+              f" {transaction.get('executed_date') or ''}")
 
 
 if __name__ == "__main__":

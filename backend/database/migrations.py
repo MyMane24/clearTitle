@@ -6,8 +6,8 @@ Tables:
   cases                 — pipeline cases (user-scoped)
   documents             — per-doc extraction state (no per-doc verification)
   title_chains          — Phase A property identity, graph, and detailed chain
-  case_results          — one case-level verification result document
-  case_memory           — one concise text checkpoint per case
+  case_results          — legacy, dormant: former per-transaction verification rows
+  case_memory           — legacy, dormant: former verification checkpoints
 
 Obsolete tables (cross_doc_verifications, human_feedback, llm_calls, the
 evidence_requirements ledger and the daily_cost_summary view) are dropped

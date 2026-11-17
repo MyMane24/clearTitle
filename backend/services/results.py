@@ -1,16 +1,8 @@
-"""Results payload builders for the results endpoint."""
+"""Results payload builder for the results endpoint."""
 
 from __future__ import annotations
 
 from backend.database.repositories.document_repo import get_case_documents
-from backend.services.agent_schemas import (
-    normalize_transaction_verification,
-)
-
-
-def _transaction_for_api(raw: dict) -> dict:
-    """Adapt historical result rows into the canonical v3.0 response shape."""
-    return normalize_transaction_verification(raw)
 
 
 def classification_action_message(document: dict) -> str:
@@ -28,7 +20,7 @@ def _case_row(case_id: str) -> dict:
         cursor = conn.cursor(dictionary=True)
         cursor.execute(
             "SELECT id, status, total_docs, completed_docs, failed_docs, "
-            "verification_status, verdict, created_at, updated_at "
+            "created_at, updated_at "
             "FROM cases WHERE id = %s",
             (case_id,),
         )
@@ -39,38 +31,21 @@ def _case_row(case_id: str) -> dict:
 
 
 def _agent_block(case_id: str) -> dict:
-    from backend.database.repositories.agent_repo import get_agent_state
-    state = get_agent_state(case_id)
-    memory = state.get("memory") or {}
-    result = state.get("result") or {}
-    case_result = state.get("case_result") or {}
-    transactions = [
-        _transaction_for_api(item)
-        for item in case_result if isinstance(case_result, list) and isinstance(item, dict)
-    ]
-    statuses = {str(item.get("status") or "").upper() for item in transactions}
-    if "ISSUES_IDENTIFIED" in statuses:
-        overall_status = "ISSUES_IDENTIFIED"
-    elif statuses and statuses == {"VERIFIED_WITH_AVAILABLE_EVIDENCE"}:
-        overall_status = "VERIFIED_WITH_AVAILABLE_EVIDENCE"
-    else:
-        overall_status = "INCONCLUSIVE" if transactions else None
-    # Keep the Phase A chain separate and expose saved transaction results even
-    # while a run is paused before the consolidated report is produced.
+    from backend.database.repositories.agent_repo import get_agent_result, get_agent_status
+    from backend.services.cleartitle_agent import HISTORY_DOCUMENT_REQUEST
+
+    result = get_agent_result(case_id) or {}
+    status = get_agent_status(case_id)
+    chain = result.get("title_chain") or []
     return {
         **result,
-        "transactions": transactions,
-        "overall_status": overall_status,
-        "status": state.get("status") or ("done" if result else "idle"),
-        "updated_at": memory.get("updated_at"),
-        "stage": memory.get("stage") or memory.get("current_stage"),
-        "paused_transaction": memory.get("paused_transaction") or (
-            memory.get("current_tx_id")
-            if state.get("status") == "paused" and memory.get("status") == "PENDING_NOT_VERIFIED"
+        "title_chain": chain,
+        "status": status or ("done" if chain else "idle"),
+        "next_action": (
+            HISTORY_DOCUMENT_REQUEST
+            if status == "paused" and not chain
             else None
         ),
-        "next_action": memory.get("next_action"),
-        "skipped_tx_ids": memory.get("skipped_tx_ids") or [],
     }
 
 
@@ -85,8 +60,6 @@ def build_case_results(case_id: str) -> dict:
             "total_docs": case["total_docs"],
             "completed_docs": case["completed_docs"],
             "failed_docs": case["failed_docs"],
-            "verification_status": case.get("verification_status"),
-            "verdict": case.get("verdict"),
             "created_at": case.get("created_at"),
             "updated_at": case.get("updated_at"),
         },

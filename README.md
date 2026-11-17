@@ -1,17 +1,18 @@
 # clearTitle — AI Property Title Verification
 
-An end-to-end property title verification platform for **Karnataka property documents**. clearTitle extracts structured JSON from scanned PDFs using Sarvam OCR and an OpenAI-compatible document processor, then hands the case to a tool-using **ClearTitle agent** that reconstructs the title chain and verifies every transaction against its own instrument — pausing to request missing evidence instead of guessing.
+An end-to-end property title platform for **Karnataka property documents**. clearTitle extracts structured JSON from scanned PDFs using Sarvam OCR and an OpenAI-compatible document processor, then hands the case to a tool-using **ClearTitle agent** that reconstructs the title chain from the property's history documents — pausing to request missing evidence instead of guessing.
+
+Transaction-by-transaction verification and reports are **not part of this application**; they are being rebuilt from scratch. The pipeline, document processing, and title-chain construction (Phase A) are complete and working.
 
 ---
 
 ## Highlights
 
-- **Agent-driven verification, not keyword matching** — the agent decides which documents to read from summaries alone; the application enforces process guarantees (full-OCR gate, ownership checks, workflow order) but never suggests candidates.
-- **Read what you rely on** — every selected document must be read in full (100% of its OCR text) before it can support a completed result; citations are validated against what was actually read.
-- **Honest pauses** — when evidence is missing, the agent pauses the transaction with a specific, compact request list (parties, dates, registration references) instead of marking an unresolved transaction verified.
-- **Chain-aware** — each transaction defers to its verified upstream link; downstream reports are refreshed when an upstream state changes, without re-reading any OCR.
-- **Professional PDF output** — a legal-style Title Verification Report and a per-case outstanding-documents checklist, both generated from persisted results.
-- **No misleading success on failure** — if verification cannot complete (e.g. a temporary LLM outage), the case is marked `error` and the dashboard shows a clear retry state; no fabricated green checks.
+- **Agent-driven chain building, not keyword matching** — the agent decides which documents to read from summaries alone; the application enforces process guarantees (full-OCR gate, citation scope, history-first order) but never suggests candidates.
+- **Read what you rely on** — every history document must be read in full (100% of its OCR text) before it can support a saved chain; citations are validated against what was actually read.
+- **Honest pauses** — with no history document uploaded, the agent pauses and asks for the Encumbrance Certificate instead of guessing a chain from deeds alone.
+- **History-first** — the chain is built from the EC, mutation and RTC records, using title deeds only to extend the chain backward or settle an unclear history entry.
+- **No misleading success on failure** — if the chain build cannot complete (e.g. a temporary LLM outage), the case is marked `error` and the dashboard shows a clear retry state; no fabricated chain.
 
 ---
 
@@ -21,7 +22,7 @@ An end-to-end property title verification platform for **Karnataka property docu
 flowchart TD
     subgraph Frontend["Frontend Layer (React SPA)"]
         UI["clearTitle SPA\nReact 19 + Vite + TypeScript\nLanding page (/) + Dashboard (/#/app)"]
-        DASH["Verification Dashboard\nUpload . Processing . Results . Evidence requests . History"]
+        DASH["Verification Dashboard\nUpload . Processing . Title chain . History"]
         AUTH["Auth Screen\nRegister / Login / Google OAuth / Link guest case"]
         HOME["Landing sections\nHero . Pipeline . Audit demo . FAQ"]
     end
@@ -29,11 +30,11 @@ flowchart TD
     subgraph API["API Gateway Layer (FastAPI)"]
         R_AUTH["Auth Router\n/api/auth/register . /login . /me\nGoogle OAuth at /auth/google/*"]
         R_CASES["Cases Router\n/api/upload . /api/cases . /api/process\n/api/status . /api/retry\nreplace / skip / case upload / link"]
-        R_RESULTS["Results Router\n/api/results/{id} . /analyze . /agent/skip/{tx}\n/report/pdf . /required-documents/pdf . /ocr"]
+        R_RESULTS["Results Router\n/api/results/{id} . /chain . /ocr"]
     end
 
     subgraph Orchestration["Async Task Queue"]
-        CELERY["Celery Workers\nbackend/workers/* (stages, finalize, title_chain_tasks, agent_tasks)"]
+        CELERY["Celery Workers\nbackend/workers/* (stages, finalize, title_chain_tasks)"]
         REDIS_BROKER["Redis Broker / State Store"]
     end
 
@@ -47,13 +48,12 @@ flowchart TD
     end
 
     subgraph Analysis["Case-Level Analysis (after finalize)"]
-        FINALIZE["Finalize\n(recompute status + queue analysis)"]
+        FINALIZE["Finalize\n(recompute status + queue chain build)"]
         PHASE_A["ClearTitle agent - Phase A\ntitle chain: history first, deeds on the path"]
-        PHASE_B["ClearTitle agent - Phase B\nper-transaction verification\n(pause / resume on evidence)"]
     end
 
     subgraph Storage["Storage Layer"]
-        MYSQL["MySQL\nusers, cases, documents,\ntitle_chains, case_results"]
+        MYSQL["MySQL\nusers, cases, documents, title_chains"]
         REDIS["Redis State Store"]
         FS["File System\noutputs/"]
     end
@@ -65,84 +65,60 @@ flowchart TD
     CELERY --> PREPROC --> OCR --> MERGE --> CLASSIFY --> STRUCTURE --> PERSIST
     PERSIST -->|"chord"| FINALIZE
     FINALIZE --> PHASE_A
-    PHASE_A -->|"one verification per transaction"| PHASE_B
     STRUCTURE -->|"Saves structured data"| MYSQL
-    PHASE_B -->|"Saves chain, results, evidence requests"| MYSQL
+    PHASE_A -->|"Saves property identity and chain"| MYSQL
 ```
 
 ### Key Components
 
 | Component | Technology | Description |
 |---|---|---|
-| **Frontend** | React 19, Vite 6, TypeScript, Tailwind CSS 4 | Landing page + dashboard with AI pipeline view, per-transaction results, evidence-request cards, and case history |
-| **API Layer** | FastAPI, Uvicorn | Async REST API with JWT auth (plus optional Google OAuth) for cases, documents, results, and analysis |
-| **Async Tasks** | Celery, Redis | Idempotent background stages — preprocess, OCR, merge, classify, structure, persist, finalize, agent analysis |
+| **Frontend** | React 19, Vite 6, TypeScript, Tailwind CSS 4 | Landing page + dashboard with AI pipeline view, title-chain details, document extractions, and case history |
+| **API Layer** | FastAPI, Uvicorn | Async REST API with JWT auth (plus optional Google OAuth) for cases, documents, and results |
+| **Async Tasks** | Celery, Redis | Idempotent background stages — preprocess, OCR, merge, classify, structure, persist, finalize, chain build |
 | **OCR Service** | Sarvam AI Vision OCR | High-accuracy OCR for mixed English/Kannada text; chunks >10-page PDFs with overlap |
 | **Document processing** | OpenAI-compatible API | Classification and full-text schema-based extraction |
-| **Verification agent** | OpenAI by default (`GPT-6 Luna`); Gemini optional | Tool-calling agent: title chain (Phase A) + per-transaction verification (Phase B) with pause/resume |
-| **Relational DB** | MySQL | Unified tables for users, cases, documents, title chains, and verification results |
+| **Title-chain agent** | OpenAI by default (`GPT-6 Luna`); Gemini optional | Tool-calling agent that builds the history-first title chain (Phase A) |
+| **Relational DB** | MySQL | Unified tables for users, cases, documents, and title chains |
 
 ---
 
-## How Verification Works
+## How the Title Chain Is Built
 
-Verification is a two-phase agent workflow. The application's job is to make dishonest shortcuts impossible; the agent's job is to reason over evidence.
+The application's job is to make dishonest shortcuts impossible; the agent's job is to reason over evidence. The chain builder works **history-first**:
 
-### Phase A — Title chain
+1. **Record what the property identity needs**, then list the case's documents from their summaries.
+2. **Read every history document in full** — the encumbrance certificate, mutation records and RTC (pahani). These give the backbone of the chain, including entries that are not deeds. Property register cards are excluded from chain building.
+3. **Open title deeds only on the path** — to follow the chain further back through a deed recital when the history stops short of thirty years, or to settle a history entry that OCR left unclear. Receipts, plans and certificates are never shown to it.
+4. **Save the chain** — property identity, an ordered list of transactions, and the documents still needed to reach thirty years or close a gap.
 
-The chain builder works **history-first**. It reads the property's history documents in full: the encumbrance certificate, mutation records and RTC (pahani). They give the backbone of the chain. Property register cards are left out of chain building; they remain available as verification evidence. It then opens **title deeds only on the path**: to follow the chain further back through a deed's recital when the history stops short of thirty years, or to settle a history entry that OCR left unclear. Receipts, plans and certificates are never shown to it. It produces:
-
-- the **property identity**, fixed from the latest sale,
-- the **title chain**: an ordered list of transactions linking the current owners back about thirty years, each marked by how it is known (`corroborated`, `register_reported`, `deed_reported`, `recital_reported`), and
-- the **documents still needed** to reach thirty years or close a gap (for example an EC for an earlier period).
-
-It does not verify anything; each link is verified in Phase B against its own deed. The application enforces the gates on the chain: every history document was read end to end, every source reference points at a history document or title deed that was read end to end, links run in date order, every link names who acquired the property, and a mortgage or lease can never be a link. The chain graph is drawn by the application from the links.
-
-If no history document has been uploaded, the agent pauses and asks for the encumbrance certificate instead of guessing a chain from deeds alone. When a history document or title deed is uploaded later, the next full run rebuilds the chain; transaction ids stay stable, so saved verification results stay attached to their transactions.
-
-Encumbrance certificates are **never transaction-verification evidence** — they are excluded from Phase B entirely.
-
-### Phase B — Per-transaction verification
-
-Each transaction is verified in its own agent session, in a fixed order:
-
-1. **Load the transaction** — the claims to test, plus any saved upstream result supplied as dependency context.
-2. **Record evidence requirements** — what documentary evidence this transaction type needs (locked once documents are listed).
-3. **List documents** — summaries only. There is no keyword matcher and no candidate suggestion; the agent alone decides what looks relevant.
-4. **Select and read** — only this transaction's own instrument plus documents it uniquely depends on. Every selected document must be read **in full** (chunked OCR reads up to 60,000 chars per call) before it can support a result.
-5. **Save or pause** — a terminal result (`VERIFIED_WITH_AVAILABLE_EVIDENCE`, `ISSUES_IDENTIFIED`, `INCONCLUSIVE`) or a pause (`PENDING_NOT_VERIFIED`) with an explicit list of required documents.
+Each link is marked by how it is known: `corroborated`, `register_reported`, `deed_reported`, or `recital_reported`. The chain graph is drawn by the application from the links. Transaction-by-transaction verification is not implemented here; it is being rebuilt from scratch.
 
 ### The guarantees (application-enforced)
 
 | Guarantee | Rule |
 |---|---|
-| **Full-OCR gate** | A completed result is rejected unless every selected document was read end-to-end in this session |
-| **Selection scope** | Other transactions' instruments and later chain events cannot be selected or read; upstream recitals defer to the verified upstream result |
-| **Root-transaction rule** | At the chain's root there is no upstream link — the vendors' pre-chain title documents recited by the instrument (a prior deed, a will) *are* this transaction's evidence |
-| **Ownership check** | A required-document request can only belong to the transaction under investigation |
-| **Workflow order** | Requirements must be recorded before listing; listing before selecting; selecting before reading |
-| **Citation validation** | Every citation must point at a case document that was fully read (or retained from the transaction's own prior result) |
-| **No misleading completion** | `PENDING_NOT_VERIFIED` requires at least one concrete requested document; the UI never advances past an unserved evidence request |
+| **History-first** | The chain can only be built after every uploaded history document (EC, mutation, RTC) was read end to end in that session |
+| **Full-OCR gate** | A completed chain is rejected unless every selected document was read end-to-end in this session |
+| **Citation validation** | Every source reference points at a history document or title deed that was read end to end |
+| **Chain order** | Links run in date order, each names who acquired the property, and a mortgage or lease can never be a link |
+| **No candidate suggestion** | There is no keyword matcher; the agent alone decides what to read from summaries |
+| **No misleading completion** | With no history document uploaded the agent pauses and asks for the Encumbrance Certificate; it never builds a chain from deeds alone |
 
-### Pause, resume, skip
+### Pause and rebuild
 
-- **Pause** — the transaction saves `PENDING_NOT_VERIFIED` with `required_documents` (compact, identifier-dense labels such as `POA — Manohar & Prakash Kalkundrikar → Girish Siddappa Nemagoudar, ref BEL-1-07200-2007-08`, each with a one-line reason). The dashboard shows the requests; the user uploads the documents.
-- **Resume** — re-running analysis (`POST /api/results/{case_id}/analyze`) continues from the paused transaction with the new evidence. Citations retained from the prior result do not need re-reading; new ones do.
-- **Skip** — the user can explicitly skip a paused transaction (`POST /api/results/{case_id}/agent/skip/{tx_ref}`, by `tx_id` or sequence). Skipping is navigation state only — it never rewrites the verification result.
-- **Downstream refresh** - when an upstream link's state changes, downstream reports get their `## Earlier transactions` section rewritten (one small model call, no OCR reads); when every upstream link is verified, the stale section is removed deterministically.
+- **Pause** — a case with no history document saves no chain and returns the request for an Encumbrance Certificate. The dashboard shows the request and accepts the documents.
+- **Rebuild** — uploading more documents and running the chain build again (`POST /api/results/{case_id}/chain`) rebuilds from scratch. Chain transaction ids stay stable for links that still match, so a rebuilt chain keeps its identity.
 
-### Result contract (schema v3.0)
-
-Each transaction result is stored with:
+### Stored chain
 
 | Field | Content |
 |---|---|
-| `status` | `VERIFIED_WITH_AVAILABLE_EVIDENCE` / `ISSUES_IDENTIFIED` / `INCONCLUSIVE` / `PENDING_NOT_VERIFIED` |
-| `report` | Markdown recording **the verification performed** — what was tested and confirmed, contradicted, or left unestablished — with `[doc_id p.X-Y]` citations. Not a digest of the instrument. |
-| `cited_documents` | Flat list of `{doc_id, pages}` mirrored from the report's citations |
-| `required_documents` | Outstanding evidence requests (only while paused), each with `document_type`, `reason`, `for_transaction` |
-| `reviewed_document_ids` | Documents whose full OCR was reviewed |
-| `transaction_metadata` | Chain position, parties, dates, registration particulars, and the upstream `chain_context` snapshot |
+| `property_identity` | Identifiers recorded from the property's documents |
+| `title_chain` | Ordered links, each with the documented transaction, `evidence_status`, and `source_refs` |
+| `title_chain_graph` | Text graph drawn by the application from the links |
+| `missing_documents` | Documents still needed to reach thirty years or close a gap |
+| `phase_a_hash` | Integrity hash of the stored chain |
 
 ---
 
@@ -179,11 +155,11 @@ SARVAM_API_KEY=your_key_here
 OPENAI_API_KEY=your_key_here
 DOCUMENT_PROCESSOR_MODEL=gpt-6-luna
 
-# Verification agent (OpenAI by default)
+# Chain agent (OpenAI by default)
 CLEARTITLE_AGENT_PROVIDER=openai
 CLEARTITLE_AGENT_MODEL=GPT-6 Luna
 
-# Optional: use Gemini for the verification agent instead
+# Optional: use Gemini for the chain agent instead
 # CLEARTITLE_AGENT_PROVIDER=gemini
 # GEMINI_API_KEY=your_key_here
 
@@ -211,13 +187,13 @@ This starts 5 services automatically:
 
 On subsequent runs just use `docker compose up`. Rebuild with `docker compose up --build` after changing code — the React SPA is baked into the image. A rebuild replaces the `:latest` tag, so tag the current image before a risky change (see [Backup & Rollback](#backup--rollback)).
 
-### 3. Verify a case
+### 3. Build a title chain
 
 1. Open `/#/app`, upload the property PDFs, and press **Process**.
 2. Watch the six-stage pipeline run live (`/api/status/{case_id}`).
-3. When the agent starts, each transaction is verified in turn. If evidence is missing, the transaction **pauses** and the dashboard lists exactly what to upload.
-4. Upload the requested documents, press **Analyze** to resume, or **Skip** to continue without them.
-5. Download the **Title Verification Report** (PDF) or the **outstanding-documents checklist** (PDF) from the results view.
+3. When processing completes, the chain build starts automatically. If no history document was uploaded, the dashboard asks for the **Encumbrance Certificate**.
+4. Upload the requested history documents; the chain is built again when processing finishes. **Rebuild title chain** re-runs it on demand.
+5. The results view shows the property identity, the chain links with their sources, and the documents still needed.
 
 ---
 
@@ -247,7 +223,7 @@ When deployed via Docker, the built SPA is served by FastAPI from `frontend/dist
 
 ### Option A — phpMyAdmin (browser, zero install)
 
-Open **http://localhost:8080** — you'll see all tables (`users`, `cases`, `documents`, `title_chains`, `case_results`, `case_memory`) and can browse/query data directly.
+Open **http://localhost:8080** — you'll see all tables (`users`, `cases`, `documents`, `title_chains`) and can browse/query data directly. `case_results` and `case_memory` are legacy tables kept dormant for old data.
 
 ### Option B — MySQL Workbench / DBeaver / TablePlus
 
@@ -284,7 +260,7 @@ docker compose exec mysql mysql -u root -ppassword property_ocr_v2
 | `GET` | `/api/cases` | List cases (requires auth) |
 | `POST` | `/api/upload` | Upload PDFs and initialize a new case |
 | `POST` | `/api/process/{case_id}` | Trigger the async OCR + structuring pipeline |
-| `GET` | `/api/status/{case_id}` | Real-time pipeline status (progress, log, verification status) |
+| `GET` | `/api/status/{case_id}` | Real-time pipeline status (progress, log, chain status) |
 | `POST` | `/api/retry/{case_id}` | Retry failed documents |
 | `POST` | `/api/case/{case_id}/upload` | Add more documents to an existing case |
 | `POST` | `/api/case/{case_id}/link` | Link a guest case to the logged-in account |
@@ -293,14 +269,11 @@ docker compose exec mysql mysql -u root -ppassword property_ocr_v2
 | `GET` | `/api/case/{case_id}/doc/{doc_id}/pdf` | Serve the original PDF (authenticated, opens in new tab) |
 | `DELETE` | `/api/case/{case_id}` | Delete a single case (MySQL + files) |
 
-### Results & Analysis
+### Results & Chain
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/results/{case_id}` | Full results payload: case info, documents + structured JSON, title chain, per-transaction verification |
-| `POST` | `/api/results/{case_id}/analyze` | (Re)run or **resume** the ClearTitle agent for a case |
-| `POST` | `/api/results/{case_id}/agent/skip/{tx_ref}` | Skip a paused transaction (`tx_id` or 1-based sequence) and continue the agent |
-| `GET` | `/api/results/{case_id}/report/pdf` | Download the PDF Title Verification Report |
-| `GET` | `/api/results/{case_id}/required-documents/pdf` | Download the outstanding-documents checklist (PDF) |
+| `GET` | `/api/results/{case_id}` | Full results payload: case info, documents + structured JSON, chain, and chain status |
+| `POST` | `/api/results/{case_id}/chain` | (Re)build the title chain for a case |
 | `GET` | `/api/results/{case_id}/ocr` | Raw OCR full text for every document in the case |
 
 ### Misc
@@ -319,7 +292,7 @@ Every uploaded PDF goes through **6 stages**, each its own idempotent Celery tas
 
 ```
 DOC_001 --> preprocess --> ocr --> merge --> classify --> structure --> persist --+
-DOC_002 --> preprocess --> ocr --> merge --> classify --> structure --> persist --+--> finalize --> ClearTitle agent
+DOC_002 --> preprocess --> ocr --> merge --> classify --> structure --> persist --+--> finalize --> title chain
 DOC_003 --> preprocess --> ocr --> merge --> classify --> structure --> persist --+
 ```
 
@@ -336,10 +309,10 @@ DOC_003 --> preprocess --> ocr --> merge --> classify --> structure --> persist 
 
 | Stage | Work |
 |---|---|
-| **Finalize** | Recompute case status (`complete` / `partial` / `failed`), release the pipeline lock, and queue the analysis only when every document structured |
-| **ClearTitle agent** | Phase A builds the title chain from history documents (EC, mutation, RTC), extended backward through deed recitals; Phase B verifies each transaction on its own instrument with full-OCR evidence, pausing for missing documents |
+| **Finalize** | Recompute case status (`complete` / `partial` / `failed`), release the pipeline lock, and queue the chain build when at least one document is structured |
+| **Title chain (Phase A)** | Builds the title chain from history documents (EC, mutation, RTC), extended backward through deed recitals; pauses and asks for the EC when no history document was uploaded |
 
-The dashboard polls `/api/status/{case_id}` through the analysis phase and shows per-transaction results, evidence requests, and the final verdict as they arrive.
+The dashboard follows `/api/results/{case_id}` through the chain build and shows the property identity, the chain links, and any requested history documents as they arrive.
 
 ---
 
@@ -357,30 +330,23 @@ clearTitle/
 │   │   ├-- loader.py               #   load_prompt() helper
 │   │   ├-- title_chain_system.txt  #   Phase A: shared chain-agent instructions
 │   │   ├-- title_chain_task.txt    #   Phase A: property identity + title chain task
-│   │   ├-- agent_system.txt        #   Phase B: shared verification-agent instructions
-│   │   ├-- agent_verify_task.txt   #   Phase B: per-transaction workflow + result contract
-│   │   ├-- agent_summary.txt       #   Per-document navigation summaries
-│   │   └-- agent_dependency_refresh.txt  # Downstream "## Earlier transactions" rewrite
+│   │   └-- agent_summary.txt       #   Per-document navigation summaries
 │   │
 │   ├-- skills/                     # Procedural playbooks the agent loads on demand
-│   │   ├-- title_chain/skill.md    #   Chain construction rules
-│   │   └-- transaction_verification/skill.md  # Evidence-quality and verification rules
+│   │   └-- title_chain/skill.md    #   Chain construction rules
 │   │
 │   ├-- routers/                    # HTTP layer (thin: validate -> call service)
 │   │   ├-- auth.py                 #   /register, /login, /me, Google OAuth
 │   │   ├-- cases.py                #   upload, process, status, retry, replace, skip, delete
-│   │   └-- results.py              #   /results/{id}, /analyze, /agent/skip, PDFs, /ocr
+│   │   └-- results.py              #   /results/{id}, /chain, /ocr
 │   │
 │   ├-- services/                   # Business logic (no HTTP, no Celery)
 │   │   ├-- orchestrator.py         #   builds Celery chains + chords
 │   │   ├-- document_processor.py   #   classification + full-text extraction
-│   │   ├-- cleartitle_agent.py     #   agent workflow: Phase A/B, pause/resume, locks
+│   │   ├-- cleartitle_agent.py     #   chain-build entrypoint, pauses, summary cache
 │   │   ├-- chain_builder.py        #   Phase A: title chain, history-first (Pydantic AI)
-│   │   ├-- agent_runtime.py        #   Phase B tool loop, budgets, retries, recoverable errors
-│   │   ├-- agent_tools.py          #   the agent's tool handlers + enforcement gates
-│   │   ├-- agent_schemas.py        #   canonical Pydantic contracts (v3.0) + validation
+│   │   ├-- chain_identity.py       #   stable chain ids + upstream identity checks
 │   │   ├-- extract.py              #   OCR retry + structured output paths
-│   │   ├-- report.py               #   PDF title verification report renderer
 │   │   ├-- results.py              #   assemble /api/results payload
 │   │   ├-- auth.py                 #   JWT + bcrypt helpers
 │   │   └-- schemas/                #   per-doc-type JSON extraction schemas
@@ -393,9 +359,8 @@ clearTitle/
 │   │   ├-- stage_adapter.py        #   task -> stage.invoke adapter
 │   │   ├-- stage_base.py           #   stage task base class
 │   │   ├-- idempotency.py          #   skip-already-done guard
-│   │   ├-- finalize.py             #   chord callback: recompute status + queue analysis
-│   │   ├-- title_chain_tasks.py    #   queues the ClearTitle agent analysis task
-│   │   ├-- agent_tasks.py          #   resume / skip-transaction tasks
+│   │   ├-- finalize.py             #   chord callback: recompute status + queue chain build
+│   │   ├-- title_chain_tasks.py    #   queues the chain-build task
 │   │   └-- context.py              #   StageContext (dependencies handed to stages)
 │   │
 │   ├-- domain/state_machine.py     # Stage enum + status->stage mapping (pure logic)
@@ -409,20 +374,18 @@ clearTitle/
 │   ├-- database/
 │   │   ├-- connection.py           #  MySQL connection helper
 │   │   ├-- migrations.py           #  DDL bootstrap (runs at startup)
-│   │   └-- repositories/           #  SQL access (case, document, title_chain,
-│   │                               #  agent, verification_results, user)
+│   │   └-- repositories/           #  SQL access (case, document, title_chain, agent, user)
 │   │
 │   ├-- shared/constants.py         # doc-type + status string constants
 │   ├-- shared/ec_ledger.py         # EC page-split row recombinator (read-boundary fix)
-│   └-- tests/                      # pytest suite (148 tests)
+│   └-- tests/                      # pytest suite
 │
 ├-- frontend/                       # React SPA (Vite)
 │   ├-- src/
 │   │   ├-- components/             # Landing-page sections (Navbar, Hero, FAQ, ...)
 │   │   ├-- dashboard/              # Verification dashboard (upload, results, history, auth)
 │   │   │   ├-- VerificationDashboard.tsx    # Main dashboard with AI pipeline view
-│   │   │   ├-- TransactionResultCard.tsx    # Per-transaction report + citations + requests
-│   │   │   ├-- transactionResults.ts        # v3.0 result normalization + markdown rendering
+│   │   │   ├-- PhaseAResult.tsx              # Title-chain, identity, and source rendering
 │   │   │   └-- dashboard.css                # All dashboard styles + pipeline animations
 │   │   ├-- api/backend.ts          # API client (JWT auth, typed responses)
 │   │   ├-- data/                   # Landing content
@@ -437,7 +400,6 @@ clearTitle/
 ├-- uploads/                        # Original uploaded PDFs (bind-mounted, NOT in git)
 ├-- backups/                        # Local mysqldump snapshots (NOT in git)
 ├-- docs/                           # Local-only design notes (gitignored — not in a fresh clone)
-├-- ARCHITECTURE.md                 # In-depth design doc: contracts, gates, workflow, history
 ├-- docker-compose.yml              # 5 services: api, worker, mysql, redis, phpmyadmin
 ├-- Dockerfile                      # Multi-stage build (Node 20 builds SPA → Python 3.11 runtime)
 ├-- requirements.txt                # Python dependencies
@@ -454,12 +416,8 @@ Prompts are versioned text files in `backend/prompts/`; procedural playbooks liv
 |---|---|---|
 | `title_chain_system.txt` | A | Shared chain-agent reasoning and tool policy |
 | `title_chain_task.txt` | A | Property identity + title-chain construction task |
-| `agent_system.txt` | B | Shared verification-agent reasoning and tool policy |
-| `agent_verify_task.txt` | B | Per-transaction workflow, SELECTION SCOPE, and the v3.0 result contract |
-| `agent_summary.txt` | A/B | Per-document navigation summaries |
-| `agent_dependency_refresh.txt` | post-B | Rewrites a downstream report's `## Earlier transactions` section after an upstream state change |
+| `agent_summary.txt` | A | Per-document navigation summaries |
 | `skills/title_chain/skill.md` | A | Chain-construction playbook (loaded on demand) |
-| `skills/transaction_verification/skill.md` | B | Evidence-quality and "verify, do not transcribe" playbook |
 
 Load helper: `from backend.prompts.loader import load_prompt`
 
@@ -468,10 +426,8 @@ Load helper: `from backend.prompts.loader import load_prompt`
 | Setting | Default | Meaning |
 |---|---|---|
 | `CLEARTITLE_AGENT_PROVIDER` | `openai` | `openai` or `gemini` |
-| `CLEARTITLE_AGENT_MODEL` | `GPT-6 Luna` | Agent + document-processor model |
-| `CLEARTITLE_VERIFY_MODEL_CALL_BUDGET` | `16` | Model calls per transaction before an extension is required |
-| `CLEARTITLE_VERIFY_MODEL_CALL_MAX` | `24` | Hard cap (16 + one 8-call extension) |
-| `CLEARTITLE_AGENT_MAX_RAW_CHARS` | `60000` | Max OCR chars per `get_document_text` call |
+| `CLEARTITLE_AGENT_MODEL` | `GPT-6 Luna` | Chain-agent + document-processor model |
+| `CLEARTITLE_CHAIN_MODEL_CALL_BUDGET` | `16` | Model calls per chain build before an extension is required |
 | `CLEARTITLE_AGENT_MAX_ATTEMPTS` | `5` | Retry attempts on recoverable provider errors |
 
 ---
@@ -479,13 +435,13 @@ Load helper: `from backend.prompts.loader import load_prompt`
 ## Tests
 
 ```bash
-pytest backend/tests          # 148 tests — contracts, gates, runtime, repos, report
+pytest backend/tests          # Pipeline, contracts, chain gates, repos, API payloads
 cd frontend
-npm run test                  # 20 tests — result normalization + rendering
+npm run test                  # 2 tests — chain rendering
 npm run lint                  # tsc --noEmit
 ```
 
-The backend suite locks the agent's behavioral contract: the full-OCR gate, selection scope, ownership and workflow-order checks, citation validation, the compact request style, and the v3.0 result shape are all asserted against the real handlers — not mocks of them.
+The backend suite locks the chain builder's behavioral contract: the history-first read gate, the full-OCR gate, citation scope, stable chain ids, and the pause-for-EC behavior are all asserted against the real handlers — not mocks of them.
 
 ---
 
@@ -495,7 +451,7 @@ The backend suite locks the agent's behavioral contract: the full-OCR gate, sele
 |---|---|---|
 | **Sarvam AI** | OCR (Vision) | Free tier: 10,000 chars/call |
 | **OpenAI-compatible API** | Configured document/agent models | Usage-based; depends on model and document size |
-| **Google Gemini (optional)** | Configured agent model | Usage-based; only when selected for the verification agent |
+| **Google Gemini (optional)** | Configured agent model | Usage-based; only when selected for the chain agent |
 
 ---
 
@@ -503,10 +459,10 @@ The backend suite locks the agent's behavioral contract: the full-OCR gate, sele
 
 The frontend follows a warm, editorial design system shared by the landing page and dashboard:
 
-- **Palette** — Cream background (`#FFF8F2`), warm stone neutrals, and an orange brand scale (`#ea580c`, `#f97316`, amber `#fbbf24`). Semantic status colors (emerald / amber / rose) for verification results.
+- **Palette** — Cream background (`#FFF8F2`), warm stone neutrals, and an orange brand scale (`#ea580c`, `#f97316`, amber `#fbbf24`). Semantic status colors (emerald / amber / rose) for pipeline and chain states.
 - **Typography** — Inter (body), Plus Jakarta Sans (display/headings), Instrument Serif (accent italics).
 - **Icons** — lucide-react (no emoji).
-- **Dashboard** (`/#/app`) — Custom CSS (`dashboard.css`) with CSS-token theming: cards, badges, metric tiles, AI pipeline view with pulsing animations, title-chain timeline, per-transaction verification cards with citation chips and evidence-request lists, and case history sidebar.
+- **Dashboard** (`/#/app`) — Custom CSS (`dashboard.css`) with CSS-token theming: cards, badges, metric tiles, AI pipeline view with pulsing animations, title-chain timeline with evidence sources, and case history sidebar.
 
 ---
 
@@ -591,18 +547,18 @@ Always confirm an image really contains the code you think it does — a build f
 ```bash
 # Linux / macOS
 docker create --name chk cleartitle-api:<commit-sha>
-docker cp chk:/app/backend/services/report.py /tmp/report.py
-git hash-object /tmp/report.py
-git rev-parse <commit-sha>:backend/services/report.py   # the two hashes must match
+docker cp chk:/app/backend/services/chain_builder.py /tmp/chain_builder.py
+git hash-object /tmp/chain_builder.py
+git rev-parse <commit-sha>:backend/services/chain_builder.py   # the two hashes must match
 docker rm chk
 ```
 
 ```powershell
 # Windows PowerShell
 docker create --name chk cleartitle-api:<commit-sha>
-docker cp chk:/app/backend/services/report.py "$env:TEMP\report.py"
-git hash-object "$env:TEMP\report.py"
-git rev-parse <commit-sha>:backend/services/report.py
+docker cp chk:/app/backend/services/chain_builder.py "$env:TEMP\chain_builder.py"
+git hash-object "$env:TEMP\chain_builder.py"
+git rev-parse <commit-sha>:backend/services/chain_builder.py
 docker rm chk
 ```
 
@@ -695,7 +651,7 @@ Open **http://localhost:8000** in your browser.
 
 ## Documentation
 
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** — the in-depth design reference: system diagrams, the agent workflow and its enforcement gates, the v3.0 result contract, prompt/skill layout, the downstream refresh protocol, and the full change history.
+- **[AGENTS.md](AGENTS.md)** — working notes for coding agents: layout, commands, and the chain-builder invariants.
 
 ---
 

@@ -2,8 +2,7 @@
 Pipeline log persistence.
 
 Old cross-doc verification / human feedback storage was removed with the
-per-document verification layer. Title-chain and verification results live in
-`title_chain_repo` and `verification_results_repo`.
+per-document verification layer. Title chains live in `title_chain_repo`.
 """
 
 from __future__ import annotations

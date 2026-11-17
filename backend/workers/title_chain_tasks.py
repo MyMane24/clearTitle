@@ -1,8 +1,8 @@
-"""Case-level analysis task: the ClearTitle verification agent.
+"""Case title-chain task (Phase A).
 
-The agent *is* the verification — it replaces the old separate title-chain build
-and verification LLM passes. It is idempotent and resumable: re-running it
-resumes from `case_memory` instead of rebuilding.
+Builds or reuses the case's title chain after document processing finishes. It is
+idempotent: an existing chain is kept unless a history document or deed it did
+not use has arrived.
 """
 
 from __future__ import annotations
@@ -14,37 +14,28 @@ logger = get_logger(__name__)
 
 
 @celery_app.task(ignore_result=True)
-def run_case_analysis_task(
-    case_id: str,
-    resume_paused: bool = False,
-    retry_skipped_tx_id: str | None = None,
-):
-    """Run case analysis, or resume only the saved paused transaction."""
-    from backend.integrations.redis.state_store import append_log
-    from backend.services.cleartitle_agent import (
-        resume_paused_transaction,
-        retry_skipped_transaction,
-        run_agent,
-    )
+def run_case_analysis_task(case_id: str, force: bool = False):
+    """Build the case's title chain, or pause until its history document arrives.
 
-    logger.info("Running ClearTitle agent for case %s", case_id)
+    ``force`` rebuilds an existing chain even when no new chain document arrived
+    (the dashboard's manual rebuild).
+    """
+    from backend.integrations.redis.state_store import append_log
+    from backend.services.cleartitle_agent import run_case_analysis
+
+    logger.info("Building title chain for case %s", case_id)
     try:
-        if retry_skipped_tx_id:
-            outcome = retry_skipped_transaction(case_id, retry_skipped_tx_id)
-        elif resume_paused:
-            outcome = resume_paused_transaction(case_id)
-        else:
-            outcome = run_agent(case_id)
-    except Exception as e:  # noqa: BLE001 - record failure, don't crash the worker
-        logger.error("ClearTitle agent failed for case %s: %s", case_id, e)
-        append_log(case_id, f"✗ Verification failed: {e}")
+        outcome = run_case_analysis(case_id, force=force)
+    except Exception as e:
+        logger.error("Title-chain build failed for case %s: %s", case_id, e)
+        append_log(case_id, f"✗ Title-chain build failed: {e}")
         return {"case_id": case_id, "status": "error", "error": str(e)}
 
     status = outcome.get("status")
     if status == "done":
-        append_log(case_id, "✓ Transaction verification pass complete")
+        append_log(case_id, f"✓ Title chain ready — {outcome.get('links', 0)} links")
     elif status == "paused":
-        append_log(case_id, "⚠ Verification paused — a document is required to continue.")
+        append_log(case_id, "⚠ Title chain paused — upload the Encumbrance Certificate to continue.")
     elif status == "error":
-        append_log(case_id, f"✗ Verification failed: {outcome.get('error') or outcome.get('reason') or 'unknown error'}")
+        append_log(case_id, f"✗ Title-chain build failed: {outcome.get('error') or outcome.get('reason') or 'unknown error'}")
     return outcome
