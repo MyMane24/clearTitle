@@ -48,7 +48,7 @@ flowchart TD
 
     subgraph Analysis["Case-Level Analysis (after finalize)"]
         FINALIZE["Finalize\n(recompute status + queue analysis)"]
-        PHASE_A["ClearTitle agent - Phase A\ntitle chain from document summaries"]
+        PHASE_A["ClearTitle agent - Phase A\ntitle chain: history first, deeds on the path"]
         PHASE_B["ClearTitle agent - Phase B\nper-transaction verification\n(pause / resume on evidence)"]
     end
 
@@ -90,12 +90,17 @@ Verification is a two-phase agent workflow. The application's job is to make dis
 
 ### Phase A — Title chain
 
-The agent reads **document summaries only** (never raw OCR) and produces:
+The chain builder works **history-first**. It reads the property's history documents in full: the encumbrance certificate, mutation records and RTC (pahani). They give the backbone of the chain. Property register cards are left out of chain building; they remain available as verification evidence. It then opens **title deeds only on the path**: to follow the chain further back through a deed's recital when the history stops short of thirty years, or to settle a history entry that OCR left unclear. Receipts, plans and certificates are never shown to it. It produces:
 
-- the **property identity** (survey number, location, extent, current owners), and
-- the **title chain**: an ordered list of transactions linking the current owners back to the origin.
+- the **property identity**, fixed from the latest sale,
+- the **title chain**: an ordered list of transactions linking the current owners back about thirty years, each marked by how it is known (`corroborated`, `register_reported`, `deed_reported`, `recital_reported`), and
+- the **documents still needed** to reach thirty years or close a gap (for example an EC for an earlier period).
 
-Encumbrance certificates participate in the chain (a ledger row may become an EC-only chain link when its instrument was not uploaded), but ECs are **never transaction-verification evidence** — they are excluded from Phase B entirely.
+It does not verify anything; each link is verified in Phase B against its own deed. The application enforces the gates on the chain: every history document was read end to end, every source reference points at a history document or title deed that was read end to end, links run in date order, every link names who acquired the property, and a mortgage or lease can never be a link. The chain graph is drawn by the application from the links.
+
+If no history document has been uploaded, the agent pauses and asks for the encumbrance certificate instead of guessing a chain from deeds alone. When a history document or title deed is uploaded later, the next full run rebuilds the chain; transaction ids stay stable, so saved verification results stay attached to their transactions.
+
+Encumbrance certificates are **never transaction-verification evidence** — they are excluded from Phase B entirely.
 
 ### Phase B — Per-transaction verification
 
@@ -332,7 +337,7 @@ DOC_003 --> preprocess --> ocr --> merge --> classify --> structure --> persist 
 | Stage | Work |
 |---|---|
 | **Finalize** | Recompute case status (`complete` / `partial` / `failed`), release the pipeline lock, and queue the analysis only when every document structured |
-| **ClearTitle agent** | Phase A builds the title chain from summaries; Phase B verifies each transaction on its own instrument with full-OCR evidence, pausing for missing documents |
+| **ClearTitle agent** | Phase A builds the title chain from history documents (EC, mutation, RTC), extended backward through deed recitals; Phase B verifies each transaction on its own instrument with full-OCR evidence, pausing for missing documents |
 
 The dashboard polls `/api/status/{case_id}` through the analysis phase and shows per-transaction results, evidence requests, and the final verdict as they arrive.
 
@@ -370,7 +375,8 @@ clearTitle/
 │   │   ├-- orchestrator.py         #   builds Celery chains + chords
 │   │   ├-- document_processor.py   #   classification + full-text extraction
 │   │   ├-- cleartitle_agent.py     #   agent workflow: Phase A/B, pause/resume, locks
-│   │   ├-- agent_runtime.py        #   tool loop, budgets, retries, recoverable errors
+│   │   ├-- chain_builder.py        #   Phase A: title chain, history-first (Pydantic AI)
+│   │   ├-- agent_runtime.py        #   Phase B tool loop, budgets, retries, recoverable errors
 │   │   ├-- agent_tools.py          #   the agent's tool handlers + enforcement gates
 │   │   ├-- agent_schemas.py        #   canonical Pydantic contracts (v3.0) + validation
 │   │   ├-- extract.py              #   OCR retry + structured output paths

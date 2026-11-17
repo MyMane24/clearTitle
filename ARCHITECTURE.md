@@ -150,18 +150,39 @@ its completion state is already stored) and auto-retry up to 5 times with backof
 
 ### Step 10 — Agent, Phase A: build the title chain
 
-- **Input:** all `structured` documents (id, filename, summary; summaries are LLM-generated once
-  and stored in `documents.summary` if missing).
-- **Does:** a bounded tool loop (`list_documents`, `get_document_text`, `save_phase_a_result`,
-  `finish`) reads documents and produces: property identity, the ordered chain of transactions,
-  the property graph, and a detailed chain. The application assigns the transaction ids
-  (`PA-TC-0001`, …) — never the model.
+`backend/services/chain_builder.py`, a Pydantic AI agent.
+
+- **Input:** two lists of the case's `structured` documents. **History documents**
+  (`CHAIN_HISTORY_DOC_TYPES`: encumbrance certificate, mutation, RTC; not property register cards)
+  by id and filename, and **title deeds** (any `*_DEED` type, will, court decree) with their
+  summaries. Receipts, plans and certificates are not shown to it.
+- **Does:** works history-first. It reads every history document in full with `read_document`,
+  fixes the target property from the latest sale, and traces ownership backward. It opens a
+  title deed only to follow the chain further back through the deed's recital, or to settle an
+  unclear history entry. It returns a typed `ChainResult` (`backend/schemas/chain.py`):
+  property identity, the ordered links (each marked `corroborated`, `register_reported`,
+  `deed_reported` or `recital_reported`) and the documents still needed to reach thirty years.
+  It does not verify anything.
+- **Gates (in code):** every history document read end to end; every source reference points
+  at a history document or title deed, by exact filename, that was read end to end; each
+  link's evidence status agrees with its sources; links run in date order; every link names
+  who acquired the property; a mortgage, lease or agreement is never a link. A rejected result
+  goes back to the model with the reason. The application then assigns the transaction ids
+  (`PA-TC-0001`, …) and draws the chain graph — never the model.
+  Budget: `CLEARTITLE_CHAIN_MODEL_CALL_BUDGET` model calls (default 16).
 - **Output:** saved Phase A result.
 - **Database:** `title_chains` upsert (`property_identity`, `title_chain_graph`,
-  `detailed_chain`, `chain`, `phase_a_hash`); `case_memory` stage progress.
+  `detailed_chain`, `phase_a_hash`, `chain_doc_ids`, `missing_documents`); `case_memory`
+  stage progress.
 
-Phase A is reused on every later run and is only rebuilt for a case with no saved transaction
-results (a silent rebuild would orphan persisted history).
+No history document uploaded: the agent pauses (`stage = awaiting_history_documents`) and asks
+for the encumbrance certificate; it never guesses a chain from deeds alone.
+
+The saved chain is reused on later runs. A full run rebuilds it when a history document or
+title deed arrives that the saved chain was not built from; links that match keep their
+transaction ids, so saved results stay attached, and results are renumbered to their links'
+new positions. Scoped runs (resume, retry) never rebuild. A missing chain with saved results
+is still refused.
 
 ### Step 11 — Agent, Phase B: verify each transaction
 
@@ -258,6 +279,9 @@ Other reads: `GET /api/status/{id}` (progress), `GET /api/results/{id}/ocr` (raw
 6. The application never keyword-matches or suggests documents — the agent decides from
    summaries and document text alone.
 7. Encumbrance certificates take part in the chain but are never verification evidence.
+8. The title chain is built history-first: every history document is read end to end, title
+   deeds are opened only to extend or confirm a link, and every source reference points at a
+   history document or title deed that was read end to end.
 
 ---
 
@@ -268,7 +292,8 @@ Other reads: `GET /api/status/{id}` (progress), `GET /api/results/{id}/ocr` (raw
 | HTTP endpoint | `backend/routers/` |
 | Business logic | `backend/services/` |
 | Stage behaviour / Celery wrappers | `backend/workers/stages.py`, `workers/tasks.py` |
-| Agent tools, gates, schemas | `backend/services/agent_tools.py`, `agent_schemas.py`, `agent_runtime.py` |
+| Title-chain builder, its gates and contract | `backend/services/chain_builder.py`, `backend/schemas/chain.py` |
+| Verification tools, gates, schemas | `backend/services/agent_tools.py`, `agent_schemas.py`, `agent_runtime.py` |
 | Prompts / agent playbooks | `backend/prompts/*.txt`, `backend/skills/*/skill.md` |
 | SQL | `backend/database/repositories/` |
 | Schema | `backend/database/migrations.py` (additive, idempotent) |
