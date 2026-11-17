@@ -20,7 +20,6 @@ Gates enforced in code before a chain is saved:
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -29,6 +28,13 @@ from pydantic_ai.exceptions import AgentRunError
 
 from backend.config import CLEARTITLE_CHAIN_MODEL_CALL_BUDGET
 from backend.database.repositories import agent_repo as repo
+from backend.domain.chain_continuity import (
+    ENTITY_DOC_TYPES,
+    entity_continuity_supported,
+    has_entity_party,
+    name_words,
+    names_connect,
+)
 from backend.integrations.llm.agent_models import build_agent_model
 from backend.logger import get_logger
 from backend.prompts.loader import load_prompt
@@ -45,52 +51,6 @@ _GAP_WINDOW_CHARS = 400
 _GAP_IDENTITY_PASSAGES = 3
 _GAP_PARTITION_PASSAGES = 2
 _GAP_EVIDENCE_RETRIES = 1
-# Party names containing one of these words belong to an entity, whose members
-# are named in its constitution document rather than in the sale records.
-_ENTITY_WORDS = frozenset(
-    {
-        "associates",
-        "brothers",
-        "builders",
-        "company",
-        "enterprises",
-        "firm",
-        "industries",
-        "limited",
-        "llp",
-        "partnership",
-        "properties",
-        "traders",
-        "trust",
-    }
-)
-_ENTITY_DOC_TYPES = frozenset({"PARTNERSHIP_DEED", "LLP_DEED", "TRUST_DEED"})
-_NAME_NOISE = frozenset(
-    {
-        "alias",
-        "associates",
-        "attorney",
-        "company",
-        "daughter",
-        "enterprises",
-        "firm",
-        "heirs",
-        "late",
-        "legal",
-        "limited",
-        "mrs",
-        "partnership",
-        "private",
-        "represented",
-        "shri",
-        "smt",
-        "son",
-        "through",
-        "traders",
-        "widow",
-        "wife",
-    }
-)
 
 
 class ChainBuildError(RuntimeError):
@@ -211,23 +171,19 @@ def _check_continuity(deps: ChainDeps, chain: list[ChainLink]) -> None:
         if index == 0:
             if link.continues_previous:
                 logger.warning("chain_rejected case_id=%s gate=continuity link=1", deps.case_id)
-                raise ModelRetry(
-                    "Link 1 is the earliest transfer; set continues_previous false."
-                )
+                raise ModelRetry("Link 1 is the earliest transfer; set continues_previous false.")
             continue
         if not link.continues_previous:
             continue
         previous = chain[index - 1].documented_transaction
         current = link.documented_transaction
-        acquirers = _name_words(previous.transferees)
-        transferors = _name_words(current.transferors)
-        if not acquirers or not transferors or acquirers & transferors:
+        if names_connect(previous.transferees, current.transferors):
             continue
-        if _entity_continuity_supported(deps, previous, current):
+        if entity_continuity_supported(
+            previous.transferees, current.transferors, _constitution_texts(deps)
+        ):
             continue
-        logger.warning(
-            "chain_rejected case_id=%s gate=continuity link=%s", deps.case_id, index + 1
-        )
+        logger.warning("chain_rejected case_id=%s gate=continuity link=%s", deps.case_id, index + 1)
         hint = (
             " A partition precedes the sale of the share it allots: keep it as its own "
             "link and place it before that sale."
@@ -246,31 +202,13 @@ def _check_continuity(deps: ChainDeps, chain: list[ChainLink]) -> None:
         )
 
 
-def _entity_continuity_supported(
-    deps: ChainDeps, previous: DocumentedTransaction, current: DocumentedTransaction
-) -> bool:
-    """True when a read constitution document names two of the previous acquirers.
-
-    A firm or trust is its members, so an entity name may continue a link only
-    when its constitution names the people who acquired the property before it.
-    """
-    parties = [*current.transferors, *previous.transferees]
-    if not any(
-        _ENTITY_WORDS & set(re.findall(r"[a-z]+", name.casefold())) for name in parties
-    ):
-        return False
-    acquirers = _name_words(previous.transferees)
-    if len(acquirers) < 2:
-        return False
-    for doc_id, document in deps.deeds.items():
-        if document.get("document_type") not in _ENTITY_DOC_TYPES:
-            continue
-        if not deps.fully_read(doc_id):
-            continue
-        text = deps.texts.get(doc_id, "")
-        if len(set(re.findall(r"[a-z]+", text.casefold())) & acquirers) >= 2:
-            return True
-    return False
+def _constitution_texts(deps: ChainDeps) -> dict[str, str]:
+    """Full text of each fully read partnership, LLP or trust deed, by document id."""
+    return {
+        doc_id: deps.texts.get(doc_id, "")
+        for doc_id, document in deps.deeds.items()
+        if document.get("document_type") in ENTITY_DOC_TYPES and deps.fully_read(doc_id)
+    }
 
 
 def _check_partition_evidence(deps: ChainDeps, chain: list[ChainLink]) -> None:
@@ -282,8 +220,7 @@ def _check_partition_evidence(deps: ChainDeps, chain: list[ChainLink]) -> None:
     if deps.partition_evidence_shown:
         return
     if any(
-        link.documented_transaction.transaction_type.casefold() == "partition"
-        for link in chain
+        link.documented_transaction.transaction_type.casefold() == "partition" for link in chain
     ):
         return
     if not any(
@@ -292,7 +229,7 @@ def _check_partition_evidence(deps: ChainDeps, chain: list[ChainLink]) -> None:
     ):
         return
     earliest = chain[0].documented_transaction
-    owners = _name_words([*earliest.transferors, *earliest.transferees])
+    owners = name_words([*earliest.transferors, *earliest.transferees])
     if not owners:
         return
     passages = [
@@ -360,18 +297,16 @@ def _gap_key(chain: list[ChainLink], index: int) -> tuple[str, str]:
     )
 
 
-def _gap_evidence(
-    deps: ChainDeps, chain: list[ChainLink], index: int
-) -> list[tuple[str, str]]:
+def _gap_evidence(deps: ChainDeps, chain: list[ChainLink], index: int) -> list[tuple[str, str]]:
     """Passages in already-read documents that may explain the gap before ``index``."""
     previous = chain[index - 1].documented_transaction
-    later = _name_words(chain[index].documented_transaction.transferors)
+    later = name_words(chain[index].documented_transaction.transferors)
     anchors = _transaction_anchors(previous)
     earliest = chain[0].documented_transaction
     partition_owners = (
         set()
         if "partition" in earliest.transaction_type.casefold()
-        else _name_words([*earliest.transferors, *earliest.transferees])
+        else name_words([*earliest.transferors, *earliest.transferees])
     )
     found: list[tuple[str, str]] = []
     partitions: list[tuple[str, str]] = []
@@ -410,16 +345,6 @@ def _doc_label(deps: ChainDeps, doc_id: str) -> str:
     return f"{doc_id} ({document.get('filename') or 'no filename'})"
 
 
-def _name_words(names: Iterable[str]) -> set[str]:
-    """Lowercase name words long enough to identify a party in OCR text."""
-    return {
-        word
-        for name in names
-        for word in re.findall(r"[a-z]+", name.casefold())
-        if len(word) >= 4 and word not in _NAME_NOISE
-    }
-
-
 def _transaction_anchors(transaction: DocumentedTransaction) -> set[str]:
     """Numbers and party words that tie an earlier transfer to a later recital."""
     stated = " ".join(
@@ -431,14 +356,12 @@ def _transaction_anchors(transaction: DocumentedTransaction) -> set[str]:
         )
         if part
     )
-    return set(re.findall(r"\d{3,}", stated)) | _name_words(
+    return set(re.findall(r"\d{3,}", stated)) | name_words(
         [*transaction.transferors, *transaction.transferees]
     )
 
 
-def _identity_passages(
-    text: str, names: set[str], anchors: set[str], limit: int
-) -> list[str]:
+def _identity_passages(text: str, names: set[str], anchors: set[str], limit: int) -> list[str]:
     """Text around a later transferor's name that also contains an earlier anchor."""
     if limit <= 0:
         return []
@@ -523,15 +446,12 @@ def _unread_constitution_documents(
         *chain[index].documented_transaction.transferors,
         *chain[index - 1].documented_transaction.transferees,
     ]
-    if not any(
-        _ENTITY_WORDS & set(re.findall(r"[a-z]+", name.casefold())) for name in parties
-    ):
+    if not has_entity_party(parties):
         return []
     return [
         f"{doc_id} ({document.get('document_type')})"
         for doc_id, document in deps.deeds.items()
-        if document.get("document_type") in _ENTITY_DOC_TYPES
-        and not deps.fully_read(doc_id)
+        if document.get("document_type") in ENTITY_DOC_TYPES and not deps.fully_read(doc_id)
     ]
 
 
