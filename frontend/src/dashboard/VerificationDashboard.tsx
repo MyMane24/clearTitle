@@ -8,6 +8,7 @@ import {
 } from '../api/backend';
 import { DocSummary } from './utils';
 import { PhaseAChainView } from './PhaseAResult';
+import { VerificationPanel } from './verification/VerificationPanel';
 import {
   AlertTriangle, Check, CheckCircle2, FileText, FileUp,
   LogIn, LogOut, Menu, Play, Plus, RefreshCw, Sparkles,
@@ -991,6 +992,10 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                   {chainBusy ? 'Building…' : 'Rebuild title chain'}
                 </button>
               </div>
+
+              {currentCaseId && (
+                <VerificationPanel caseId={currentCaseId} chainReady={agent?.status === 'done'} />
+              )}
 
               <PhaseAChainView result={agent || {}} onBack={backToUpload} />
 

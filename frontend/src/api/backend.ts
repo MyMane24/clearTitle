@@ -133,6 +133,92 @@ export interface CaseResults {
   agent: AgentReport;
 }
 
+// -- Title verification (specs/verification-agent/PLAN.md) --------------------
+
+export type VerificationRunStatus = "running" | "done" | "incomplete" | "error";
+export type ReportOpinion = "CLEAR" | "CLEAR_SUBJECT_TO" | "NOT_CLEAR";
+
+export interface VerificationRun {
+  id: string;
+  kind: "full" | "incremental";
+  status: VerificationRunStatus;
+  error?: string | null;
+  usage?: Record<string, number> | null;
+  started_at: string;
+  finished_at?: string | null;
+}
+
+export interface VerificationTask { id: string; text: string; status: "pending" | "in_progress" | "done" }
+export interface VerificationLead { id: string; text: string; source: string; status: "open" | "resolved"; outcome?: string | null; resolution?: string | null }
+export interface VerificationIssue { id: string; severity: "high" | "medium" | "low"; title: string; detail: string; link_ids: string[] }
+export interface VerificationRequisition {
+  id: string;
+  document: string;
+  reason: string;
+  affects: string[];
+  status: "open" | "fulfilled" | "resolved";
+  doc_id?: string | null;
+}
+export interface VerificationLink {
+  link_id: string;
+  origin: "phase_a" | "verification";
+  continues_previous: boolean;
+  break_note?: string | null;
+  transaction: { transaction_type: string; executed_date?: string | null; transferors: string[]; transferees: string[] };
+  verdict?: { verdict: string; summary: string } | null;
+}
+export interface VerificationDocument {
+  doc_id: string;
+  filename: string;
+  document_type: string;
+  examined: boolean;
+  examination_error?: string | null;
+  examined_summary?: string | null;
+}
+
+export interface VerificationCaseFile {
+  chain: VerificationLink[];
+  documents: Record<string, VerificationDocument>;
+  leads: VerificationLead[];
+  issues: VerificationIssue[];
+  requisitions: VerificationRequisition[];
+  tasks: VerificationTask[];
+}
+
+export interface ReportRefs { refs?: string[] }
+export type ReportBlock =
+  | ({ type: "paragraph"; text: string } & ReportRefs)
+  | { type: "list"; items: ({ text: string } & ReportRefs)[] }
+  | ({ type: "table"; columns: string[]; rows: string[][] } & ReportRefs)
+  | { type: "findings"; items: ({ title: string; text: string; severity?: string | null; status?: string | null } & ReportRefs)[] };
+
+export interface ReportSection { id: string; title: string; blocks: ReportBlock[] }
+
+export interface DueDiligenceReport {
+  version: number;
+  property_summary: string;
+  opinion: ReportOpinion;
+  opinion_reasons: ({ text: string } & ReportRefs)[];
+  sections: ReportSection[];
+  changes_since_previous: string[];
+}
+
+export interface VerificationState {
+  case_id: string;
+  run: VerificationRun | null;
+  case_file: VerificationCaseFile | null;
+  report: DueDiligenceReport | null;
+}
+
+export interface VerificationEvent {
+  id: number;
+  run_id: string;
+  kind: string;
+  text: string;
+  ref?: string | null;
+  created_at: string;
+}
+
 async function apiError(response: Response, fallback = "Request failed"): Promise<string> {
   const text = await response.text();
   if (!text) return fallback;
@@ -256,5 +342,23 @@ export const API = {
 
   async buildChain(caseId: string): Promise<{ case_id: string; status: string }> {
     return request(`/api/results/${caseId}/chain`, { method: "POST" });
+  },
+
+  async startVerification(caseId: string): Promise<{ case_id: string; status: string }> {
+    return request(`/api/verify/${caseId}`, { method: "POST" });
+  },
+
+  async getVerification(caseId: string): Promise<VerificationState> {
+    return request<VerificationState>(`/api/verify/${caseId}`);
+  },
+
+  async getVerificationEvents(caseId: string, after: number): Promise<{ events: VerificationEvent[] }> {
+    return request(`/api/verify/${caseId}/events?after=${after}`);
+  },
+
+  async uploadForRequisition(caseId: string, requisitionId: string, file: File) {
+    const fd = new FormData();
+    fd.append("file", file);
+    return request(`/api/verify/${caseId}/requisitions/${requisitionId}/upload`, { method: "POST", body: fd });
   },
 };
