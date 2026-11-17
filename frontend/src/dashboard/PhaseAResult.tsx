@@ -4,6 +4,7 @@ type PhaseAResultData = {
   property_identity?: unknown;
   title_chain_graph?: string;
   title_chain?: unknown;
+  missing_documents?: unknown;
 };
 
 function displayLabel(value: string): string {
@@ -14,8 +15,18 @@ function displayLabel(value: string): string {
     .trim();
 }
 
+function hasValue(value: unknown): boolean {
+  if (value == null) return false;
+  if (typeof value === 'string') {
+    return !['', 'not stated', 'null'].includes(value.trim().toLowerCase());
+  }
+  if (Array.isArray(value)) return value.some(hasValue);
+  if (typeof value === 'object') return Object.values(value).some(hasValue);
+  return true;
+}
+
 function ValueView({ value }: { value: unknown }): React.ReactNode {
-  if (value == null || value === '') return <span className="phase-a-empty-value">Not stated</span>;
+  if (!hasValue(value)) return null;
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
     return <span className="phase-a-value-text">{String(value)}</span>;
   }
@@ -23,7 +34,7 @@ function ValueView({ value }: { value: unknown }): React.ReactNode {
     if (!value.length) return <span className="phase-a-empty-value">None recorded</span>;
     return (
       <div className="phase-a-value-list">
-        {value.map((item, index) => (
+        {value.filter(hasValue).map((item, index) => (
           <div className="phase-a-value-list-item" key={index}>
             <ValueView value={item} />
           </div>
@@ -32,7 +43,7 @@ function ValueView({ value }: { value: unknown }): React.ReactNode {
     );
   }
   if (typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>);
+    const entries = Object.entries(value as Record<string, unknown>).filter(([, nested]) => hasValue(nested));
     if (!entries.length) return <span className="phase-a-empty-value">No details</span>;
     return (
       <dl className="phase-a-nested-fields">
@@ -81,7 +92,9 @@ function pdfSourceNames(value: unknown): string[] {
   value.forEach(ref => {
     if (ref && typeof ref === 'object') {
       const filename = (ref as Record<string, unknown>).filename;
-      if (typeof filename === 'string' && filename.toLowerCase().endsWith('.pdf')) filenames.add(filename);
+      const docId = (ref as Record<string, unknown>).doc_id;
+      if (typeof filename === 'string' && filename) filenames.add(filename);
+      else if (typeof docId === 'string' && docId) filenames.add(docId);
     }
   });
   return [...filenames];
@@ -112,46 +125,75 @@ function ChainEntry({ entry, index }: {
     ? rawTransactionType.replace(/\s*\(EC entry; instrument not supplied\)/i, '')
     : rawTransactionType;
   const summaryPoints = Array.isArray(transaction.summary_points)
-    ? transaction.summary_points.map(pointText).filter((point): point is string => point !== null)
+    ? transaction.summary_points.map(pointText).filter((point): point is string => point !== null && hasValue(point))
     : [];
   const relatedEvents = Array.isArray(item.related_events) ? item.related_events : [];
   const number = transaction.transaction_number || transaction.registration_number;
   const date = transaction.executed_date || transaction.execution_date;
+  const position = typeof item.chain_position === 'number' ? item.chain_position : index + 1;
+  const evidenceLabels: Record<string, string> = {
+    corroborated: 'Corroborated by multiple documents',
+    register_reported: 'Reported in a history register',
+    deed_reported: 'Reported in the transfer deed',
+    recital_reported: 'Reported in a later deed’s recital',
+  };
+  const evidence = typeof transaction.evidence_status === 'string'
+    ? evidenceLabels[transaction.evidence_status] || displayLabel(transaction.evidence_status)
+    : 'Not stated';
   const { transaction_number: _number, registration_number: _registration, transaction_type: _type,
     type: _legacyType, executed_date: _date, execution_date: _executionDate,
     summary_points: _points, source_refs: _refs, evidence_status: _evidenceStatus,
+    transferors: _transferors, transferees: _transferees,
     ...otherTransactionDetails } = transaction;
-  const { tx_id: _txId, upstream_tx_ids: _upstream, related_events: _relatedEvents, chain_position: _position, documented_transaction: _documented, ...otherEntryDetails } = item;
+  const { tx_id: _txId, upstream_tx_ids: _upstream, continues_previous: _continues, related_events: _relatedEvents, chain_position: _position, documented_transaction: _documented, ...otherEntryDetails } = item;
 
   return (
     <article className="phase-a-chain-entry">
       <header className="phase-a-transaction-heading">
-        <span className="phase-a-chain-marker" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
-        <h3>Transaction {index + 1}</h3>
+        <span className="phase-a-chain-marker" aria-hidden="true">{String(position).padStart(2, '0')}</span>
+        <h3>Transaction {position} — <ValueView value={transactionType || 'Transfer'} /></h3>
       </header>
+      <p className={`phase-a-continuity${index > 0 && item.continues_previous === false ? ' phase-a-continuity-gap' : ''}`}>
+        {index === 0 ? 'Earliest recorded link'
+          : item.continues_previous === true ? 'Continues the previous ownership link'
+          : item.continues_previous === false ? 'Unresolved continuity with the previous link — see notes below'
+          : 'Continuity not stated'}
+      </p>
       <dl className="phase-a-transaction-meta">
-        <div><dt>Transaction number</dt><dd>{number ? <ValueView value={number} /> : <span className="phase-a-empty-value">Not stated</span>}</dd></div>
-        <div><dt>Transaction type</dt><dd><ValueView value={transactionType || 'Not stated'} /></dd></div>
-        <div><dt>Execution date</dt><dd>{date ? <ValueView value={date} /> : <span className="phase-a-empty-value">Not stated</span>}</dd></div>
+        {hasValue(number) && <div><dt>Transaction number</dt><dd><ValueView value={number} /></dd></div>}
+        {hasValue(transactionType) && <div><dt>Transaction type</dt><dd><ValueView value={transactionType} /></dd></div>}
+        {hasValue(date) && <div><dt>Execution date</dt><dd><ValueView value={date} /></dd></div>}
       </dl>
-      {summaryPoints.length > 0 ? (
+      <div className="phase-a-parties">
+        {hasValue(transaction.transferors) && <section aria-label="Transferors"><h4>From · Transferors</h4><ValueView value={transaction.transferors} /></section>}
+        {hasValue(transaction.transferees) && <section aria-label="Transferees"><h4>To · Acquirers</h4><ValueView value={transaction.transferees} /></section>}
+      </div>
+      {hasValue(otherTransactionDetails) && (
+        <section className="phase-a-record-details" aria-label="Instrument and property details">
+          <h4>Instrument &amp; property details</h4>
+          <ValueView value={otherTransactionDetails} />
+        </section>
+      )}
+      <section className="phase-a-evidence-basis">
+        {hasValue(evidence) && <><h4>Evidence basis</h4><p>{evidence}</p></>}
+        <PointSources refs={transaction.source_refs} />
+      </section>
+      {summaryPoints.length > 0 && (
+        <section className="phase-a-chain-notes">
+        <h4>Recorded facts &amp; reconciliation notes</h4>
         <ul className="phase-a-summary-points">
           {summaryPoints.map((point, pointIndex) => <li key={pointIndex}>{point}</li>)}
         </ul>
-      ) : Object.keys(otherTransactionDetails).length > 0 ? (
-        <div className="phase-a-legacy-details"><ValueView value={otherTransactionDetails} /></div>
-      ) : (
-        <p className="phase-a-empty-value">No additional transaction details were recorded.</p>
+        </section>
       )}
-      <PointSources refs={transaction.source_refs} />
-      {Object.keys(otherEntryDetails).length > 0 && <div className="phase-a-legacy-details"><ValueView value={otherEntryDetails} /></div>}
+      {!!item.documented_transaction && hasValue(otherEntryDetails) && <div className="phase-a-legacy-details"><ValueView value={otherEntryDetails} /></div>}
       {relatedEvents.length > 0 && (
         <section className="phase-a-related-events" aria-label="Related property events">
           <h3>Related events</h3>
           {relatedEvents.map((event, eventIndex) => {
             const eventRecord = event && typeof event === 'object' ? event as Record<string, unknown> : {};
             const eventPoints = Array.isArray(eventRecord.summary_points)
-              ? eventRecord.summary_points.map(pointText).filter((point): point is string => point !== null)
+              ? eventRecord.summary_points.map(pointText).filter((point): point is string => point !== null && hasValue(point))
               : [];
             return (
               <div className="phase-a-related-event" key={eventIndex}>
@@ -203,7 +245,7 @@ export function PhaseAChainView({
       <GraphSection graph={result.title_chain_graph || ''} />
       <div className="phase-a-chain-intro">
         <h2>Documents behind the chain</h2>
-        <p>Transactions and relevant property events, in chronological order.</p>
+        <p>Parties, property details, supporting documents, and reconciliation notes for each transfer. This is a reconstructed chain; verification is a separate stage.</p>
       </div>
       <ChainDetails chain={result.title_chain} />
     </main>

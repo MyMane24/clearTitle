@@ -1232,6 +1232,24 @@ export function VerificationDashboard() {
     }
   };
 
+  // The title chain is built from history records (EC, mutation, RTC). With
+  // none uploaded the agent pauses before any transaction
+  // exists, so these documents are added to the case itself.
+  const uploadHistoryDocuments = async (files: File[]) => {
+    if (!currentCaseId || !files.length) return;
+    setEvidenceUploadBusy(true);
+    try {
+      await API.uploadMore(currentCaseId, files);
+      addLog(`Submitted ${files.length} document(s); OCR processing started. The title chain is built when processing finishes.`, "log-info");
+      setView('processing');
+      startPolling(currentCaseId);
+    } catch (e: any) {
+      addLog(`✗ Upload failed: ${e.message}`, "log-err");
+    } finally {
+      setEvidenceUploadBusy(false);
+    }
+  };
+
   const skipPausedTransaction = async () => {
     const txId = results?.agent?.paused_transaction;
     if (!currentCaseId || !txId) return;
@@ -1359,6 +1377,10 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
   const pausedRequirements = requirementsForPausedTransaction(rawTx, agent?.paused_transaction);
   const pausedTransactionId = String(agent?.paused_transaction || '').trim();
   const pauseKey = `${pausedTransactionId}:${String(agent?.updated_at || '')}`;
+  // Paused before any transaction exists: the agent is waiting for a history document.
+  const historyRequest = String(agent?.status || '').toLowerCase() === 'paused' && !pausedTransactionId
+    ? String(agent?.next_action || '')
+    : '';
   const showPausedEvidenceDialog = Boolean(
     results && currentCaseId && results.case.case_id === currentCaseId &&
     String(agent?.status || '').toLowerCase() === 'paused' &&
@@ -1711,6 +1733,8 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                             ? "VERIFICATION COULD NOT BE COMPLETED, PLEASE RETRY"
                             : agent?.status === "running" || agent?.status === "idle"
                             ? "VERIFICATION IN PROGRESS…"
+                            : historyRequest
+                            ? "HISTORY DOCUMENT REQUIRED"
                             : null}
                         </p>
                       </div>
@@ -1790,6 +1814,25 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                           evidenceUploadBusy={evidenceUploadBusy}
                         />
                       ))
+                    ) : historyRequest ? (
+                      <div className="vr-sheet-empty">
+                        <p style={{ margin: '0 0 12px' }}>{historyRequest}</p>
+                        <label className="btn btn-primary" style={{ cursor: evidenceUploadBusy ? 'default' : 'pointer' }}>
+                          <Upload size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+                          {evidenceUploadBusy ? 'Uploading…' : 'Upload documents'}
+                          <input
+                            type="file"
+                            accept="application/pdf"
+                            multiple
+                            hidden
+                            disabled={evidenceUploadBusy}
+                            onChange={event => {
+                              void uploadHistoryDocuments(Array.from(event.target.files || []));
+                              event.target.value = '';
+                            }}
+                          />
+                        </label>
+                      </div>
                     ) : (
                       <div className="vr-sheet-empty">
                         {agent?.status === "error"
