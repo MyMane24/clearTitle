@@ -24,6 +24,20 @@ ALLOTMENT_LETTER = "ALLOTMENT_LETTER"
 BUILDING_LICENSE = "BUILDING_LICENSE"
 COMPLETION_CERTIFICATE = "COMPLETION_CERTIFICATE"
 
+# History documents: records that list a property's past transfers. They give
+# the backbone of the title chain. Property register cards are left out on
+# purpose: their OCR is unreliable, and the deeds supply what they would add.
+CHAIN_HISTORY_DOC_TYPES = frozenset({
+    ENCUMBRANCE_CERTIFICATE,
+    MUTATION,
+    RTC_PAHANI,
+})
+
+# Title deeds: the instruments that transfer ownership. The chain builder opens
+# one only to extend the chain backward or to confirm a link. Any type ending in
+# "_DEED" counts, plus these.
+CHAIN_DEED_DOC_TYPES = frozenset({"WILL", "COURT_DECREE"})
+
 # -- Pipeline statuses -------------------------------------------------------
 
 STATUS_PROCESSING = "processing"

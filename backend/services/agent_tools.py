@@ -18,7 +18,7 @@ from uuid import uuid4
 
 from backend.database.repositories import agent_repo as repo
 from backend.logger import get_logger
-from backend.schemas.analysis import VerificationFinding, content_hash, is_assigned_tx_id
+from backend.schemas.analysis import VerificationFinding, content_hash
 from backend.services import case_memory, chain_identity
 from backend.services.agent_schemas import (
     SCHEMA_VERSION,
@@ -87,7 +87,6 @@ class ToolContext:
         self.selected_document_ids: set[str] = set()
         self.read_text_ranges: dict[str, list[tuple[int, int, int]]] = {}
         self.document_text_cache: dict[str, str] = {}
-        self.saved_phase_a_result: dict | None = None
         self.saved_results: list[dict] = []
         self.rejected_findings: list[dict] = []
         self.missing_requests: list[dict] = []
@@ -259,15 +258,6 @@ _DOC_TEXT = {
         "required": ["doc_id"],
     },
 }
-_SAVE_PHASE_A = {
-    "name": "save_phase_a_result",
-    "description": "Save the completed Phase A property identity and title-chain graph. Preserve the supplied result without rewriting it.",
-    "parameters": {
-        "type": "object",
-        "properties": {"result": {"type": "object"}},
-        "required": ["result"],
-    },
-}
 _FINISH = {"name": "finish", "description": "Signal that this stage is complete.", "parameters": {"type": "object", "properties": {}}}
 _LIST_TX = {"name": "list_transactions", "description": "List the title-chain transactions.", "parameters": {"type": "object", "properties": {}}}
 _GET_TX = {
@@ -338,15 +328,13 @@ _RECORD_OBSERVATION = {
         "quote": {"type": "string", "maxLength": 400},
     }, "required": ["doc_id", "fact"]},
 }
-PHASE_A_TOOLS = [_LIST_DOCS, _DOC_TEXT, _SAVE_PHASE_A, _FINISH]
 VERIFY_TOOLS = [_GET_TX, _RECORD_REQUIREMENTS,
                 _LIST_DOCS, _DOC_META, _SELECT_DOCUMENTS, _DOC_TEXT, _RECORD_OBSERVATION, _REQUEST_MORE_CALLS,
                 _SAVE_RESULT, _REQ_MISSING, _FINISH]
 
 
 def tools_for(phase: str) -> list[dict]:
-    return {"phase_a": PHASE_A_TOOLS,
-            "verify": VERIFY_TOOLS}.get(phase, [])
+    return {"verify": VERIFY_TOOLS}.get(phase, [])
 
 
 # -- helpers -------------------------------------------------------------------
@@ -520,168 +508,6 @@ def _h_record_observation(ctx: ToolContext, args: dict) -> dict:
         # OCR is noisy, so a miss is information for the model, not a rejection.
         result["quote_found_in_ocr"] = quote.casefold() in text
     return result
-
-
-def _h_save_phase_a_result(ctx: ToolContext, args: dict) -> dict:
-    result = args.get("result")
-    if not isinstance(result, dict):
-        return {"error": "result must be an object"}
-    if not isinstance(result.get("property_identity"), dict):
-        return {"error": "result.property_identity must be an object containing the target property identity"}
-    if not isinstance(result["property_identity"].get("details"), list):
-        return {"error": "result.property_identity.details must be a list"}
-    if "unresolved" in result["property_identity"]:
-        return {"error": "do not add an unresolved field to property_identity"}
-    if not isinstance(result.get("title_chain_graph"), str) or not result["title_chain_graph"].strip():
-        return {"error": "result.title_chain_graph must contain the readable title-chain graph"}
-    chain = result.get("title_chain")
-    if not isinstance(chain, list) or not chain:
-        return {"error": "result.title_chain must contain the ordered ownership chain"}
-
-    def validate_citations(refs, where):
-        if not isinstance(refs, list) or not refs:
-            return f"{where} must contain at least one source reference"
-        cited_filenames = []
-        for ref in refs:
-            if not isinstance(ref, dict) or not isinstance(ref.get("doc_id"), str) or not ref["doc_id"].strip():
-                return f"{where} references must contain document IDs"
-            document = ctx.by_id.get(ref["doc_id"])
-            if not document:
-                return f"{where} references a document outside this case"
-            filename = ref.get("filename")
-            if not isinstance(filename, str) or filename != document.get("filename"):
-                return f"{where} must preserve the exact PDF filename for {ref['doc_id']}"
-            cited_filenames.append(filename)
-        return cited_filenames
-
-    seen_transaction_numbers: set[str] = set()
-    for index, entry in enumerate(chain):
-        if not isinstance(entry, dict):
-            return {"error": f"result.title_chain[{index}] must be an object"}
-        # Model-supplied transaction ids are never trusted (master rule): the
-        # application assigns stable ids below, keyed on content identity.
-        entry.pop("tx_id", None)
-        if entry.get("chain_position") != index + 1:
-            return {"error": "title_chain must be numbered from earliest supported root to current/latest owner"}
-        if "unresolved" in entry:
-            return {"error": f"do not add an unresolved field to title_chain[{index}]"}
-        transaction = entry.get("documented_transaction")
-        if not isinstance(transaction, dict) or not transaction:
-            return {"error": f"title_chain[{index}].documented_transaction must contain the open-ended transaction details"}
-        transaction.pop("tx_id", None)
-        transaction.pop("upstream_tx_ids", None)
-        if not isinstance(transaction.get("transaction_type"), str) or not transaction["transaction_type"].strip():
-            return {"error": f"title_chain[{index}].documented_transaction must identify the transaction_type"}
-        if "executed_date" not in transaction:
-            return {"error": f"title_chain[{index}].documented_transaction must include executed_date (null if not stated)"}
-        if "transaction_number" not in transaction:
-            return {"error": f"title_chain[{index}].documented_transaction must include transaction_number (null if not stated)"}
-        transaction_number = transaction.get("transaction_number")
-        if transaction_number:
-            registration_ref = str(transaction_number).strip().casefold()
-            if registration_ref in seen_transaction_numbers:
-                return {
-                    "error": f"duplicate transaction_number {transaction_number!r}; merge duplicate document copies into one chronological chain entry"
-                }
-            seen_transaction_numbers.add(registration_ref)
-        for field in ("transferors", "transferees"):
-            if field in transaction and transaction[field] is not None and not chain_identity._string_list_ok(transaction[field]):
-                return {"error": f"title_chain[{index}].documented_transaction.{field} must be a list of party names (or null)"}
-        for field in (
-            "registration_date", "registration_office", "property_type", "property_schedule", "consideration",
-            "survey_number", "plot_number", "site_flat_number", "cts_number",
-        ):
-            if field in transaction and transaction[field] is not None and not isinstance(transaction[field], str):
-                return {"error": f"title_chain[{index}].documented_transaction.{field} must be a string or null"}
-        points = transaction.get("summary_points")
-        if not isinstance(points, list) or not points:
-            return {"error": f"title_chain[{index}].documented_transaction.summary_points must contain plain-language facts"}
-        for point_index, point in enumerate(points):
-            if not isinstance(point, str) or not point.strip():
-                return {"error": f"title_chain[{index}].documented_transaction.summary_points[{point_index}] must be a plain-language sentence"}
-        transaction_refs = validate_citations(
-            transaction.get("source_refs"), f"title_chain[{index}].documented_transaction.source_refs"
-        )
-        if isinstance(transaction_refs, str):
-            return {"error": transaction_refs}
-        related_events = entry.get("related_events") or []
-        if not isinstance(related_events, list):
-            return {"error": f"title_chain[{index}].related_events must be a list"}
-        for event_index, event in enumerate(related_events):
-            if not isinstance(event, dict):
-                return {"error": f"title_chain[{index}].related_events[{event_index}] must be an object"}
-            if not isinstance(event.get("summary_points"), list) or not event["summary_points"]:
-                return {"error": f"title_chain[{index}].related_events[{event_index}] must contain plain-language summary_points"}
-            for point_index, point in enumerate(event["summary_points"]):
-                if not isinstance(point, str) or not point.strip():
-                    return {"error": f"title_chain[{index}].related_events[{event_index}].summary_points[{point_index}] must be a plain-language sentence"}
-            event_refs = validate_citations(
-                event.get("source_refs"), f"title_chain[{index}].related_events[{event_index}].source_refs"
-            )
-            if isinstance(event_refs, str):
-                return {"error": event_refs}
-    source_ids = set(ctx.by_id)
-    referenced_ids = _collect_document_ids(result)
-    unknown_ids = sorted(referenced_ids - source_ids)
-    if unknown_ids:
-        return {"error": "result references documents outside this case", "doc_ids": unknown_ids}
-
-    # App-owned stable identity (task §3): preserve earlier ids for entries the
-    # evidence identifies as the same transaction; everything else gets the
-    # next id unused across the case's chain and persisted transaction results,
-    # so no historical result is ever re-associated with a different transaction.
-    # Historical identity reads are strictly required: a failed read is an
-    # unknown state, not an empty one, and numbering from empty could reissue a
-    # persisted transaction's id to a different transaction. The abort happens
-    # before any mutation below (chain ids, upstream links, persistence), so
-    # nothing is saved; once the database recovers the retry reconciles ids
-    # through the normal content matcher.
-    try:
-        prior_chain = repo.get_persisted_title_chain_entries(ctx.case_id)
-        prior_rows = repo.list_persisted_transaction_results(ctx.case_id)
-    except Exception as error:
-        logger.warning("phase_a_identity_reads_failed case_id=%s error=%s", ctx.case_id, error)
-        return {
-            "error": (
-                "cannot safely assign transaction ids: historical identity state "
-                f"could not be read ({error}). Nothing was saved; no chain or "
-                "verification result was written. Retry after the database "
-                "recovers — ids will then be reconciled against the persisted history."
-            ),
-            "retryable": True,
-        }
-    taken_ids = {
-        str(item.get("tx_id"))
-        for item in prior_rows
-        if isinstance(item, dict) and is_assigned_tx_id(item.get("tx_id"))
-    }
-    identity_notes = chain_identity.assign_chain_tx_ids(chain, prior_chain, taken_ids)
-    identity_notes += chain_identity.attach_upstream_ids(chain)
-    if identity_notes:
-        logger.info("phase_a_identity_assignment case_id=%s notes=%s", ctx.case_id, identity_notes)
-
-    repo.save_phase_a_result(case_id=ctx.case_id, result=result)
-    ctx.saved_phase_a_result = result
-    ctx.finished = True
-    return {
-        "saved": True,
-        "transaction_ids": [entry.get("tx_id") for entry in chain],
-        "identity_notes": identity_notes,
-    }
-
-
-def _collect_document_ids(value) -> set[str]:
-    found: set[str] = set()
-    if isinstance(value, dict):
-        for key, item in value.items():
-            if key in {"doc_id", "source_doc_id"} and isinstance(item, str):
-                found.add(item)
-            else:
-                found.update(_collect_document_ids(item))
-    elif isinstance(value, list):
-        for item in value:
-            found.update(_collect_document_ids(item))
-    return found
 
 
 def _h_list_transactions(ctx: ToolContext, args: dict) -> dict:
@@ -1439,7 +1265,6 @@ _HANDLERS: dict[str, Callable[[ToolContext, dict], dict]] = {
     "record_evidence_requirements": _h_record_requirements,
     "select_documents": _h_select_documents,
     "record_observation": _h_record_observation,
-    "save_phase_a_result": _h_save_phase_a_result,
     "list_transactions": _h_list_transactions,
     "get_transaction": _h_get_transaction,
     "save_transaction_result": _h_save_transaction_result,

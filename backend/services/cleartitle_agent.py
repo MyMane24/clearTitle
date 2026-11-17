@@ -1,9 +1,10 @@
 """The ClearTitle verification agent — one primary tool-calling LLM agent.
 
-The agent builds or reuses the saved Phase A title chain, then verifies each
-transaction directly using the verification prompt, skill, and uploaded
-documents. Saved transaction results and case memory are the durable
-verification/resume state.
+The title chain is built by ``backend.services.chain_builder`` from the case's
+history documents, extended through its title deeds (and rebuilt when a new
+one of either arrives). This module then verifies each transaction directly using the
+verification prompt, skill, and uploaded documents. Saved transaction results
+and case memory are the durable verification/resume state.
 
 Verification is sequential and dependency-aware: the chain is verified from the
 earliest root toward the current owner, each link is verified against its own
@@ -53,6 +54,7 @@ from backend.services.agent_tools import (
     _with_dependency_section,
     _without_source_refs,
 )
+from backend.services.chain_builder import build_chain, history_documents, title_deeds
 
 logger = get_logger(__name__)
 
@@ -66,7 +68,6 @@ STATUS_DONE = "done"
 STATUS_ERROR = "error"
 
 _VERIFY_MAX_STEPS = CLEARTITLE_VERIFY_MODEL_CALL_BUDGET
-_PHASE_A_MAX_STEPS = 80
 
 
 # -- document summaries (cheap navigation aid, generated only when missing) ----
@@ -102,34 +103,11 @@ def ensure_summaries(case_id: str, docs: list[dict]) -> None:
 # -- phase instructions --------------------------------------------------------
 
 
-def _phase_a_instruction(docs: list[dict]) -> str:
-    manifest = "\n".join(
-        f"- {doc['doc_id']} | citation filename: {doc.get('filename') or '(filename unavailable)'} | summary: {doc.get('summary') or '(no saved summary)'}"
-        for doc in docs
-    )
-    skill = (repo_skill_path()).read_text(encoding="utf-8")
-    return (
-        "MANDATORY SKILL — FOLLOW THIS FOR EVERY TITLE-CHAIN BUILD\n\n"
-        + skill
-        + "\n\n"
-        + load_prompt("title_chain_task")
-        + "\n\n--- ALL UPLOADED DOCUMENT SUMMARIES ---\n"
-        + manifest
-    )
-
-
 def verification_skill_path():
     """Resolve the transaction-verification strategy skill."""
     from pathlib import Path
 
     return Path(__file__).resolve().parents[1] / "skills" / "transaction_verification" / "skill.md"
-
-
-def repo_skill_path():
-    """Resolve the mandatory skill file from the backend package tree."""
-    from pathlib import Path
-
-    return Path(__file__).resolve().parents[1] / "skills" / "title_chain" / "skill.md"
 
 
 def _report_excerpt(report: str, limit: int = 400) -> str:
@@ -329,25 +307,66 @@ def _verify_instruction(tx: dict, upstream_context: list[dict] | None = None, me
 # -- phases --------------------------------------------------------------------
 
 
-def _build_phase_a(case_id: str, docs: list[dict]) -> dict:
-    ctx = ToolContext(case_id, docs)
-    try:
-        run_tool_loop(
-            ctx=ctx,
-            phase="phase_a",
-            system=load_prompt("title_chain_system"),
-            instruction=_phase_a_instruction(docs),
-            max_steps=_PHASE_A_MAX_STEPS,
-        )
-    except AgentLLMError:
-        # A provider failure after the result was durably saved must not turn a
-        # completed Phase A into an apparent failure.
-        if not ctx.saved_phase_a_result:
-            raise
-        logger.warning("Phase A saved for %s but final model turn failed", case_id)
-    if not ctx.saved_phase_a_result:
-        raise AgentLLMError("Phase A ended without saving the property identity and title-chain result")
-    return ctx.saved_phase_a_result
+def _build_chain(case_id: str, docs: list[dict], memory: dict) -> dict:
+    """Record the chain-building stage, then build the chain."""
+    memory["stage"] = "phase_a"
+    memory["next_action"] = None
+    _save_state(case_id, memory, STATUS_RUNNING)
+    # The chain builder picks deeds, and verification picks every document,
+    # from summaries; fill in any the pipeline did not produce.
+    ensure_summaries(case_id, docs)
+    return build_chain(case_id, docs)
+
+
+def _pause_for_history_documents(case_id: str, memory: dict) -> dict:
+    """Pause until a history document is uploaded; a chain is never guessed from deeds."""
+    memory["stage"] = "awaiting_history_documents"
+    memory["next_action"] = (
+        "Upload the Encumbrance Certificate for this property. The title chain is built "
+        "from the property's history records (encumbrance certificate, mutation or RTC), "
+        "and none has been uploaded yet."
+    )
+    _save_state(case_id, memory, STATUS_PAUSED)
+    _sync_case_verdict(case_id, "paused", "N/A")
+    logger.info("agent paused for %s: no history documents", case_id)
+    return {
+        "case_id": case_id, "status": STATUS_PAUSED,
+        "missing_documents": [{
+            "document_type": "Encumbrance Certificate",
+            "reason": "No history record of the property has been uploaded.",
+            "for_transaction": "",
+        }],
+    }
+
+
+def _has_new_chain_documents(phase_a: dict, docs: list[dict]) -> bool:
+    """True when a history document or title deed arrived after the chain was built.
+
+    A chain saved before its source documents were recorded carries ``None``
+    and is never rebuilt automatically.
+    """
+    used = phase_a.get("chain_doc_ids")
+    if used is None:
+        return False
+    return any(
+        document["doc_id"] not in used
+        for document in [*history_documents(docs), *title_deeds(docs)]
+    )
+
+
+def _resequence_results(case_id: str, phase_a: dict) -> None:
+    """Renumber saved results after a rebuild moved their links within the chain."""
+    sequences = {
+        transaction["tx_id"]: transaction["sequence"]
+        for transaction in _phase_a_transactions(phase_a)
+    }
+    orphaned = sorted(
+        str(result.get("tx_id")) for result in repo.list_transaction_results(case_id)
+        if result.get("tx_id") not in sequences
+    )
+    if orphaned:
+        logger.warning("chain_rebuild_orphaned_results case_id=%s tx_ids=%s", case_id, orphaned)
+    repo.resequence_transaction_results(case_id=case_id, sequences=sequences)
 
 
 def _assign_app_tx_ids(chain: list) -> None:
@@ -632,6 +651,8 @@ def _run(
     try:
         repo.set_agent_status(case_id=case_id, status=STATUS_RUNNING)
         phase_a = repo.get_agent_result(case_id)
+        full_run = transaction_ids is None and not fresh_reverification
+        rebuilt = False
         if not phase_a or not phase_a.get("title_chain"):
             if repo.list_transaction_results(case_id):
                 # R1 (audit §10): a silent rebuild would assign fresh positional
@@ -645,13 +666,13 @@ def _run(
                 repo.set_agent_status(case_id=case_id, status=STATUS_ERROR)
                 _sync_case_verdict(case_id, "error", "N/A")
                 return {"case_id": case_id, "status": STATUS_ERROR, "reason": reason}
-            # Phase A uses summaries for navigation. This is deliberately not
-            # run on every verification resume, where each transaction chooses
-            # evidence requirements before inspecting summaries.
-            ensure_summaries(case_id, docs)
-            memory["stage"] = "phase_a"
-            _save_state(case_id, memory, STATUS_RUNNING)
-            phase_a = _build_phase_a(case_id, docs)
+            if not history_documents(docs):
+                return _pause_for_history_documents(case_id, memory)
+            phase_a = _build_chain(case_id, docs, memory)
+        elif full_run and _has_new_chain_documents(phase_a, docs):
+            phase_a = _build_chain(case_id, docs, memory)
+            _resequence_results(case_id, phase_a)
+            rebuilt = True
         elif _phase_a_hash_mismatch(phase_a):
             stored = str(phase_a.get("phase_a_hash") or "")
             logger.warning(
@@ -767,10 +788,10 @@ def _run(
             memory["current_tx_id"] = None
             _save_state(case_id, memory, STATUS_RUNNING)
 
-        if transaction_ids is not None and verified_tx_ids:
-            # Scoped run (resume/retry/re-verify): the changed link's downstream
-            # results are refreshed from their saved state — no OCR reads and no
-            # verification passes on them.
+        if (transaction_ids is not None or rebuilt) and verified_tx_ids:
+            # Scoped run (resume/retry/re-verify) or a rebuilt chain: the changed
+            # link's downstream results are refreshed from their saved state —
+            # no OCR reads and no verification passes on them.
             _refresh_downstream_results(case_id, phase_a, set(verified_tx_ids), run_id=run_id)
         memory["stage"] = "done"
         memory["paused_transaction"] = None

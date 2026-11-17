@@ -97,6 +97,8 @@ CREATE TABLE IF NOT EXISTS title_chains (
     detailed_chain JSON NULL,
     chain JSON NULL,
     phase_a_hash CHAR(64) NULL,
+    chain_doc_ids JSON NULL,
+    missing_documents JSON NULL,
     source JSON NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -178,6 +180,10 @@ def ensure_tables():
             ("cases", "analysis_run_id", "ALTER TABLE cases ADD COLUMN analysis_run_id CHAR(36) NULL"),
             # Stage 2: chain-integrity hash stamped on every Phase A save.
             ("title_chains", "phase_a_hash", "ALTER TABLE title_chains ADD COLUMN phase_a_hash CHAR(64) NULL"),
+            # Documents the saved chain was built from (a new one triggers a rebuild),
+            # and the documents the builder asked for to extend the chain.
+            ("title_chains", "chain_doc_ids", "ALTER TABLE title_chains ADD COLUMN chain_doc_ids JSON NULL"),
+            ("title_chains", "missing_documents", "ALTER TABLE title_chains ADD COLUMN missing_documents JSON NULL"),
         ]:
             _, _, sql = col_def
             try:

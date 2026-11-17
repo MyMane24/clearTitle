@@ -124,13 +124,16 @@ class TestRebuildGuard(unittest.TestCase):
             selected_document_ids=set(),
         )
         saved_result = {"tx_id": "PA-TC-0001", "status": "VERIFIED_WITH_AVAILABLE_EVIDENCE", "report": "done"}
+        history_document = {
+            "doc_id": "D1", "document_type": "ENCUMBRANCE_CERTIFICATE", "status": "structured",
+        }
         with patch.object(cleartitle_agent.repo, "get_agent_documents",
-                          return_value=[{"doc_id": "D1"}]), \
+                          return_value=[history_document]), \
                 patch.object(cleartitle_agent.repo, "get_agent_memory", return_value={}), \
                 patch.object(cleartitle_agent.repo, "get_agent_result", return_value={}), \
                 patch.object(cleartitle_agent.repo, "list_transaction_results", return_value=[]), \
                 patch.object(cleartitle_agent, "ensure_summaries"), \
-                patch.object(cleartitle_agent, "_build_phase_a",
+                patch.object(cleartitle_agent, "build_chain",
                              return_value={"title_chain": [{
                                  "chain_position": 1,
                                  "documented_transaction": {"transaction_type": "Sale"},
@@ -165,7 +168,7 @@ class TestPhaseAHashPersistence(unittest.TestCase):
                 "property_identity": {"details": []},
                 "title_chain_graph": "A->B",
                 "title_chain": [{"chain_position": 1}],
-            })
+            }, chain_doc_ids=[])
         sql, params = cursor.calls[-1]
         self.assertIn("phase_a_hash", sql)
         expected = phase_a_hash({"property_identity": {"details": []}, "title_chain": [{"chain_position": 1}]})

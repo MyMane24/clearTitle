@@ -1,94 +1,63 @@
-Build Phase A for this case. Review the uploaded document IDs and saved summaries listed below, read the OCR you need with `get_document_text` (in chunks where necessary, until each relevant document has been examined sufficiently), apply the skill, then save one result with `save_phase_a_result`.
-
-Consider every summary, but do not assume every document belongs to this property's chain.
-
-## Result object
-
-{
-  "property_identity": {
-    "details": [{"label": "...", "value": "...", "source_refs": [{"doc_id": "...", "passage": "..."}]}]
-  },
-  "title_chain_graph": "connected vertical ASCII graph, earliest supported root at top, current owner at bottom",
-  "title_chain": [
-    {
-      "chain_position": 1,
-      "documented_transaction": {
-        "transaction_number": "registration or instrument number when stated, otherwise null",
-        "transaction_type": "plain label such as Sale, Gift, Partition, Succession",
-        "executed_date": "as stated, or null",
-        "registration_date": "as stated, or null",
-        "registration_office": "sub-registrar office, or null",
-        "transferors": ["every party conveying, as recorded"],
-        "transferees": ["every party acquiring, as recorded"],
-        "property_type": "kind of property this link transfers, e.g. Agricultural land, Converted open plot, Residential house, Apartment unit; null only if unstated",
-        "property_schedule": "schedule wording, or null",
-        "survey_number": null,
-        "plot_number": null,
-        "site_flat_number": null,
-        "cts_number": null,
-        "consideration": "as stated, or null",
-        "summary_points": ["Vijayabai died on 13 January 1981.", "Her daughters Meena and Sharmila succeeded her."],
-        "source_refs": [{"doc_id": "...", "filename": "sale_deed_2012.pdf"}],
-        "evidence_status": "original_document_seen | corroborated | recital_reported"
-      },
-      "related_events": [
-        {"type": "non-transfer event label", "summary_points": ["The 1987 conversion order changed the property to non-agricultural use."], "source_refs": [{"doc_id": "...", "filename": "conversion_order.pdf"}]}
-      ]
-    }
-  ]
-}
+Build the title chain for this case. Read every history document listed at the end with `read_document`, open title deeds only as the skill above allows, then give the result.
 
 ## Field rules
 
-- Order: `title_chain` and the graph both run chronologically from the earliest
-  supported root to the current owner. `chain_position` is 1, 2, 3 and so on.
-- Identity: never output a `tx_id` or any transaction identifier. The application
-  assigns stable IDs and upstream links when it saves.
-- Evidence only: fill each field from what the cited evidence states and leave it
-  null when absent. Record parties exactly as the instrument writes them, one
-  entry per named party, `[]` for an unstated list, never a guess. Parties must
-  agree with `summary_points`. For a recital-only link, record the reported
-  names as stated and set `evidence_status` to `recital_reported`, with null for
-  unavailable dates and instrument numbers.
-- Property fields: `property_type` is a short label (two to four words) for the kind
-  of property this link transfers, set per link so that a change of type (land
-  to plot to house or flat) is visible in the chain. `property_schedule` is the
-  schedule wording. `survey_number`, `plot_number`, `site_flat_number` and
-  `cts_number` each hold only the bare identifier as written ("699A/15", "9",
-  "G-04", "1360B/9"), never a description such as "Open site Plot No.9", and
-  never the same value in two fields. Descriptions belong in `property_type` and
-  `property_schedule`.
-- `transaction_number`: only an explicit registration or instrument number. Keep
-  provenance notes ("EC entry", "instrument not supplied", "reported in EC") out
-  of `transaction_type`; provenance lives in `evidence_status` and `source_refs`.
-- `summary_points`: plain-language sentences, one fact each, with no field labels
-  such as "Seller:" and no filenames or source references. State the parties and
-  their roles, the property or schedule, important terms, consideration when
-  stated, and material events or discrepancies. Use a short numbered list inside
-  one point only for a long list of people. Do not repeat the graph or the
-  property identity.
-- `source_refs`: `doc_id` and `filename` only, at transaction or event level. The
-  filename must match the uploaded filename exactly.
-- `related_events`: for each period between ownership links, include relevant
-  property events found in the uploads (conversion orders, mortgages,
-  construction or allocation records, permissions) with their dates; leave out
-  unrelated records.
-- Do not add an `unresolved` field to `property_identity` or any chain entry, and
-  do not add a title story or chain summary field.
-- Keep the result compact enough for a single valid tool call. Leave out raw OCR,
-  long quotations, unsupported events and unknown document IDs, and keep
-  transaction details that already appear in `title_chain` out of the graph.
-
-## Graph pattern
-
-Replace the labels with case evidence and keep the direction root to current:
-
-EARLIEST OWNER(S) / ROOT
-        │
-        │ Earlier documented transfer or succession
-        ▼
-PRIOR OWNER(S)
-        │
-        │ Latest Sale Deed — date / registration reference
-        ▼
-CURRENT OWNER(S)
+- Order: `title_chain` runs from the earliest transfer you reached to the latest
+  sale. `chain_position` is 1, 2, 3 and so on, and the last link is the latest
+  sale that fixed the target property. The application draws the chain graph
+  from your links; do not write one.
+- Links: every link is an ownership transfer of the target property and names
+  who acquired it in `transferees`. A record you cannot connect to the target
+  property is not a link.
+- `continues_previous`: true when this link's transferors are the acquirers of
+  the link before it. False for the first link and wherever the records leave a
+  gap; then state the gap in this link's `summary_points`. A firm, company,
+  association or trust is its partners, directors or trustees: before treating
+  a switch between their individual names and the entity name as a gap, read the
+  entity's constitution document and check whether they are the same people.
+- `property_identity`: the target property only, as fixed from the latest sale.
+- Identity: never output a transaction id. The application assigns ids and links
+  between transfers when it saves.
+- Evidence only: fill each field from what the cited document states and leave
+  it null when the document does not state it. Record parties as the document
+  writes them, one entry per named party; `transferors` may be empty when none
+  is named. For conflicting OCR spellings or names, use the documentary
+  reconciliation in the skill rather than copying the first occurrence.
+  Never guess. Parties must agree with `summary_points`.
+- Dates: `executed_date` is the date the document gives for the transfer, as
+  written. When it gives a single date, put it in `executed_date`; use
+  `registration_date` only when a separate registration date is stated.
+- `transaction_number`: only an explicit registration or instrument number.
+  Mutation numbers and notes such as "inheritance" do not belong here.
+- `transaction_type`: a plain label for the act (Sale, Gift, Partition,
+  Succession). Keep notes about where it was found out of it.
+- Property fields: `property_type` is a short label for the kind of property
+  this link transfers. `property_schedule` is the schedule wording.
+  `survey_number`, `plot_number`, `site_flat_number` and `cts_number` each hold
+  only the bare identifier as written ("699A/15", "9", "G-04"), never a
+  description, and never the same value in two fields.
+- `summary_points`: plain-language sentences, one fact each, with no field
+  labels such as "Seller:" and no filenames or document ids. State the parties
+  and their roles, the property, the consideration when stated, and any
+  conflict, gap or uncertainty. For a resolved OCR conflict, explain the
+  conflicting reading and why the adopted identity is supported by the
+  endorsements, signatures or matching recitals. Do not repeat the property identity.
+- `source_refs`: the documents the link, event or identity detail was taken
+  from. Cite only documents you read to the end, and copy each `doc_id` and
+  `filename` from the lists below exactly.
+- `evidence_status`: how the link is known, as the skill defines it. It must
+  agree with `source_refs`: `corroborated` cites two or more documents,
+  `register_reported` cites a history document, and `deed_reported` and
+  `recital_reported` cite a title deed.
+- `related_events`: the non-transfer entries (mortgage, release, lease,
+  conversion, attachment) recorded during that link's ownership, with dates.
+  It sits on the link, beside `documented_transaction`, not inside it.
+- `missing_documents`: a top-level field only, always empty. Never put it on a
+  chain link or inside documented_transaction. This phase reconstructs the chain from
+  uploaded evidence; the verification stage handles document requests.
+  Before marking a gap, fully read the relevant uploaded deeds and follow
+  their recitals. When either party is a firm, company, association or trust,
+  read its constitution document and check whether its members are the earlier
+  acquirers; the same people trading under an entity name is not a gap. State
+  remaining gaps or limited coverage in summary_points, without asking for uploads.
+- Keep the result compact: no raw OCR, no long quotations.

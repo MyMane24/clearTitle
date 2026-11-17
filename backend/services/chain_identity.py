@@ -47,12 +47,6 @@ def _names(values) -> list[str]:
     return names
 
 
-def _string_list_ok(value) -> bool:
-    if not isinstance(value, list):
-        return False
-    return all(isinstance(item, str) and item.strip() for item in value)
-
-
 def semantic_transaction(entry: dict) -> dict:
     """The content fields that define one chain entry's identity."""
     transaction = entry.get("documented_transaction") or {}

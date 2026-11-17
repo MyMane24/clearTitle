@@ -16,13 +16,13 @@ numpy==1.26.4
 sarvamai==0.1.28
 
 # Gemini
-google-genai==1.45.0
+google-genai==2.34.0
 
 # MySQL
 mysql-connector-python==9.1.0
 
 # Validation
-pydantic==2.8.2
+pydantic==2.14.3
 email-validator==2.2.0
 
 # Auth
@@ -34,4 +34,7 @@ PyJWT==2.10.1
 celery==5.4.0
 kombu==5.6.2
 redis==4.6.0
-openai==1.56.1
+openai==3.51.0
+
+# Agent runtime (title-chain builder)
+pydantic-ai-slim[openai,google]==2.68.0

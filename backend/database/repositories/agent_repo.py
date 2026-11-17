@@ -104,8 +104,8 @@ def get_document_raw_text(case_id: str, doc_id: str) -> str:
     return str(row[0] or "") if row else ""
 
 
-def save_phase_a_result(*, case_id: str, result: dict) -> None:
-    """Persist Phase A in its three authoritative title_chains columns."""
+def save_phase_a_result(*, case_id: str, result: dict, chain_doc_ids: list[str]) -> None:
+    """Persist the title chain, its document requests, and the documents it was built from."""
     from backend.schemas.analysis import phase_a_hash
 
     identity = result.get("property_identity") or {}
@@ -115,14 +115,21 @@ def save_phase_a_result(*, case_id: str, result: dict) -> None:
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO title_chains "
-            "(case_id, status, property_identity, title_chain_graph, detailed_chain, phase_a_hash) "
-            "VALUES (%s, %s, %s, %s, %s, %s) "
+            "(case_id, status, property_identity, title_chain_graph, detailed_chain, "
+            "phase_a_hash, chain_doc_ids, missing_documents) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
             "ON DUPLICATE KEY UPDATE status = VALUES(status), "
             "property_identity = VALUES(property_identity), "
             "title_chain_graph = VALUES(title_chain_graph), "
             "detailed_chain = VALUES(detailed_chain), "
-            "phase_a_hash = VALUES(phase_a_hash)",
-            (case_id, "complete", _dump(identity), graph, _dump(detailed_chain), phase_a_hash(result)),
+            "phase_a_hash = VALUES(phase_a_hash), "
+            "chain_doc_ids = VALUES(chain_doc_ids), "
+            "missing_documents = VALUES(missing_documents)",
+            (
+                case_id, "complete", _dump(identity), graph, _dump(detailed_chain),
+                phase_a_hash(result), _dump(chain_doc_ids),
+                _dump(result.get("missing_documents") or []),
+            ),
         )
         conn.commit()
 
@@ -288,6 +295,31 @@ def save_transaction_result(*, case_id: str, tx_id: str, verification: dict) -> 
         conn.commit()
 
 
+def resequence_transaction_results(*, case_id: str, sequences: dict[str, int]) -> None:
+    """Set each saved result's ``sequence`` to its link's current chain position.
+
+    Results whose transaction id is not in ``sequences`` are left unchanged.
+    """
+    with _get_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT case_result FROM case_results WHERE case_id = %s FOR UPDATE",
+            (case_id,),
+        )
+        row = cursor.fetchone()
+        transactions = _load(row[0]) if row else None
+        if isinstance(transactions, list):
+            for item in transactions:
+                if item.get("tx_id") in sequences:
+                    item["sequence"] = sequences[item["tx_id"]]
+            transactions.sort(key=lambda item: int(item.get("sequence") or 0))
+            cursor.execute(
+                "UPDATE case_results SET case_result = %s WHERE case_id = %s",
+                (_dump(transactions), case_id),
+            )
+        conn.commit()
+
+
 def get_transaction_result(case_id: str, tx_id: str) -> dict | None:
     return next((item for item in _case_result(case_id)
                  if item.get("tx_id") == tx_id), None)
@@ -362,8 +394,8 @@ def get_agent_result(case_id: str) -> dict | None:
         cursor = conn.cursor()
         try:
             cursor.execute(
-                "SELECT property_identity, title_chain_graph, detailed_chain, chain, phase_a_hash "
-                "FROM title_chains WHERE case_id = %s",
+                "SELECT property_identity, title_chain_graph, detailed_chain, chain, phase_a_hash, "
+                "chain_doc_ids, missing_documents FROM title_chains WHERE case_id = %s",
                 (case_id,),
             )
             row = cursor.fetchone()
@@ -397,6 +429,9 @@ def get_agent_result(case_id: str) -> dict | None:
         "title_chain_graph": title_chain_graph,
         "title_chain": detailed_chain or [],
         "phase_a_hash": row[4] if len(row) > 4 else None,
+        # None marks a chain saved before its source documents were recorded.
+        "chain_doc_ids": _load(row[5]) if len(row) > 5 else None,
+        "missing_documents": (_load(row[6]) if len(row) > 6 else None) or [],
     }
 
 
