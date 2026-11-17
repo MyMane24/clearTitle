@@ -27,6 +27,11 @@ _NON_TRANSFER = re.compile(
     re.IGNORECASE,
 )
 
+def is_non_transfer(label: str) -> bool:
+    """True when a transaction label names an act that never changes ownership."""
+    return bool(_NON_TRANSFER.search(label))
+
+
 _DATE_FORMATS = ("%d-%m-%Y", "%d/%m/%Y", "%d.%m.%Y", "%Y-%m-%d", "%d %B %Y", "%d %b %Y")
 
 

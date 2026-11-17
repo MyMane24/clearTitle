@@ -8,6 +8,10 @@ Tables:
   title_chains          — Phase A property identity, graph, and detailed chain
   case_results          — legacy, dormant: former per-transaction verification rows
   case_memory           — legacy, dormant: former verification checkpoints
+  verification_case_files — verification agent memory, one JSON Case File per case
+  verification_runs     — one row per verification run (full or incremental)
+  verification_events   — the live step feed shown in the dashboard
+  due_diligence_reports — versioned due diligence reports
 
 Obsolete tables (cross_doc_verifications, human_feedback, llm_calls, the
 evidence_requirements ledger and the daily_cost_summary view) are dropped
@@ -122,6 +126,51 @@ CREATE TABLE IF NOT EXISTS case_memory (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (case_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS verification_case_files (
+    case_id VARCHAR(32) NOT NULL,
+    version INT NOT NULL DEFAULT 0,
+    data JSON NOT NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (case_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS verification_runs (
+    id CHAR(36) NOT NULL,
+    case_id VARCHAR(32) NOT NULL,
+    kind VARCHAR(16) NOT NULL,
+    status VARCHAR(16) NOT NULL,
+    usage_json JSON NULL,
+    error TEXT NULL,
+    started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at TIMESTAMP NULL DEFAULT NULL,
+    PRIMARY KEY (id),
+    KEY idx_case_started (case_id, started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS verification_events (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    case_id VARCHAR(32) NOT NULL,
+    run_id CHAR(36) NOT NULL,
+    kind VARCHAR(32) NOT NULL,
+    text TEXT NOT NULL,
+    ref VARCHAR(64) NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_case_event (case_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS due_diligence_reports (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    case_id VARCHAR(32) NOT NULL,
+    version INT NOT NULL,
+    opinion VARCHAR(32) NOT NULL,
+    report JSON NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_case_version (case_id, version)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 """
 

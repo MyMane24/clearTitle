@@ -68,6 +68,22 @@ CLEARTITLE_AGENT_MODEL = os.getenv("CLEARTITLE_AGENT_MODEL", "GPT-6 Luna")
 CLEARTITLE_CHAIN_MODEL_CALL_BUDGET = max(3, int(os.getenv("CLEARTITLE_CHAIN_MODEL_CALL_BUDGET", "16")))
 CLEARTITLE_AGENT_MAX_ATTEMPTS = max(1, int(os.getenv("CLEARTITLE_AGENT_MAX_ATTEMPTS", "5")))
 
+# -- Verification agent (specs/verification-agent/PLAN.md) ---------------------
+# Model per role; each defaults to CLEARTITLE_AGENT_MODEL on the same provider.
+VERIFY_LEAD_MODEL = os.getenv("VERIFY_LEAD_MODEL", "") or CLEARTITLE_AGENT_MODEL
+VERIFY_EXAMINER_MODEL = os.getenv("VERIFY_EXAMINER_MODEL", "") or CLEARTITLE_AGENT_MODEL
+VERIFY_REPORT_MODEL = os.getenv("VERIFY_REPORT_MODEL", "") or CLEARTITLE_AGENT_MODEL
+# Model calls the Lead may make in one run, and one Document Examiner per document.
+VERIFY_LEAD_CALL_BUDGET = max(5, int(os.getenv("VERIFY_LEAD_CALL_BUDGET", "80")))
+VERIFY_EXAMINER_CALL_BUDGET = max(2, int(os.getenv("VERIFY_EXAMINER_CALL_BUDGET", "12")))
+VERIFY_REPORT_CALL_BUDGET = max(1, int(os.getenv("VERIFY_REPORT_CALL_BUDGET", "6")))
+# Raw tool results kept in the Lead's context; older ones become one-line references.
+VERIFY_KEEP_TOOL_RESULTS = max(1, int(os.getenv("VERIFY_KEEP_TOOL_RESULTS", "6")))
+# ...and only while their combined text fits this many characters (the newest is always kept).
+VERIFY_KEEP_TOOL_CHARS = max(2000, int(os.getenv("VERIFY_KEEP_TOOL_CHARS", "24000")))
+# Characters of OCR text the Examiner reads per call.
+VERIFY_READ_CHUNK_CHARS = max(5000, int(os.getenv("VERIFY_READ_CHUNK_CHARS", "60000")))
+
 # Separate override for the single-call OCR classification/extraction stage.
 DOCUMENT_PROCESSOR_MODEL = os.getenv("DOCUMENT_PROCESSOR_MODEL", CLEARTITLE_AGENT_MODEL)
 DOCUMENT_CLASSIFICATION_TOKEN_BUDGET = int(os.getenv("DOCUMENT_CLASSIFICATION_TOKEN_BUDGET", "3000"))

@@ -10,6 +10,7 @@ celery_app = Celery(
         "backend.workers.finalize",
         "backend.workers.tasks",
         "backend.workers.title_chain_tasks",
+        "backend.workers.verification_tasks",
     ],
 )
 
