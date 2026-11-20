@@ -125,7 +125,7 @@ def test_insert_link_keeps_the_chain_continuous():
         [cite("D2010", 2, "under the partition of 2005")],
     )
     chain = ctx.deps.case.chain
-    assert message == "Inserted VL-1."
+    assert message.startswith("Inserted VL-1.")
     assert [link.link_id for link in chain] == ["PA-TC-0001", "VL-1", "PA-TC-0002", "PA-TC-0003"]
     assert chain[1].origin == "verification"
     assert chain[1].transaction.source_refs[0].filename == "deed-2010.pdf"
@@ -165,16 +165,17 @@ def test_correct_link_and_mark_break():
 
 def test_leads_and_requisitions():
     ctx, sink = make_ctx()
-    assert tools.open_lead(ctx, "2005 partition", "EC p.2") == "Opened L1."
+    assert tools.open_lead(ctx, "2005 partition", "EC p.2").startswith("Opened L1.")
     with pytest.raises(ModelRetry, match="Name the requisition that covers L1"):
         tools.resolve_lead(ctx, "L1", "requisition", "Deed needed.")
-    assert tools.add_requisition(ctx, "Partition deed of 2005", "B's title", ["L1"]) == "Added R1."
+    added = tools.add_requisition(ctx, "Partition deed of 2005", "B's title", ["L1"])
+    assert added.startswith("Added R1.")
     duplicate = tools.add_requisition(ctx, "partition deed of  2005", "x", ["PA-TC-0001"])
     assert "Already requested as R1" in duplicate
     assert ctx.deps.case.requisition("R1").affects == ["L1", "PA-TC-0001"]
     tools.resolve_lead(ctx, "L1", "requisition", "Deed needed.", requisition_id="R1")
     assert ctx.deps.case.lead("L1").status == "resolved"
-    assert sink.texts("requisition") == ["Needed (R1): Partition deed of 2005"]
+    assert sink.texts("requisition") == ["Document needed: Partition deed of 2005"]
 
 
 def test_requisition_must_affect_known_ids():
@@ -183,7 +184,7 @@ def test_requisition_must_affect_known_ids():
         tools.add_requisition(ctx, "Deed", "x", ["NOPE"])
 
 
-def test_issue_and_tasks():
+def test_record_issue():
     ctx, _ = make_ctx()
     tools.record_issue(
         ctx,
@@ -193,25 +194,52 @@ def test_issue_and_tasks():
         citations=[cite("EC", 2, "Mortgage by Chandrashekar to Canara Bank")],
     )
     assert ctx.deps.case.issues[0].id == "I1"
-    plan = tools.update_tasks(ctx, [tools.TaskUpdate(text="Examine EC")])
-    assert "T1 [pending] Examine EC" in plan
-    tools.update_tasks(ctx, [tools.TaskUpdate(id="T1", status="done")])
-    assert ctx.deps.case.tasks[0].status == "done"
 
 
-def test_read_pages_and_unknown_skill():
-    ctx, sink = make_ctx()
+def test_buyer_facing_text_refuses_internal_ids():
+    ctx, _ = make_ctx()
+    with pytest.raises(ModelRetry, match="mentions internal ids"):
+        tools.record_issue(ctx, "high", "See PA-TC-0002", "The 2019 sale is defective.")
+    with pytest.raises(ModelRetry, match="mentions internal ids"):
+        tools.open_lead(ctx, "Check DOC_018", "EC p.2")
+    tools.open_lead(ctx, "Heirs of Gundappa", "Death certificate")
+    with pytest.raises(ModelRetry, match="mentions internal ids"):
+        tools.resolve_lead(ctx, "L1", "not_material", "Covered by R1.")
+
+
+def test_read_pages():
+    ctx, _ = make_ctx()
     text = tools.read_pages(ctx, "D2010", 2, 2)
     assert "--- Page 2 ---" in text and "partition of 2005" in text
-    with pytest.raises(ModelRetry, match="No skill named"):
-        tools.load_skill(ctx, "nonexistent_skill")
+
+
+def test_one_requisition_closes_its_leads_in_the_same_call():
+    ctx, sink = make_ctx()
+    tools.open_lead(ctx, "Heirs of Gundappa", "Death certificate")
+    tools.open_lead(ctx, "Heirship shares", "Family certificate")
+    reply = tools.add_requisition(
+        ctx, "Legal heir certificate", "Heirship", ["PA-TC-0003"], closes_leads=["L1", "L2"]
+    )
+    assert reply.startswith("Added R1.")
+    assert all(lead.status == "resolved" for lead in ctx.deps.case.leads)
+    assert ctx.deps.case.requisition("R1").affects == ["PA-TC-0003", "L1", "L2"]
+    with pytest.raises(ModelRetry, match="L9 is not an open lead"):
+        tools.add_requisition(ctx, "Other", "x", ["PA-TC-0001"], closes_leads=["L9"])
+
+
+def test_every_change_replies_with_what_is_still_to_do():
+    ctx, _ = make_ctx()
+    reply = tools.open_lead(ctx, "2005 partition", "EC p.2")
+    assert "Still to do:" in reply
+    assert "no verdict: PA-TC-0001, PA-TC-0002, PA-TC-0003" in reply
+    assert "open leads: L1" in reply
 
 
 def test_resolving_a_lead_by_requisition_links_it_automatically():
     ctx, _ = make_ctx()
     tools.open_lead(ctx, "Heirs of Gundappa", "Death certificate")
     tools.add_requisition(ctx, "Legal heir certificate", "Heirship", ["PA-TC-0003"])
-    tools.resolve_lead(ctx, "L1", "requisition", "Covered by R1.", requisition_id="R1")
+    tools.resolve_lead(ctx, "L1", "requisition", "Covered by the request.", requisition_id="R1")
     assert ctx.deps.case.requisition("R1").affects == ["PA-TC-0003", "L1"]
     with pytest.raises(ModelRetry, match="open: R1"):
         tools.open_lead(ctx, "Another", "x") and tools.resolve_lead(ctx, "L2", "requisition", "x")

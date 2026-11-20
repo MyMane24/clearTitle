@@ -9,6 +9,7 @@ with the Case File, and lists what changed since the previous version.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 
 from pydantic_ai import Agent, ModelRetry, RunContext, UsageLimits
@@ -19,12 +20,16 @@ from backend.schemas.due_diligence import (
     DEFAULT_SECTIONS,
     WRITTEN_SECTION_IDS,
     DueDiligenceReport,
+    Finding,
+    FindingsBlock,
     Opinion,
+    ParagraphBlock,
     Section,
     TableBlock,
     WrittenReport,
 )
 from backend.services.verification.case_file import CaseFile
+from backend.services.verification.tools import VERDICT_WORDS, transfer_name
 
 
 @dataclass
@@ -86,16 +91,6 @@ def report_problems(case: CaseFile, written: WrittenReport) -> list[str]:
     unknown = sorted(refs - known)
     if unknown:
         problems.append(f"Unknown ids in refs: {', '.join(unknown)}. Use Case File ids only.")
-    scrutiny = sections.get("transaction_scrutiny")
-    if scrutiny is not None:
-        missing = [link.link_id for link in case.chain if link.link_id not in scrutiny.refs()]
-        if missing:
-            problems.append(f"transaction_scrutiny has no finding for: {', '.join(missing)}.")
-    red_flags = sections.get("red_flags")
-    if red_flags is not None:
-        missing = [issue.id for issue in case.issues if issue.id not in red_flags.refs()]
-        if missing:
-            problems.append(f"red_flags does not cover: {', '.join(missing)}.")
     problems += opinion_problems(case, written.opinion)
     return problems
 
@@ -111,78 +106,158 @@ def check_written_report(ctx: RunContext[ReportDeps], written: WrittenReport) ->
 # -- Built sections and versioning --------------------------------------------
 
 
-def _documents_section(case: CaseFile) -> Section:
-    rows = [
-        [
-            entry.doc_id,
-            entry.document_type,
-            entry.filename,
-            "Examined in full"
-            if entry.examined
-            else f"Not examined: {entry.examination_error or 'pending'}",
-        ]
-        for entry in case.documents.values()
-    ]
-    return Section(
-        id="documents_examined",
-        title="Documents examined",
-        blocks=[
-            TableBlock(
-                columns=["Document", "Type", "File", "Status"],
-                rows=rows,
-                refs=list(case.documents),
-            )
-        ],
+def _transfer_name(link) -> str:
+    match = re.search(
+        r"(19|20)\d{2}", link.transaction.executed_date or link.transaction.registration_date or ""
     )
+    year = f" of {match.group(0)}" if match else ""
+    kind = link.transaction.transaction_type.replace("_", " ")
+    return f"{kind}{year}"
+
+
+def case_issues(case: CaseFile) -> list[Finding]:
+    """Every problem a buyer must know about, most serious first.
+
+    Recorded issues, plus defects and breaks in the chain that no recorded
+    issue already covers, so nothing serious is left out of the report.
+    """
+    findings = [
+        Finding(
+            title=issue.title,
+            text=issue.detail,
+            severity=issue.severity,
+            refs=[issue.id, *issue.link_ids],
+        )
+        for issue in case.issues
+    ]
+    covered = {link_id for issue in case.issues for link_id in issue.link_ids}
+    for link in case.chain:
+        if link.link_id in covered:
+            continue
+        if link.verdict and link.verdict.verdict == "defective":
+            findings.append(
+                Finding(
+                    title=f"{_transfer_name(link)} is defective",
+                    text=link.verdict.summary,
+                    severity="high",
+                    refs=[link.link_id],
+                )
+            )
+    for index, link in enumerate(case.chain):
+        if index and not link.continues_previous and link.link_id not in covered:
+            findings.append(
+                Finding(
+                    title=f"Break in the title chain before the {_transfer_name(link).lower()}",
+                    text=link.break_note or "No document shows how ownership passed.",
+                    severity="high",
+                    refs=[link.link_id],
+                )
+            )
+    order = {"high": 0, "medium": 1, "low": 2}
+    return sorted(findings, key=lambda finding: order.get(finding.severity or "low", 3))
+
+
+def _issues_section(case: CaseFile) -> Section:
+    items = case_issues(case)
+    blocks = (
+        [FindingsBlock(items=items)]
+        if items
+        else [ParagraphBlock(text="No issues were found in the documents examined.")]
+    )
+    return Section(id="issues", title="Issues identified", blocks=blocks)
 
 
 def _requisitions_section(case: CaseFile) -> Section:
-    rows = [
-        [item.id, item.document, item.reason, ", ".join(item.affects), item.status]
-        for item in case.requisitions
-    ]
+    rows = [[item.document, item.reason, item.status] for item in case.requisitions]
     return Section(
         id="requisitions",
-        title="Requisitions",
+        title="Documents needed",
         blocks=[
             TableBlock(
-                columns=["Id", "Document required", "Why", "Affects", "Status"],
-                rows=rows or [["-", "No further documents required", "", "", ""]],
+                columns=["Document needed", "Why it is needed", "Status"],
+                rows=rows or [["No further documents are needed", "", ""]],
                 refs=[item.id for item in case.requisitions],
             )
         ],
     )
 
 
+OPINION_WORDS = {
+    "CLEAR": "clear",
+    "CLEAR_SUBJECT_TO": "clear subject to conditions",
+    "NOT_CLEAR": "not clear",
+}
+
+
 def basis(case: CaseFile, opinion: str) -> dict:
-    """What a report rests on, to compare one version with the next."""
+    """What a report rests on, with readable names, to compare one version with the next."""
     return {
         "opinion": opinion,
         "links": {
-            link.link_id: link.verdict.verdict if link.verdict else None for link in case.chain
+            link.link_id: {
+                "name": transfer_name(link),
+                "verdict": link.verdict.verdict if link.verdict else None,
+            }
+            for link in case.chain
         },
-        "issues": {issue.id: f"{issue.severity}: {issue.title}" for issue in case.issues},
-        "requisitions": {item.id: item.status for item in case.requisitions},
+        "issues": {issue.id: issue.title for issue in case.issues},
+        "requisitions": {
+            item.id: {"document": item.document, "status": item.status}
+            for item in case.requisitions
+        },
     }
 
 
+def _entry(value, key: str, fallback: str):
+    """Read a basis entry; reports saved before readable names stored bare values."""
+    return value.get(key, fallback) if isinstance(value, dict) else fallback
+
+
+def _verdict_words(verdict) -> str:
+    return VERDICT_WORDS.get(verdict, "not yet judged") if verdict else "not yet judged"
+
+
 def changes(previous: dict, current: dict) -> list[str]:
-    """Plain-language differences between two report bases."""
+    """Plain-language differences between two report versions, without internal ids."""
     if not previous:
         return []
     lines = []
     if previous.get("opinion") != current["opinion"]:
-        lines.append(f"Opinion changed from {previous.get('opinion')} to {current['opinion']}.")
-    for key, label in (("links", "Transaction"), ("requisitions", "Requisition")):
-        before, after = previous.get(key, {}), current[key]
-        for item_id, value in after.items():
-            if item_id not in before:
-                lines.append(f"{label} {item_id} added ({value}).")
-            elif before[item_id] != value:
-                lines.append(f"{label} {item_id}: {before[item_id]} -> {value}.")
-        lines += [f"{label} {item_id} removed." for item_id in before if item_id not in after]
-    before_issues, after_issues = previous.get("issues", {}), current["issues"]
-    lines += [f"New issue {i}: {t}." for i, t in after_issues.items() if i not in before_issues]
+        before = OPINION_WORDS.get(previous.get("opinion"), "unknown")
+        lines.append(f"The opinion changed from {before} to {OPINION_WORDS[current['opinion']]}.")
+    old_links, new_links = previous.get("links", {}), current["links"]
+    for link_id, value in new_links.items():
+        name = value["name"].capitalize()
+        verdict = value["verdict"]
+        if link_id not in old_links:
+            lines.append(f"{name} was added to the title chain ({_verdict_words(verdict)}).")
+            continue
+        old = old_links[link_id]
+        old_verdict = old.get("verdict") if isinstance(old, dict) else old
+        if old_verdict != verdict:
+            lines.append(
+                f"{name}: now {_verdict_words(verdict)} (before: {_verdict_words(old_verdict)})."
+            )
+    for link_id, old in old_links.items():
+        if link_id not in new_links:
+            name = _entry(old, "name", "a transfer")
+            lines.append(f"{name.capitalize()} was removed from the title chain.")
+    old_reqs, new_reqs = previous.get("requisitions", {}), current["requisitions"]
+    for req_id, value in new_reqs.items():
+        document, status = value["document"], value["status"]
+        old_status = _entry(old_reqs.get(req_id), "status", old_reqs.get(req_id))
+        if req_id not in old_reqs:
+            lines.append(f"A new document is needed: {document}.")
+        elif old_status != status and status == "resolved":
+            lines.append(f"Received and accepted: {document}.")
+        elif old_status != status and status == "open":
+            lines.append(f"Still needed after review: {document}.")
+    old_issues = previous.get("issues", {})
+    lines += [
+        f"New issue: {title}."
+        for issue_id, title in current["issues"].items()
+        if issue_id not in old_issues
+    ]
     return lines
 
 
@@ -191,7 +266,7 @@ def assemble(
 ) -> DueDiligenceReport:
     """Merge the written sections with the built ones, in the standard order."""
     built = {
-        "documents_examined": _documents_section(case),
+        "issues": _issues_section(case),
         "requisitions": _requisitions_section(case),
     }
     by_id = {section.id: section for section in written.sections if section.id not in built}
@@ -226,7 +301,8 @@ def report_input(case: CaseFile) -> str:
         entry["examined_summary"] = report["summary"] if report else None
     return "\n".join(
         [
-            "Write the due diligence report. Sections, in this order:",
+            "Write the due diligence report: property_summary, opinion, opinion_reasons, and "
+            "only these sections (issues and documents needed are added by the application):",
             *section_lines,
             "",
             "CASE FILE (JSON):",

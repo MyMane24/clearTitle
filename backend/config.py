@@ -73,16 +73,14 @@ CLEARTITLE_AGENT_MAX_ATTEMPTS = max(1, int(os.getenv("CLEARTITLE_AGENT_MAX_ATTEM
 VERIFY_LEAD_MODEL = os.getenv("VERIFY_LEAD_MODEL", "") or CLEARTITLE_AGENT_MODEL
 VERIFY_EXAMINER_MODEL = os.getenv("VERIFY_EXAMINER_MODEL", "") or CLEARTITLE_AGENT_MODEL
 VERIFY_REPORT_MODEL = os.getenv("VERIFY_REPORT_MODEL", "") or CLEARTITLE_AGENT_MODEL
-# Model calls the Lead may make in one run, and one Document Examiner per document.
+# Model calls the Lead may make in one run (the Document Examiner makes one call per document).
 VERIFY_LEAD_CALL_BUDGET = max(5, int(os.getenv("VERIFY_LEAD_CALL_BUDGET", "80")))
-VERIFY_EXAMINER_CALL_BUDGET = max(2, int(os.getenv("VERIFY_EXAMINER_CALL_BUDGET", "12")))
 VERIFY_REPORT_CALL_BUDGET = max(1, int(os.getenv("VERIFY_REPORT_CALL_BUDGET", "6")))
-# Raw tool results kept in the Lead's context; older ones become one-line references.
-VERIFY_KEEP_TOOL_RESULTS = max(1, int(os.getenv("VERIFY_KEEP_TOOL_RESULTS", "6")))
-# ...and only while their combined text fits this many characters (the newest is always kept).
-VERIFY_KEEP_TOOL_CHARS = max(2000, int(os.getenv("VERIFY_KEEP_TOOL_CHARS", "24000")))
-# Characters of OCR text the Examiner reads per call.
-VERIFY_READ_CHUNK_CHARS = max(5000, int(os.getenv("VERIFY_READ_CHUNK_CHARS", "60000")))
+# Lead history stays append-only (cache-friendly) until its tool traffic passes this many
+# characters; then older tool results and long arguments are cleared in one go.
+VERIFY_COMPACT_AT_CHARS = max(10000, int(os.getenv("VERIFY_COMPACT_AT_CHARS", "60000")))
+# A run stops (status incomplete, progress saved) once its estimated model cost passes this.
+VERIFY_RUN_COST_LIMIT_USD = float(os.getenv("VERIFY_RUN_COST_LIMIT_USD", "0.50"))
 
 # Separate override for the single-call OCR classification/extraction stage.
 DOCUMENT_PROCESSOR_MODEL = os.getenv("DOCUMENT_PROCESSOR_MODEL", CLEARTITLE_AGENT_MODEL)

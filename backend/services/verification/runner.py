@@ -22,11 +22,13 @@ from backend.config import (
     VERIFY_LEAD_CALL_BUDGET,
     VERIFY_LEAD_MODEL,
     VERIFY_REPORT_MODEL,
+    VERIFY_RUN_COST_LIMIT_USD,
 )
 from backend.logger import get_logger
 from backend.services.verification import case_file as cf
 from backend.services.verification.agents import lead_agent
 from backend.services.verification.context import render_case_file
+from backend.services.verification.cost import CostLimitError, estimate_cost
 from backend.services.verification.deps import TextCache, VerifyDeps
 from backend.services.verification.events import record_node
 from backend.services.verification.report import write_report
@@ -35,6 +37,22 @@ from backend.services.verification.store import Store
 logger = get_logger(__name__)
 
 DONE, INCOMPLETE, ERROR = "done", "incomplete", "error"
+
+
+def check_cost(lead_usage: RunUsage, sub_usage: RunUsage) -> None:
+    """Stop the run once its estimated cost passes ``VERIFY_RUN_COST_LIMIT_USD``.
+
+    Raises:
+        CostLimitError: The Lead and examiner calls so far cost more than the cap.
+    """
+    lead = estimate_cost(lead_usage, VERIFY_LEAD_MODEL)
+    sub = estimate_cost(sub_usage, VERIFY_EXAMINER_MODEL)
+    if lead is None or sub is None:
+        return
+    if lead + sub > VERIFY_RUN_COST_LIMIT_USD:
+        raise CostLimitError(
+            f"the run's estimated cost ${lead + sub:.3f} passed the ${VERIFY_RUN_COST_LIMIT_USD:.2f} cap"
+        )
 
 
 @dataclass
@@ -161,6 +179,7 @@ async def run(case_id: str, *, store: Store, models: Models, kind: str = "full")
             async for node in agent_run:
                 record_node(node, emit)
                 version = store.save_case_file(case, version)
+                check_cost(agent_run.usage, deps.sub_usage)
             closing = agent_run.result.output.summary
         emit("run", "All checks closed. Writing the due diligence report.", run_id)
         previous = store.latest_report(case_id)
@@ -177,6 +196,9 @@ async def run(case_id: str, *, store: Store, models: Models, kind: str = "full")
     except UsageLimitExceeded as exc:
         status, error = INCOMPLETE, f"model-call budget reached: {exc}"
         emit("run", "Stopped: the model-call budget was reached. Run again to continue.", run_id)
+    except CostLimitError as exc:
+        status, error = INCOMPLETE, str(exc)
+        emit("run", f"Stopped: {exc}. Progress is saved; run again to continue.", run_id)
     except Exception as exc:
         logger.exception("verification_failed case_id=%s run_id=%s", case_id, run_id)
         status, error = ERROR, f"{type(exc).__name__}: {exc}"

@@ -8,6 +8,7 @@ examines only the uploaded document and writes report v2 with its changes.
 """
 
 import asyncio
+import re
 
 from pydantic_ai import ModelResponse, ToolCallPart, models
 from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
@@ -26,6 +27,8 @@ from backend.tests.verification_fixtures import (
 
 models.ALLOW_MODEL_REQUESTS = False
 
+INTERNAL_ID = re.compile(r"\b(?:PA-TC-\d+|VL-\d+|DOC_\d+|[RLI]\d{1,3})\b")
+
 PARTITION_TEXT = (
     "--- Page 1 ---\nPartition deed 2005 among Basavaraj, Bhimappa and Bharathi.\n"
     "Schedule B allotted to Basavaraj: Sy.No.45, 2 acres 10 guntas.\n"
@@ -33,7 +36,7 @@ PARTITION_TEXT = (
 
 
 def fake_examiner(seen):
-    """Examines any document: reads it, then reports a quote from its first page."""
+    """Examines any document in one call: reports a quote from its first page."""
 
     def respond(messages, info):
         brief = next(
@@ -44,15 +47,7 @@ def fake_examiner(seen):
             if isinstance(part, UserPromptPart)
         )
         doc_id = brief.split("Document: ")[1].split(" |")[0]
-        has_read = any(
-            isinstance(part, ToolReturnPart) and part.tool_name == "read_next"
-            for message in messages
-            if isinstance(message, ModelRequest)
-            for part in message.parts
-        )
-        if not has_read:
-            seen.append(doc_id)
-            return ModelResponse(parts=[ToolCallPart("read_next", {})])
+        seen.append(doc_id)
         first_line = split_pages(ALL_TEXTS[doc_id])[1].splitlines()[0][:30]
         report = {
             "doc_id": doc_id,
@@ -91,7 +86,7 @@ PARTITION_LINK = {
 }
 
 FULL_RUN_STEPS = [
-    [("update_tasks", {"items": [{"text": "Examine all documents"}]})],
+    [("view_case_file", {})],
     [
         ("examine_document", {"doc_id": doc, "focus_questions": ["Parties and recitals?"]})
         for doc in ("EC", "D1998", "D2010", "D2018")
@@ -175,30 +170,16 @@ FULL_RUN_STEPS = [
 
 
 def written_report(opinion):
-    def section(sid, refs, kind="paragraph"):
-        if kind == "findings":
-            items = [{"title": ref, "text": f"About {ref}.", "refs": [ref]} for ref in refs]
-            return {"id": sid, "title": sid, "blocks": [{"type": "findings", "items": items}]}
-        return {
-            "id": sid,
-            "title": sid,
-            "blocks": [{"type": "paragraph", "text": f"{sid}.", "refs": list(refs)}],
-        }
-
-    links = ["PA-TC-0001", "VL-1", "PA-TC-0002", "PA-TC-0003"]
     return {
-        "property_summary": "Sy.No.45, Hosahalli, 2 acres 10 guntas, owned by Deepa.",
+        "property_summary": "Sy.No.45, Hosahalli, owned by Deepa.",
         "opinion": opinion,
         "opinion_reasons": [{"text": "Minor's share sold without permission.", "refs": ["I1"]}],
         "sections": [
-            section("property_schedule", []),
-            section("flow_of_title", links),
-            section("transaction_scrutiny", links, "findings"),
-            section("encumbrances", ["EC"]),
-            section("revenue_records", []),
-            section("land_use", []),
-            section("red_flags", ["I1"], "findings"),
-            section("limitations", []),
+            {
+                "id": "limitations",
+                "title": "Limitations",
+                "blocks": [{"type": "paragraph", "text": "Rests on these documents.", "refs": []}],
+            }
         ],
     }
 
@@ -233,9 +214,9 @@ def test_full_run_closes_the_chain_and_writes_report_v1():
 
     report = store.reports[-1]
     assert report.version == 1 and report.opinion == "NOT_CLEAR"
-    section_ids = [section.id for section in report.sections]
-    assert section_ids[:2] == ["property_schedule", "documents_examined"]
-    assert "requisitions" in section_ids
+    assert [section.id for section in report.sections] == ["issues", "requisitions", "limitations"]
+    issues = report.sections[0].blocks[0].items
+    assert issues[0].severity == "high"  # the minor's-share issue, most serious first
 
     lead_messages, report_messages = messages
     refused_closes = [
@@ -249,9 +230,10 @@ def test_full_run_closes_the_chain_and_writes_report_v1():
     assert any("must be NOT_CLEAR" in p for p in retry_prompts(report_messages))  # CLEAR refused
 
     feed = store.events.texts()
-    assert any("Discovered (L1)" in line for line in feed)
-    assert any("Added VL-1" in line for line in feed)
+    assert any("Found something to follow up" in line for line in feed)
+    assert any("Added a transfer to the chain: the partition." in line for line in feed)
     assert any("Report v1: NOT CLEAR" in line for line in feed)
+    assert not any(INTERNAL_ID.search(line) for line in feed)
     assert store.runs[outcome["run_id"]]["status"] == "done"
 
 
@@ -309,8 +291,12 @@ def test_incremental_run_examines_only_the_uploaded_document():
     assert seen == ["PD2005"]  # nothing else re-examined
     v2 = store.reports[-1]
     assert v2.version == 2
-    assert "Transaction VL-1: unverified_missing_document -> verified." in v2.changes_since_previous
-    assert "Requisition R1: open -> resolved." in v2.changes_since_previous
+    assert (
+        "The partition: now verified (before: cannot be verified until a document is provided)."
+        in v2.changes_since_previous
+    )
+    assert "Received and accepted: Partition deed of 2005." in v2.changes_since_previous
+    assert not any(INTERNAL_ID.search(line) for line in v2.changes_since_previous)
     case = runner.prepare_case_file(store, "CASE1")[0]
     assert case.link("PA-TC-0002").verdict.verdict == "defective"  # kept from v1
 
@@ -357,3 +343,15 @@ def test_no_title_chain_means_no_run():
     store = MemoryStore(None, list(DOCUMENTS), {})
     outcome = asyncio.run(runner.run("CASE1", store=store, models=None))
     assert outcome["status"] == "error" and "title chain" in outcome["reason"]
+
+
+def test_cost_cap_stops_the_run_as_incomplete(monkeypatch):
+    monkeypatch.setattr(runner, "VERIFY_RUN_COST_LIMIT_USD", 0.05)
+    monkeypatch.setattr(runner, "estimate_cost", lambda usage, model: 0.03)  # 0.06 > 0.05
+    store = MemoryStore(phase_a_result(), list(DOCUMENTS), dict(ALL_TEXTS))
+    lead = scripted_model(*[[("view_case_file", {})]] * 5)
+    models_ = runner.Models(lead=lead, examiner=None, report=None)
+    outcome = asyncio.run(runner.run("CASE1", store=store, models=models_))
+    assert outcome["status"] == "incomplete" and "cap" in outcome["error"]
+    assert store.reports == []
+    assert store.case_file is not None  # progress saved

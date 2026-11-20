@@ -216,13 +216,31 @@ def _no_open_leads(ctx: GateContext) -> list[str]:
     ]
 
 
-def _every_document_examined(ctx: GateContext) -> list[str]:
-    unexamined = [
-        doc_id
-        for doc_id, entry in ctx.case.documents.items()
-        if not entry.examined and not entry.examination_error
+def unexamined_link_sources(case) -> dict[str, list[str]]:
+    """Per link, its own source documents that are not examined (and not unreadable).
+
+    Only documents needed for a transaction must be read; documents unrelated to
+    any transaction may stay unread.
+    """
+    missing: dict[str, list[str]] = {}
+    for link in case.chain:
+        docs = [
+            ref.doc_id
+            for ref in link.transaction.source_refs
+            if (entry := case.documents.get(ref.doc_id))
+            and not entry.examined
+            and not entry.examination_error
+        ]
+        if docs:
+            missing[link.link_id] = docs
+    return missing
+
+
+def _link_sources_examined(ctx: GateContext) -> list[str]:
+    return [
+        f"{link_id} rests on documents not yet examined: {', '.join(docs)}."
+        for link_id, docs in unexamined_link_sources(ctx.case).items()
     ]
-    return [f"Not yet examined: {', '.join(unexamined)}."] if unexamined else []
 
 
 def _requisitions_name_what_they_affect(ctx: GateContext) -> list[str]:
@@ -262,7 +280,7 @@ CLOSURE_GATES: list[Gate] = [
     _every_link_has_a_verdict,
     _every_break_is_recorded,
     _no_open_leads,
-    _every_document_examined,
+    _link_sources_examined,
     _requisitions_name_what_they_affect,
     _missing_document_verdicts_have_requisitions,
     _arrived_documents_reviewed,

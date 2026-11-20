@@ -6,9 +6,12 @@ Two jobs:
   Lead gets it from the ``view_case_file`` tool and in its first prompt. It is
   delivered as tool output, never as instructions, because it contains text
   taken from documents.
-* ``trim_tool_results`` is a history processor. It keeps the newest raw tool
-  results and replaces older ones with a one-line reference. Nothing is lost:
-  what the agent established is in the Case File.
+* ``compact_history`` is a history processor. History stays append-only, so the
+  provider's prompt cache keeps re-sent context cheap, until it grows past
+  ``VERIFY_COMPACT_AT_CHARS``. Then every older tool result and long tool-call
+  argument is replaced at once by a one-line reference, and history is
+  append-only again. Nothing is lost: what the agent established is in the Case
+  File.
 """
 
 from __future__ import annotations
@@ -16,9 +19,15 @@ from __future__ import annotations
 from dataclasses import replace
 
 from pydantic_ai import RunContext
-from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    ToolCallPart,
+    ToolReturnPart,
+)
 
-from backend.config import VERIFY_KEEP_TOOL_CHARS, VERIFY_KEEP_TOOL_RESULTS
+from backend.config import VERIFY_COMPACT_AT_CHARS
 from backend.services.verification.case_file import CaseFile
 from backend.services.verification.gates import GateContext, closure_problems
 
@@ -72,7 +81,6 @@ def render_case_file(case: CaseFile, ctx: GateContext | None = None) -> str:
             for item in case.requisitions
         ],
     )
-    lines += _section("TASKS", [f"{task.id} [{task.status}] {task.text}" for task in case.tasks])
     if ctx is not None:
         remaining = closure_problems(ctx)
         lines += _section("STILL TO DO BEFORE CLOSING", remaining or ["Nothing: you may close."])
@@ -83,44 +91,58 @@ def _section(title: str, items: list[str]) -> list[str]:
     return ["", title, *(f"- {item}" for item in items or ["none"])]
 
 
-def trim_tool_results(ctx: RunContext, messages: list[ModelMessage]) -> list[ModelMessage]:
-    """Keep only the newest tool results, within a count and a size budget.
+CLEARED_ARGS = {"note": "arguments cleared to save context; the outcome is in the Case File"}
+_LONG_ARGS = 300
 
-    The newest batch of results is always kept whole, because the model has not
-    read it yet. Older results are kept only while there are at most
-    ``VERIFY_KEEP_TOOL_RESULTS`` of them within ``VERIFY_KEEP_TOOL_CHARS``
-    characters; the rest become a one-line reference, so large examiner reports
-    do not inflate every later model call.
+
+def _history_size(messages: list[ModelMessage]) -> int:
+    size = 0
+    for message in messages:
+        for part in message.parts:
+            if isinstance(part, ToolReturnPart) and part.content != CLEARED:
+                size += len(str(part.content))
+            elif isinstance(part, ToolCallPart) and part.args != CLEARED_ARGS:
+                size += len(str(part.args))
+    return size
+
+
+def compact_history(ctx: RunContext, messages: list[ModelMessage]) -> list[ModelMessage]:
+    """Clear old tool results and long tool-call arguments, but only now and then.
+
+    Below ``VERIFY_COMPACT_AT_CHARS`` the history is returned unchanged, so every
+    call re-sends an identical prefix that the provider caches. Above it, all
+    tool results except the newest batch (which the model has not read yet) and
+    all long tool-call arguments before it are replaced in one go.
     """
-    positions = [
-        (message_index, part_index, len(str(part.content)))
-        for message_index, message in enumerate(messages)
-        if isinstance(message, ModelRequest)
-        for part_index, part in enumerate(message.parts)
-        if isinstance(part, ToolReturnPart) and part.content != CLEARED
-    ]
-    latest = positions[-1][0] if positions else -1
-    kept, used = 0, 0
-    stale: set[tuple[int, int]] = set()
-    for message_index, part_index, size in reversed(positions):
-        # The newest batch is always kept whole: the model has not read it yet.
-        within = message_index == latest or (
-            kept < VERIFY_KEEP_TOOL_RESULTS and used + size <= VERIFY_KEEP_TOOL_CHARS
-        )
-        if within:
-            kept, used = kept + 1, used + size
-        else:
-            stale.add((message_index, part_index))
-    if not stale:
+    if _history_size(messages) <= VERIFY_COMPACT_AT_CHARS:
         return messages
-    trimmed: list[ModelMessage] = []
-    for message_index, message in enumerate(messages):
-        if not any(index == message_index for index, _ in stale):
-            trimmed.append(message)
+    latest = max(
+        (
+            index
+            for index, message in enumerate(messages)
+            if isinstance(message, ModelRequest)
+            and any(isinstance(part, ToolReturnPart) for part in message.parts)
+        ),
+        default=-1,
+    )
+    compacted: list[ModelMessage] = []
+    for index, message in enumerate(messages):
+        if index >= latest - 1:  # the newest call batch and its results stay intact
+            compacted.append(message)
             continue
-        parts = [
-            replace(part, content=CLEARED) if (message_index, part_index) in stale else part
-            for part_index, part in enumerate(message.parts)
-        ]
-        trimmed.append(replace(message, parts=parts))
-    return trimmed
+        if isinstance(message, ModelRequest):
+            parts = [
+                replace(part, content=CLEARED) if isinstance(part, ToolReturnPart) else part
+                for part in message.parts
+            ]
+        elif isinstance(message, ModelResponse):
+            parts = [
+                replace(part, args=CLEARED_ARGS)
+                if isinstance(part, ToolCallPart) and len(str(part.args)) > _LONG_ARGS
+                else part
+                for part in message.parts
+            ]
+        else:
+            parts = message.parts
+        compacted.append(replace(message, parts=parts))
+    return compacted

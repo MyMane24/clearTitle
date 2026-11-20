@@ -14,7 +14,7 @@ from pydantic_ai.capabilities import ProcessHistory
 
 from backend.prompts.loader import load_prompt
 from backend.services.verification import skills
-from backend.services.verification.context import trim_tool_results
+from backend.services.verification.context import compact_history
 from backend.services.verification.deps import VerifyDeps
 from backend.services.verification.examiner import examiner_tools
 from backend.services.verification.gates import closure_problems
@@ -38,21 +38,19 @@ lead_agent = Agent(
     output_type=LeadClosure,
     instructions=load_prompt("verify_lead_system"),
     toolsets=LEAD_TOOLSETS,
-    capabilities=[ProcessHistory(trim_tool_results)],
+    capabilities=[ProcessHistory(compact_history)],
     retries={"tools": 3, "output": 6},
     name="lead_examiner",
 )
 
 
 @lead_agent.instructions
-def playbook(ctx: RunContext[VerifyDeps]) -> str:
-    """The lead playbook and the skill index (operator-written files, not document text)."""
-    return "\n\n".join(
-        [
-            skills.LEAD_PLAYBOOK.read_text(encoding="utf-8"),
-            "SKILL INDEX (load with load_skill):\n" + skills.skill_index(),
-        ]
-    )
+def playbooks(ctx: RunContext[VerifyDeps]) -> str:
+    """Every lawyer playbook (operator-written files, never document text).
+
+    The text is the same on every call, so it forms a stable, cacheable prefix.
+    """
+    return "PLAYBOOKS\n\n" + skills.all_playbooks()
 
 
 @lead_agent.output_validator

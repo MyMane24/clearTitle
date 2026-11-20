@@ -1,7 +1,8 @@
 # Playbook: Verify the title chain
 
-Follow this playbook in every verification run. Load the topic skills from the
-index when the case needs them.
+Follow this playbook in every verification run, with the topic playbooks after
+it (title link, succession, partition, GPA and capacity, minors, encumbrances,
+revenue records, land use and approvals) where the case needs them.
 
 > Draft structure. The legal content is to be confirmed and extended by the
 > product owner's lawyer instructions (see specs/verification-agent/TASKS.md, 8.2).
@@ -15,7 +16,9 @@ burden that title.
 
 ## Method
 
-1. **Plan.** Call `view_case_file`, then write a short plan with `update_tasks`.
+1. **Start.** Call `view_case_file` once to see the chain and documents. Read
+   only what verifying the transactions needs; decide from the document
+   summaries, never by reading everything.
 2. **History documents first.** Examine every encumbrance certificate, mutation
    record and RTC. Ask the examiner for every transfer, mortgage, release,
    attachment and change of holder, with dates and parties.
@@ -27,21 +30,21 @@ burden that title.
    open a lead, and after exhausting the documents, mark the break.
 4. **Each link's own instrument.** Examine the deed of each transfer, asking for
    vendors and their capacity, the schedule and extent, registration and stamp
-   duty, consideration, and the vendor's source of title. Load `title_link` and
-   any topic skill the transfer needs (`succession`, `partition`,
-   `gpa_and_capacity`, `minor_property`).
+   duty, consideration, and the vendor's source of title. Apply the title-link
+   playbook and any topic playbook the transfer needs (succession, partition,
+   GPA and capacity, minors).
 5. **Follow every lead.** Examine the documents that can settle it. If none is
-   uploaded, add a requisition and resolve the lead as covered by it.
-6. **Encumbrances.** Load `encumbrances`. Every mortgage or charge needs a
+   uploaded, add a requisition that names the lead in `closes_leads`.
+6. **Encumbrances.** Every mortgage or charge needs a
    matching release; every attachment or pending case is an issue.
-7. **Revenue records.** Load `revenue_records`. The RTC and mutation records
+7. **Revenue records.** The RTC and mutation records
    should follow each transfer; the current holder should be the current owner.
-8. **Land use and approvals.** Load `land_use_approvals` when the property is
+8. **Land use and approvals.** Check these when the property is
    or was agricultural land, a layout site, or a building.
 9. **Verdicts.** Record a verdict for every link. A link whose own instrument is
    missing is `unverified_missing_document` with a requisition naming it.
-10. **Close.** Call `view_case_file`, finish what "still to do" lists, then give
-    your closing summary.
+10. **Close.** When the latest "Still to do" says nothing is left, give your
+    closing summary.
 
 ## Incremental runs
 

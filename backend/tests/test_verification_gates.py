@@ -148,10 +148,19 @@ def test_open_lead_blocks_closure():
     assert any("Lead L1 is open" in p for p in gates.closure_problems(ctx))
 
 
-def test_unexamined_document_blocks_closure():
+def test_unexamined_source_of_a_transaction_blocks_closure():
     ctx = closable(context())
-    ctx.case.documents["D2018"].examined = False
-    assert any("Not yet examined: D2018" in p for p in gates.closure_problems(ctx))
+    ctx.case.documents["D2018"].examined = False  # source of PA-TC-0003
+    problems = gates.closure_problems(ctx)
+    assert any("PA-TC-0003 rests on documents not yet examined: D2018" in p for p in problems)
+
+
+def test_document_unrelated_to_any_transaction_may_stay_unread():
+    ctx = closable(context())
+    ctx.case.documents["TAX"] = cf.DocumentEntry(
+        doc_id="TAX", filename="tax.pdf", document_type="TAX_RECEIPT"
+    )
+    assert gates.closure_problems(ctx) == []
 
 
 def test_unrecorded_break_blocks_closure():

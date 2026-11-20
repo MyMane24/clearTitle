@@ -208,18 +208,54 @@ def test_opinion_rules_follow_the_case_file():
 
 
 def test_changes_between_report_versions():
-    before = {"opinion": "NOT_CLEAR", "links": {"A": None}, "issues": {}, "requisitions": {"R1": "open"}}
+    before = {
+        "opinion": "NOT_CLEAR",
+        "links": {"A": {"name": "the sale of 2010", "verdict": None}},
+        "issues": {},
+        "requisitions": {"R1": {"document": "Partition deed of 2005", "status": "open"}},
+    }
     after = {
         "opinion": "CLEAR_SUBJECT_TO",
-        "links": {"A": "verified", "B": "verified"},
-        "issues": {"I1": "low: note"},
-        "requisitions": {"R1": "resolved"},
+        "links": {
+            "A": {"name": "the sale of 2010", "verdict": "verified"},
+            "B": {"name": "the sale of 2012", "verdict": "verified"},
+        },
+        "issues": {"I1": "Mortgage not released"},
+        "requisitions": {"R1": {"document": "Partition deed of 2005", "status": "resolved"}},
     }
-    assert report_module.changes(before, after) == [
-        "Opinion changed from NOT_CLEAR to CLEAR_SUBJECT_TO.",
-        "Transaction A: None -> verified.",
-        "Transaction B added (verified).",
-        "Requisition R1: open -> resolved.",
-        "New issue I1: low: note.",
+    lines = report_module.changes(before, after)
+    assert lines == [
+        "The opinion changed from not clear to clear subject to conditions.",
+        "The sale of 2010: now verified (before: not yet judged).",
+        "The sale of 2012 was added to the title chain (verified).",
+        "Received and accepted: Partition deed of 2005.",
+        "New issue: Mortgage not released.",
     ]
+    assert "R1" not in " ".join(lines) and "I1" not in " ".join(lines)
     assert report_module.changes({}, after) == []
+
+
+def test_issues_section_adds_defects_and_breaks_no_issue_covers():
+    case = new_case_file()
+    defective = cf.LinkVerdict(
+        verdict="defective",
+        summary="Sellers' title not shown.",
+        checks=[cf.CheckResult(check="title", status="failed", note="x")],
+    )
+    case.chain[2].verdict = defective  # PA-TC-0003, 2018 sale
+    case.chain[1].continues_previous = False  # break before PA-TC-0002
+    case.chain[1].break_note = "No deed from Basavaraj."
+    case.issues.append(
+        cf.Issue(id="I1", severity="medium", title="Mortgage not released", detail="Canara Bank.")
+    )
+    items = report_module.case_issues(case)
+    assert [item.title for item in items] == [
+        "Sale of 2018 is defective",
+        "Break in the title chain before the sale of 2010",
+        "Mortgage not released",
+    ]
+    case.issues.append(
+        cf.Issue(id="I2", severity="high", title="Bad 2018 sale", detail="x", link_ids=["PA-TC-0003"])
+    )
+    titles = [item.title for item in report_module.case_issues(case)]
+    assert "Sale of 2018 is defective" not in titles  # covered by the recorded issue

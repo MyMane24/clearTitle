@@ -1,4 +1,4 @@
-"""Context engineering: old tool results are cleared, skills are indexed, events are readable."""
+"""Context engineering: append-only history until compaction, playbooks, readable events."""
 
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolCallPart, ToolReturnPart
 
@@ -6,60 +6,64 @@ from backend.services.verification import context, skills
 from backend.services.verification.events import ListSink, record_node
 
 
-def tool_round(index):
-    call = ModelResponse(parts=[ToolCallPart("read_pages", {"doc_id": "D"}, f"call-{index}")])
-    result = ModelRequest(parts=[ToolReturnPart("read_pages", f"page text {index}", f"call-{index}")])
+def tool_round(index, size=20, args_size=10):
+    call = ModelResponse(
+        parts=[ToolCallPart("record_issue", {"detail": "d" * args_size}, f"call-{index}")]
+    )
+    result = ModelRequest(parts=[ToolReturnPart("record_issue", "r" * size, f"call-{index}")])
     return [call, result]
 
 
-def test_only_the_newest_tool_results_are_kept(monkeypatch):
-    monkeypatch.setattr(context, "VERIFY_KEEP_TOOL_RESULTS", 2)
-    messages = [message for index in range(5) for message in tool_round(index)]
-    trimmed = context.trim_tool_results(None, messages)
-    contents = [
-        part.content
-        for message in trimmed
-        if isinstance(message, ModelRequest)
-        for part in message.parts
-    ]
-    assert contents == [context.CLEARED] * 3 + ["page text 3", "page text 4"]
-    # Call/return pairing is preserved and the originals are not mutated.
-    assert len(trimmed) == len(messages)
-    assert messages[1].parts[0].content == "page text 0"
-
-
-def test_context_stays_bounded_over_many_tool_calls(monkeypatch):
-    monkeypatch.setattr(context, "VERIFY_KEEP_TOOL_RESULTS", 3)
-    messages = []
-    for index in range(50):
-        messages = context.trim_tool_results(None, [*messages, *tool_round(index)])
-    raw = [
+def returns(messages):
+    return [
         part.content
         for message in messages
         if isinstance(message, ModelRequest)
         for part in message.parts
-        if part.content != context.CLEARED
+        if isinstance(part, ToolReturnPart)
     ]
-    assert raw == ["page text 47", "page text 48", "page text 49"]
 
 
-def test_skill_index_and_loading(tmp_path):
+def test_history_is_unchanged_below_the_threshold(monkeypatch):
+    monkeypatch.setattr(context, "VERIFY_COMPACT_AT_CHARS", 10_000)
+    messages = [message for index in range(5) for message in tool_round(index)]
+    assert context.compact_history(None, messages) is messages  # identical prefix: cacheable
+
+
+def test_compaction_clears_old_results_and_long_args_but_keeps_the_newest_batch(monkeypatch):
+    monkeypatch.setattr(context, "VERIFY_COMPACT_AT_CHARS", 500)
+    messages = [m for index in range(5) for m in tool_round(index, size=200, args_size=400)]
+    compacted = context.compact_history(None, messages)
+    assert returns(compacted) == [context.CLEARED] * 4 + ["r" * 200]
+    calls = [p for m in compacted if isinstance(m, ModelResponse) for p in m.parts]
+    assert all(call.args == context.CLEARED_ARGS for call in calls[:-1])
+    assert calls[-1].args == {"detail": "d" * 400}  # the newest call is intact
+    assert len(compacted) == len(messages)  # call/return pairs preserved
+    assert messages[1].parts[0].content == "r" * 200  # originals not mutated
+
+
+def test_after_compaction_history_is_append_only_again(monkeypatch):
+    monkeypatch.setattr(context, "VERIFY_COMPACT_AT_CHARS", 1000)  # larger than one batch
+    messages = [m for index in range(5) for m in tool_round(index, size=200, args_size=400)]
+    compacted = context.compact_history(None, messages)
+    grown = [*compacted, *tool_round(9, size=50)]
+    assert context.compact_history(None, grown) is grown
+
+
+def test_all_playbooks_go_into_the_instructions(tmp_path):
+    (tmp_path / "skill.md").write_text("# Playbook: Verify\n\nMethod.", encoding="utf-8")
     (tmp_path / "partition").mkdir()
-    (tmp_path / "partition" / "skill.md").write_text(
-        "# Skill: Partition\n\nLoad when a partition or family settlement affects title.\n",
-        encoding="utf-8",
-    )
-    assert skills.list_skills(tmp_path) == [
-        ("partition", "Load when a partition or family settlement affects title.")
-    ]
-    assert "Partition" in skills.load_skill("partition", tmp_path)
-    for bad in ("../secrets", "missing"):
-        try:
-            skills.load_skill(bad, tmp_path)
-        except KeyError as error:
-            assert "Available: partition" in str(error)
-        else:
-            raise AssertionError(f"{bad} should not load")
+    (tmp_path / "partition" / "skill.md").write_text("# Skill: Partition\n\nChecks.", encoding="utf-8")
+    text = skills.all_playbooks(tmp_path)
+    assert text.index("# Playbook: Verify") < text.index("# Skill: Partition")
+
+
+def test_lead_has_no_skill_loading_or_task_tools():
+    from backend.services.verification.agents import LEAD_TOOLSETS
+
+    names = {name for toolset in LEAD_TOOLSETS for name in toolset.tools}
+    assert "load_skill" not in names and "update_tasks" not in names
+    assert {"examine_document", "add_requisition", "record_link_verdict"} <= names
 
 
 class FakeCallToolsNode:
@@ -74,20 +78,6 @@ def test_model_text_becomes_a_feed_line(monkeypatch):
     sink = ListSink()
     record_node(FakeCallToolsNode("Checking   the 2010 deed next."), sink)
     assert sink.texts("thinking") == ["Checking the 2010 deed next."]
-
-
-def test_newest_batch_is_kept_whole_and_older_results_fit_a_size_budget(monkeypatch):
-    monkeypatch.setattr(context, "VERIFY_KEEP_TOOL_RESULTS", 6)
-    monkeypatch.setattr(context, "VERIFY_KEEP_TOOL_CHARS", 25)
-    old = [message for index in range(3) for message in tool_round(index)]
-    batch_call = ModelResponse(parts=[ToolCallPart("examine_document", {}, f"b{i}") for i in range(4)])
-    batch = ModelRequest(
-        parts=[ToolReturnPart("examine_document", "x" * 100, f"b{i}") for i in range(4)]
-    )
-    trimmed = context.trim_tool_results(None, [*old, batch_call, batch])
-    assert all(part.content == "x" * 100 for part in trimmed[-1].parts)  # unread batch kept
-    older = [part.content for message in trimmed[:-1] if isinstance(message, ModelRequest) for part in message.parts]
-    assert older == [context.CLEARED] * 3  # over the size budget
 
 
 def test_snapshot_lists_each_documents_recitals_and_unexpected_findings():
@@ -106,3 +96,4 @@ def test_snapshot_lists_each_documents_recitals_and_unexpected_findings():
     text = context.render_case_file(case)
     assert "R p.2: Vendor got it by 2005 partition" in text
     assert "U p.1: A minor co-vendor" in text
+    assert "TASKS" not in text

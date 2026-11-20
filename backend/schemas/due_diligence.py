@@ -109,25 +109,13 @@ class DueDiligenceReport(_Model):
 
 
 # (id, title, what the writer puts there). Sections marked "built" are written
-# by the application from the Case File, not by the model.
+# by the application from the Case File, not by the model. The report is a
+# case-level result: per-transfer detail lives on the title chain page.
 DEFAULT_SECTIONS: list[tuple[str, str, str]] = [
-    ("property_schedule", "Property schedule", "Identifiers, extent, boundaries, location."),
-    ("documents_examined", "Documents examined", "built"),
-    ("flow_of_title", "Flow of title", "The chain as a narrative, earliest first; mark links "
-     "added during verification and every recorded break."),
-    ("transaction_scrutiny", "Scrutiny of each transaction", "One finding per chain link with "
-     "its verdict: vendor's title, parties and capacity, schedule and extent, execution, "
-     "registration, stamp duty, consideration, mutation."),
-    ("encumbrances", "Encumbrances", "Mortgages and their release, charges, attachments, "
-     "agreements, leases."),
-    ("revenue_records", "Revenue records", "Whether RTC and mutation records follow each "
-     "transfer."),
-    ("land_use", "Land use and approvals", "Conversion, khata, plans, tax, grant or PTCL "
-     "restrictions."),
-    ("red_flags", "Red flags", "Every issue, by severity."),
-    ("requisitions", "Requisitions", "built"),
-    ("limitations", "Limitations", "Documents not examined, what the records cannot show, "
-     "and that the opinion rests only on the documents provided."),
+    ("issues", "Issues identified", "built"),
+    ("requisitions", "Documents needed", "built"),
+    ("limitations", "Limitations", "Two to four sentences: what the documents provided cannot "
+     "show, documents that could not be read, and that the opinion rests only on these documents."),
 ]  # fmt: skip
 
 WRITTEN_SECTION_IDS = [sid for sid, _, how in DEFAULT_SECTIONS if how != "built"]
