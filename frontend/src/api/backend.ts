@@ -159,13 +159,29 @@ export interface VerificationRequisition {
   status: "open" | "fulfilled" | "resolved";
   doc_id?: string | null;
 }
+export interface ChainTransaction {
+  transaction_type: string;
+  transaction_number?: string | null;
+  executed_date?: string | null;
+  registration_date?: string | null;
+  transferors: string[];
+  transferees: string[];
+  evidence_status?: string | null;
+  summary_points?: string[];
+  source_refs?: { doc_id: string; filename: string }[];
+}
+
 export interface VerificationLink {
   link_id: string;
   origin: "phase_a" | "verification";
   continues_previous: boolean;
   break_note?: string | null;
-  transaction: { transaction_type: string; executed_date?: string | null; transferors: string[]; transferees: string[] };
-  verdict?: { verdict: string; summary: string } | null;
+  transaction: ChainTransaction;
+  verdict?: {
+    verdict: string;
+    summary: string;
+    checks?: { check: string; status: string; note: string }[];
+  } | null;
 }
 export interface VerificationDocument {
   doc_id: string;

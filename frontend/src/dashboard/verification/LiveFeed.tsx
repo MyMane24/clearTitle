@@ -20,8 +20,13 @@ const ICONS: Record<string, LucideIcon> = {
   thinking: Sparkles,
 };
 
-/** The agent's steps as they happen, newest at the bottom. */
-export function LiveFeed({ events, running }: { events: VerificationEvent[]; running: boolean }) {
+/** The agent's steps as they happen, newest at the bottom. `label` replaces any internal id
+ * left in a saved step with the name a buyer knows. */
+export function LiveFeed({ events, running, label }: {
+  events: VerificationEvent[];
+  running: boolean;
+  label: (text: string) => string;
+}) {
   if (!events.length) {
     return <p className="vf-empty">{running ? 'Starting…' : 'No verification steps yet.'}</p>;
   }
@@ -32,7 +37,7 @@ export function LiveFeed({ events, running }: { events: VerificationEvent[]; run
         return (
           <li key={event.id} className={`vf-feed-item vf-feed-${event.kind}`}>
             <Icon size={14} />
-            <span>{event.text}</span>
+            <span>{label(event.text)}</span>
           </li>
         );
       })}

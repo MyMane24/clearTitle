@@ -9,7 +9,7 @@
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "node --import tsx --test src/dashboard/PhaseAResult.test.tsx src/dashboard/verification/verification.test.tsx"
+    "test": "node --import tsx --test src/dashboard/results/results.test.tsx"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",
