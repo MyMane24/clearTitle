@@ -101,6 +101,7 @@ Status: `[ ]` open · `[~]` in progress · `[x]` done
 
   Wire them into `api/backend.ts` and `VerificationDashboard.tsx`, with a "Verify title" button. Follow the README's UI design system and use `lucide-react` icons.
   - Done when: `npm run lint` and `npm run test` pass.
+- [x] **7.3 No internal ids where a buyer can see them.** Prompts and tools require plain names in buyer-facing text (ids stay in `refs` and id fields); report wording, "what changed", issues and the step feed name transfers and documents in words; the page replaces any id left in a saved report, Case File or event. Done when backend and frontend tests show no internal id in displayed text.
 
 ## 8. Skills and prompts
 - [x] **8.1 Skill structure.** Create `backend/skills/verification/skill.md` (the lead playbook and skill index) and stubs for `title_link`, `succession`, `partition`, `gpa_and_capacity`, `minor_property`, `encumbrances`, `revenue_records` and `land_use_approvals`. Each stub has these sections: purpose, when to load, checks, evidence required, red flags, requisitions.
@@ -113,6 +114,25 @@ Status: `[ ]` open · `[~]` in progress · `[x]` done
 
 ## Implementation log
 Newest first. Format: date · task · files · notes (deviations from PLAN.md and why) · next step.
+
+- 2026-11-20 · 7.3 Buyer-facing text carries no internal ids (PLAN.md decision 19) · `prompts/verify_report.txt`, `prompts/verify_lead_system.txt`, `services/verification/tools.py` (`_plain` on every buyer-facing field, readable transfer names in events), `services/verification/report.py` (`changes()` and the built issues/requisitions in words), `frontend/src/dashboard/results/labels.ts` (`refLabeller` also replaces ids inside longer text), `ReportView.tsx`, `CaseResults.tsx`, `ChainTimeline.tsx`, `verification/LiveFeed.tsx`, tests · 223 backend and 14 frontend tests pass; `tsc` is clean; the saved report, Case File and events for 8A14D132 were checked and their ids now appear only in hidden refs. · Next: one approved real run to measure.
+
+- 2026-11-18 · Case-level report (PLAN.md decision 18) · `schemas/due_diligence.py` (sections: issues, requisitions, limitations), `services/verification/report.py` (`case_issues`, built issues and documents-needed sections, simpler gate), `prompts/verify_report.txt`, `prompts/verify_lead_system.txt`, `frontend/src/dashboard/results/` (`issues.ts`, `IssuesList`, `Limitations`; report sections removed), tests · 222 backend and 12 frontend tests pass; checked with the 8A14D132 data. · Next: one approved real run to measure.
+
+- 2026-11-18 · Separate pages for the title chain and the verification report (PLAN.md decision 16) · `frontend/src/dashboard/results/CaseResults.tsx` (tabs, `ChainPage`, `ReportPage`, `?page=` in the URL), `dashboard.css` (tab styles), `results.test.tsx` · 12 frontend tests pass; `tsc` is clean; both pages checked with the 8A14D132 data. · Next: one approved real run to measure.
+
+- 2026-11-18 · Read only what a transaction needs (PLAN.md decision 17) · `services/verification/gates.py` (new `unexamined_link_sources` and `_link_sources_examined`), `tools.py` (digest), `report.py` (document status), `prompts/verify_lead_system.txt`, `prompts/verify_report.txt`, `skills/verification/skill.md`, `frontend/src/dashboard/results/CaseResults.tsx`, tests · 222 backend and 10 frontend tests pass; ruff and `tsc` are clean. · Next: one approved real run to measure.
+
+- 2026-11-18 · Lean pass (PLAN.md decisions 13–16) ·
+  - **Upload:** `workers/stages.py`, `workers/tasks.py`, `services/orchestrator.py` and `services/document_processor.py` lose the structure stage and `extract_document`; classification now also returns the summary.
+  - **Lead:** `services/verification/` (`tools.py`, `agents.py`, `skills.py`, `context.py`, new `cost.py`, `runner.py`) and `prompts/verify_lead_system.txt` drop `update_tasks` and `load_skill`, add `closes_leads`, the "Still to do" digest, compaction and the cost cap.
+  - **Frontend:** new `frontend/src/dashboard/results/`; deleted `PhaseAResult.tsx`, `utils.tsx` and the old verification panel parts; about 1,400 lines of dead CSS removed.
+  - **Docs:** README pipeline text.
+  - **Checks:** 220 backend tests and 9 frontend tests pass; ruff and `tsc` are clean; the page was checked visually with the 8A14D132 data (headless Edge).
+
+  · Not measured on a real run yet. · Next: one approved real run to measure tokens and cost against run 3, with the cost cap set.
+
+- 2026-11-18 · Examiner simplified to one call (product owner's decision) · `services/verification/examiner.py`, `prompts/verify_examiner.txt`, `config.py`, `.env.example`, `tests/test_verification_examiner.py`, `tests/test_verification_runner.py` · The full OCR text goes in and the report comes out. The `read_next` tool, the quote-retry loop and two settings are removed; code drops facts whose quotes aren't in the text and corrects pages (PLAN.md decision 12). 220 backend tests pass. Also loaded run 2's report, Case File and run 1–2 events for case 8A14D132 into Docker MySQL, so the dashboard shows them (no model calls); the Docker image was rebuilt with the verification code. · Next: the dashboard fixes found in the visual check (misleading "8/8 transfers verified" tile, uncoloured verdict badges, raw ids in references, overflowing reference line, report placed below the requisition cards, oversized upload buttons, no run separators in the feed, raw document types), then the cost items listed below.
 
 - 2026-11-18 · Real-case testing (case 8A14D132, Docker MySQL, read-only harness, gpt-6-luna) · Full write-up (local, gitignored): `docs/verification-run-8A14D132-runs-1-2.md`. Runs 1+2 = one full verification: 186 calls, 1.95M input / 207K output tokens, $0.194, report v1 NOT CLEAR, about 10.7 min. Run 3 (clean rerun) failed at closing (tool retry limit). Run 4 was stopped by the product owner to save credits. **Ask before every paid run.** · Fixes made from the findings:
   - quote matching ignores HTML and markdown; a real quote on the wrong page gets its page corrected; facts with unfound quotes are dropped, with one retry only when many are missing (OCR page markers are often missing);

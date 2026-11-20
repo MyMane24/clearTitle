@@ -1,6 +1,6 @@
 # clearTitle — AI Property Title Verification
 
-An end-to-end property title platform for **Karnataka property documents**. clearTitle extracts structured JSON from scanned PDFs using Sarvam OCR and an OpenAI-compatible document processor, then hands the case to a tool-using **ClearTitle agent** that reconstructs the title chain from the property's history documents — pausing to request missing evidence instead of guessing.
+An end-to-end property title platform for **Karnataka property documents**. clearTitle reads scanned PDFs with Sarvam OCR, classifies and summarises each one, then hands the case to a tool-using **ClearTitle agent** that reconstructs the title chain from the property's history documents — pausing to request missing evidence instead of guessing. A verification agent then checks the chain and writes a due diligence report.
 
 Transaction-by-transaction verification and reports are **not part of this application**; they are being rebuilt from scratch. The pipeline, document processing, and title-chain construction (Phase A) are complete and working.
 
@@ -38,13 +38,12 @@ flowchart TD
         REDIS_BROKER["Redis Broker / State Store"]
     end
 
-    subgraph Pipeline["Document Pipeline (per PDF, 6 stages)"]
+    subgraph Pipeline["Document Pipeline (per PDF, 5 stages)"]
         PREPROC["1 Preprocess\n(denoise & deskew)"]
         OCR["2 Sarvam OCR\n(PDF -> Raw Text)"]
         MERGE["3 Merge Chunks"]
-        CLASSIFY["4 Classify\n(LLM + explicit rules)"]
-        STRUCTURE["5 Structure\n(OpenAI-compatible model)"]
-        PERSIST["6 Persist\n(save JSON + tokens/cost to MySQL)"]
+        CLASSIFY["4 Classify + summary\n(LLM on a text prefix + explicit rules)"]
+        PERSIST["5 Persist\n(mark ready in MySQL)"]
     end
 
     subgraph Analysis["Case-Level Analysis (after finalize)"]
@@ -62,10 +61,10 @@ flowchart TD
     DASH -->|"HTTP API Requests"| API
     R_CASES -->|"Dispatches tasks"| CELERY
     CELERY -->|"Reads/writes status"| REDIS
-    CELERY --> PREPROC --> OCR --> MERGE --> CLASSIFY --> STRUCTURE --> PERSIST
+    CELERY --> PREPROC --> OCR --> MERGE --> CLASSIFY --> PERSIST
     PERSIST -->|"chord"| FINALIZE
     FINALIZE --> PHASE_A
-    STRUCTURE -->|"Saves structured data"| MYSQL
+    CLASSIFY -->|"Saves type and summary"| MYSQL
     PHASE_A -->|"Saves property identity and chain"| MYSQL
 ```
 
@@ -75,7 +74,7 @@ flowchart TD
 |---|---|---|
 | **Frontend** | React 19, Vite 6, TypeScript, Tailwind CSS 4 | Landing page + dashboard with AI pipeline view, title-chain details, document extractions, and case history |
 | **API Layer** | FastAPI, Uvicorn | Async REST API with JWT auth (plus optional Google OAuth) for cases, documents, and results |
-| **Async Tasks** | Celery, Redis | Idempotent background stages — preprocess, OCR, merge, classify, structure, persist, finalize, chain build |
+| **Async Tasks** | Celery, Redis | Idempotent background stages — preprocess, OCR, merge, classify, persist, finalize, chain build, verification |
 | **OCR Service** | Sarvam AI Vision OCR | High-accuracy OCR for mixed English/Kannada text; chunks >10-page PDFs with overlap |
 | **Document processing** | OpenAI-compatible API | Classification and full-text schema-based extraction |
 | **Title-chain agent** | OpenAI by default (`GPT-6 Luna`); Gemini optional | Tool-calling agent that builds the history-first title chain (Phase A) |
@@ -190,7 +189,7 @@ On subsequent runs just use `docker compose up`. Rebuild with `docker compose up
 ### 3. Build a title chain
 
 1. Open `/#/app`, upload the property PDFs, and press **Process**.
-2. Watch the six-stage pipeline run live (`/api/status/{case_id}`).
+2. Watch the five-stage pipeline run live (`/api/status/{case_id}`).
 3. When processing completes, the chain build starts automatically. If no history document was uploaded, the dashboard asks for the **Encumbrance Certificate**.
 4. Upload the requested history documents; the chain is built again when processing finishes. **Rebuild title chain** re-runs it on demand.
 5. The results view shows the property identity, the chain links with their sources, and the documents still needed.
@@ -259,7 +258,7 @@ docker compose exec mysql mysql -u root -ppassword property_ocr_v2
 |---|---|---|
 | `GET` | `/api/cases` | List cases (requires auth) |
 | `POST` | `/api/upload` | Upload PDFs and initialize a new case |
-| `POST` | `/api/process/{case_id}` | Trigger the async OCR + structuring pipeline |
+| `POST` | `/api/process/{case_id}` | Trigger the async OCR + classification pipeline |
 | `GET` | `/api/status/{case_id}` | Real-time pipeline status (progress, log, chain status) |
 | `POST` | `/api/retry/{case_id}` | Retry failed documents |
 | `POST` | `/api/case/{case_id}/upload` | Add more documents to an existing case |
@@ -288,12 +287,12 @@ Most case endpoints accept an optional JWT. Guest (anonymous) cases work without
 
 ## The Document Pipeline
 
-Every uploaded PDF goes through **6 stages**, each its own idempotent Celery task, chained and joined by a **chord** that runs one chain per document in parallel:
+Every uploaded PDF goes through **5 stages**, each its own idempotent Celery task, chained and joined by a **chord** that runs one chain per document in parallel:
 
 ```
-DOC_001 --> preprocess --> ocr --> merge --> classify --> structure --> persist --+
-DOC_002 --> preprocess --> ocr --> merge --> classify --> structure --> persist --+--> finalize --> title chain
-DOC_003 --> preprocess --> ocr --> merge --> classify --> structure --> persist --+
+DOC_001 --> preprocess --> ocr --> merge --> classify --> persist --+
+DOC_002 --> preprocess --> ocr --> merge --> classify --> persist --+--> finalize --> title chain
+DOC_003 --> preprocess --> ocr --> merge --> classify --> persist --+
 ```
 
 | # | Stage | Work |
@@ -301,9 +300,8 @@ DOC_003 --> preprocess --> ocr --> merge --> classify --> structure --> persist 
 | 1 | **Preprocess** | CLAHE contrast, denoise, deskew, sharpen via OpenCV (non-fatal: falls back to raw PDF) |
 | 2 | **OCR** | Sarvam OCR (Kannada+English); <=10 pages one job, >10 pages overlapping 10-page chunks in parallel |
 | 3 | **Merge** | Deduplicate overlapping pages, re-join split tables, strip base64 blobs |
-| 4 | **Classify** | LLM classifies a bounded OCR prefix; deterministic rules handle known formats |
-| 5 | **Structure** | OpenAI-compatible model extracts the full OCR into the matching JSON schema |
-| 6 | **Persist** | Save JSON + tokens/cost/model to MySQL, write final file to `outputs/` |
+| 4 | **Classify** | LLM classifies a bounded OCR prefix and writes a 2–3 sentence summary in the same call; deterministic rules handle known formats |
+| 5 | **Persist** | Mark the document ready (status `structured`). No full-document model read happens at upload: the verification examiner reads each document once, in full |
 
 **Then, once** (case level):
 

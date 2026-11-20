@@ -92,6 +92,36 @@ These refine the design below. Where they differ from a later section, these win
 9. **Severity:** high = a defect, title is not clear; medium = clear only subject to rectification; low = observation. The opinion gate: any high issue, defective link or break forces `NOT_CLEAR`; `CLEAR` needs every link verified and no medium issue, open requisition or unexamined document.
 10. **Shared upload path.** The "upload more documents" logic moved from `routers/cases.py` into `services/case_documents.py`, so manual uploads and requisition uploads (and future government sources) use one path.
 11. **Extra Case File tools** beyond the original list: `view_case_file`, `correct_link`, `mark_break`, `remove_link` (the `amend_chain` operations as separate, clearer tools) and `review_requisition`.
+12. **The Document Examiner is one model call.** The full OCR text goes in the brief and a structured report comes back. There are no examiner tools, no read loop and no quote retries. Afterwards, code keeps only facts whose quote is in the text, correcting the page when the quote is found on another page, and drops the rest (counted in the report summary). A second call happens only if the output is not valid for the schema. Documents too large for the model's context are not handled yet. This replaces the earlier `read_next` loop, `VERIFY_EXAMINER_CALL_BUDGET` and `VERIFY_READ_CHUNK_CHARS`.
+13. **No full-document read at upload.** The pipeline is preprocess → OCR → merge → classify → persist. The structuring stage (`extract_document` with large JSON schemas) is removed. Classification reads a 3,000-token prefix as before and also returns a 2–3 sentence summary in the same call; Phase A uses that summary to choose deeds, with `ensure_summaries` as the fallback for older documents. Persist only marks the document `structured` (the status name is kept because Phase A and verification select by it). The examiner is now the only full read of a document. The `structured_data` column stays but is no longer filled.
+14. **Lean Lead.**
+    - All playbooks go into the Lead's fixed instructions. They are identical on every call, so they form a cacheable prefix. There is no `load_skill` tool and no skill index.
+    - `update_tasks` is removed.
+    - `add_requisition(closes_leads=...)` resolves the covered leads in the same call.
+    - Every tool that changes the Case File replies with a one-line "Still to do", so `view_case_file` is needed rarely.
+    - The prompt asks for independent actions to be batched into one turn.
+    - Trimming is replaced by compaction: history stays append-only (so the provider's prompt cache keeps hitting) until tool traffic passes `VERIFY_COMPACT_AT_CHARS`. Then older tool results and long tool-call arguments are cleared at once, keeping the newest batch.
+15. **Hard cost cap.** `VERIFY_RUN_COST_LIMIT_USD` (default 0.50). After every Lead step the runner estimates Lead + examiner cost from `genai-prices` per-token rates and ends the run `incomplete`, with progress saved, once over the cap. Models without price data skip the cap, with a log warning.
+16. **Results page.**
+    - **Two pages under one shared case header** (property, status, one main action), switched by tabs and kept in the URL as `?page=chain|report`:
+      - **Title chain page:** property identity, chain timeline, documents list.
+      - **Verification report page:** opinion card, documents needed (requisitions with upload), report sections, collapsed agent steps. Before any verification it shows a short explanation and a "Verify title" button.
+      - The report page opens by default when a report exists, otherwise the chain page.
+    - References are shown as file names and transfer names.
+    - **Removed:** the old metric tiles and task list, the separate requisition cards, the structured-data viewer, the text chain graph, and their CSS.
+    - Code lives in `frontend/src/dashboard/results/`.
+18. **The report is a case-level result** (product owner's decision; buyers do not read per-transfer scrutiny, and the chain is already on its own page).
+    - **Sections:** opinion and reasons; Issues identified; Documents needed; Limitations.
+    - **Removed:** flow of title, scrutiny of each transaction, property schedule, the documents table, and the separate encumbrance, revenue and land-use sections.
+    - **Built by code from the Case File, not the model:** "Issues identified" is every recorded issue, plus defective transfers and chain breaks no issue covers, most serious first (`report.case_issues`); "Documents needed" lists each requisition and its reason. The report writer writes only a one-line property summary, the opinion with 2–4 reasons, and a short limitations note, so its output drops from about 6.5K tokens to a few hundred. The opinion gate is unchanged.
+    - **Lead prompt:** it must record every buyer-relevant problem as an issue in plain words, and give every requisition a one-sentence reason saying what the document will prove.
+    - **Where per-transfer verdicts show:** they stay in the Case File and show on the title chain page.
+17. **Read only what a transaction needs** (product owner's decision).
+    - **Choice:** the Lead chooses from the document list and summaries the documents each transaction needs: its own deed, the documents its chain entry cites, the revenue records for its mutation, and anything a lead points to. It leaves unrelated documents unread. The application still never suggests documents.
+    - **Closing check:** requires every transaction's own source documents to be examined, not every document (`gates._link_sources_examined` replaces `_every_document_examined`). The "Still to do" digest names the unexamined sources.
+    - **Report and page:** unread documents are listed as "Not examined: not needed to verify any transaction". This alone does not block a `CLEAR` opinion; only unreadable documents do. The results page marks them "Not needed".
+    - **Trade-off:** land-use and approval documents are read only when a transaction or lead calls for them.
+19. **No internal ids in buyer-facing text.** Ids (PA-TC-0002, VL-1, DOC_018, I1, R1, L1) stay in the hidden fields that link records: `refs`, id fields and basis keys. Everything a buyer reads names the transfer and document in words: the prompts require it, the tools refuse text that mentions an id (`tools._plain`), built report text and events are worded without ids, and the results page replaces any id found in older saved data. The existing report for 8A14D132 is covered by the page replacement.
 
 ---
 
