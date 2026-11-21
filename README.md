@@ -222,7 +222,7 @@ When deployed via Docker, the built SPA is served by FastAPI from `frontend/dist
 
 ### Option A — phpMyAdmin (browser, zero install)
 
-Open **http://localhost:8080** — you'll see all tables (`users`, `cases`, `documents`, `title_chains`) and can browse/query data directly. `case_results` and `case_memory` are legacy tables kept dormant for old data.
+Open **http://localhost:8080** — you'll see all tables (`users`, `cases`, `documents`, `title_chains`, and the verification tables `verification_case_files`, `verification_runs`, `verification_events`, `due_diligence_reports`) and can browse/query data directly.
 
 ### Option B — MySQL Workbench / DBeaver / TablePlus
 

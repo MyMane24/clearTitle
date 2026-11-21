@@ -12,7 +12,6 @@ from __future__ import annotations
 from pathlib import Path
 
 SKILLS_DIR = Path(__file__).resolve().parents[2] / "skills" / "verification"
-LEAD_PLAYBOOK = SKILLS_DIR / "skill.md"
 
 
 def all_playbooks(skills_dir: Path = SKILLS_DIR) -> str:

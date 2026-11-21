@@ -3,8 +3,8 @@
 Usage:
     venv\\Scripts\\python.exe backend\\scripts\\copy_case_between_dbs.py <case_id> <owner_email>
 
-Copies cases, documents, title_chains, case_results and case_memory rows for
-the case from MYSQL_PORT_SRC (default 3307)
+Copies the case row and every row that belongs to it (documents, title chain,
+verification state and reports) from MYSQL_PORT_SRC (default 3307)
 to MYSQL_PORT_DST (default 3306), replacing any existing rows for that case,
 and sets the case owner to the given user account on the destination.
 Row counts are printed as proof.
@@ -20,10 +20,12 @@ os.environ.setdefault("MYSQL_PORT_SRC", "3307")
 os.environ.setdefault("MYSQL_PORT_DST", "3306")
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-import backend.config as cfg  # noqa: E402
 from mysql.connector import connect  # noqa: E402
 
-TABLES = ("cases", "documents", "title_chains", "case_results", "case_memory")
+import backend.config as cfg  # noqa: E402
+from backend.database.repositories.case_repo import CASE_TABLES  # noqa: E402
+
+TABLES = ("cases", *CASE_TABLES)
 CASE_COL = {"cases": "id"}  # everything else keys on case_id
 
 

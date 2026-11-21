@@ -397,21 +397,6 @@ def get_document_ocr_text(case_id: str, doc_id: str) -> str | None:
         return row[0] if row else None
 
 
-def get_document_structured_data(case_id: str, doc_id: str) -> dict | None:
-    """Return persisted extraction JSON for a document."""
-    with _get_conn() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT structured_data FROM documents WHERE case_id = %s AND doc_id = %s",
-            (case_id, doc_id),
-        )
-        row = cursor.fetchone()
-        if not row or not row[0]:
-            return None
-        value = json.loads(row[0]) if isinstance(row[0], str) else row[0]
-        return value if isinstance(value, dict) else None
-
-
 def set_document_stage(case_id: str, doc_id: str, stage) -> None:
     status_str = stage.name.lower()
     with _get_conn() as conn:

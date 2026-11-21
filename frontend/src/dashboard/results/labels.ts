@@ -23,17 +23,6 @@ export const VERDICT: Record<string, { label: string; tone: Tone }> = {
   defective: { label: 'Defective', tone: 'bad' },
 };
 
-export const SEVERITY_TONE: Record<string, Tone> = { high: 'bad', medium: 'warn', low: 'neutral' };
-
-export function verdictTone(status: string | null | undefined): Tone {
-  if (!status) return 'neutral';
-  if (VERDICT[status]) return VERDICT[status].tone;
-  if (/defective|failed|high|not.?clear/i.test(status)) return 'bad';
-  if (/concern|medium|open|pending/i.test(status)) return 'warn';
-  if (/verified|ok|settled|resolved|clear/i.test(status)) return 'good';
-  return 'neutral';
-}
-
 const INTERNAL_ID = /\b(?:PA-TC-\d+|VL-\d+|DOC_\d+|[RLI]\d{1,3})\b/g;
 
 function fallbackLabel(id: string): string {

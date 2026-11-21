@@ -64,7 +64,7 @@ def set_case_status(*, case_id: str, status: str) -> None:
 
 def upload_docs_reset(*, case_id: str, new_total: int) -> None:
     """Bump total_docs and reset case status when more docs are uploaded.
-    Preserves existing title_chains and verification_results so the agent can resume.
+    Keeps the saved title chain and verification state so the agent can resume.
     """
     with _get_conn() as conn:
         cursor = conn.cursor()
@@ -130,41 +130,27 @@ def set_case_owner(*, case_id: str, user_id: str) -> bool:
         return cursor.rowcount > 0
 
 
-def set_case_verification_status(*, case_id: str, verification_status: str, verdict: str) -> None:
-    """Record the outcome of the title-chain + verification pass."""
-    with _get_conn() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE cases SET verification_status = %s, verdict = %s WHERE id = %s",
-            (verification_status, verdict, case_id),
-        )
-        conn.commit()
-
-
 def recompute_case_status(case_id: str) -> None:
     update_case_status(case_id=case_id)
 
 
+CASE_TABLES = (
+    "documents",
+    "title_chains",
+    "verification_case_files",
+    "verification_runs",
+    "verification_events",
+    "due_diligence_reports",
+)
+
+
 def delete_case(case_id: str) -> None:
-    """Delete all records for a single case from database."""
+    """Delete a case and every row that belongs to it, in one transaction."""
     with _get_conn() as conn:
         cursor = conn.cursor()
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
-        for table in (
-            "title_chains",
-            "case_memory",
-            "case_results",
-            "documents",
-        ):
-            try:
-                cursor.execute(f"DELETE FROM {table} WHERE case_id = %s", (case_id,))
-            except Exception:
-                pass
-        try:
-            cursor.execute("DELETE FROM cases WHERE id = %s", (case_id,))
-        except Exception:
-            pass
-        cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
+        for table in CASE_TABLES:
+            cursor.execute(f"DELETE FROM {table} WHERE case_id = %s", (case_id,))
+        cursor.execute("DELETE FROM cases WHERE id = %s", (case_id,))
         conn.commit()
 
 

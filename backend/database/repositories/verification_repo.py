@@ -2,8 +2,7 @@
 Pipeline logs and verification agent storage.
 
 The verification agent keeps one Case File per case, a row per run, a live
-event feed and versioned due diligence reports. Title chains live in
-`title_chain_repo` and `agent_repo`.
+event feed and versioned due diligence reports. Title chains live in `agent_repo`.
 """
 
 from __future__ import annotations
@@ -110,14 +109,6 @@ def save_case_file(case_id: str, data: dict, expected_version: int) -> int:
             )
         conn.commit()
     return new_version
-
-
-def delete_case_file(case_id: str) -> None:
-    """Forget the Case File, e.g. after the title chain was rebuilt."""
-    with _get_conn() as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM verification_case_files WHERE case_id = %s", (case_id,))
-        conn.commit()
 
 
 def create_run(run_id: str, case_id: str, kind: str) -> None:

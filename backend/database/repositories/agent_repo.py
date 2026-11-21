@@ -40,23 +40,6 @@ def get_agent_documents(case_id: str) -> list[dict]:
         return [dict(row) for row in cursor.fetchall()]
 
 
-def get_document_metadata(case_id: str, doc_id: str) -> dict | None:
-    """Metadata + structured extraction for one document (agent navigation aid)."""
-    with _get_conn() as conn:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            "SELECT doc_id, doc_index, filename, document_type, page_count, status, "
-            "structured_data, summary FROM documents WHERE case_id = %s AND doc_id = %s",
-            (case_id, doc_id),
-        )
-        row = cursor.fetchone()
-    if not row:
-        return None
-    doc = dict(row)
-    doc["structured_data"] = _load(doc.get("structured_data")) or {}
-    return doc
-
-
 def set_document_summary(*, case_id: str, doc_id: str, summary: str) -> None:
     with _get_conn() as conn:
         cursor = conn.cursor()

@@ -95,20 +95,6 @@ export interface AgentMissingDoc {
   for_transaction?: string;
 }
 
-export interface TitleChainTransaction {
-  tx_id?: string;
-  sequence?: number;
-  date?: string | null;
-  type?: string | null;
-  parties?: string | null;
-  property?: string | null;
-  registration_reference?: string | null;
-  explanation?: string | null;
-  status?: string | null;
-  uncertainty?: string[];
-  inferred?: boolean;
-}
-
 export interface AgentReport {
   status: string;
   next_action?: string | null;

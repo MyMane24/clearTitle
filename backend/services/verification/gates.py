@@ -28,10 +28,6 @@ from backend.shared.constants import (
 )
 
 
-class GateError(ValueError):
-    """A gate failed. The message tells the model what to fix."""
-
-
 @dataclass
 class GateContext:
     """What gates may look at: the Case File and each document's OCR text."""
@@ -41,12 +37,6 @@ class GateContext:
 
 
 Gate = Callable[[GateContext], list[str]]
-
-
-def raise_if(problems: list[str]) -> None:
-    """Raise one GateError listing every problem, if there are any."""
-    if problems:
-        raise GateError("Fix before continuing:\n- " + "\n- ".join(problems))
 
 
 def is_deed_type(document_type: str) -> bool:
