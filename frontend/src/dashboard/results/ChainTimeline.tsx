@@ -1,38 +1,44 @@
 import React from 'react';
 import { AlertTriangle, CheckCircle2, ChevronDown, XCircle } from 'lucide-react';
 import type { ChainTransaction, VerificationLink } from '../../api/backend';
-import { VERDICT, humanizeType } from './labels';
+import { VERDICT, humanizeType, yearOf } from './labels';
 
-/** One row of the timeline, from the verified chain or, before verification, the draft chain. */
+/** One row of the timeline: a transfer of the Phase A chain, with its verification verdict. */
 export interface TimelineLink {
   id: string;
   transaction: ChainTransaction;
   continuesPrevious: boolean;
-  addedByVerification?: boolean;
   breakNote?: string | null;
   verdict?: VerificationLink['verdict'];
 }
 
-/** The verified chain when verification has run, otherwise Phase A's draft chain. */
+/** The title chain as Phase A built it, each transfer carrying its verification result when
+ * there is one. Without a Phase A chain, the verified chain is shown instead. */
 export function timelineLinks(verified: VerificationLink[] | undefined, draft: unknown): TimelineLink[] {
-  if (verified && verified.length) {
-    return verified.map(link => ({
+  const byId = new Map((verified || []).map(link => [link.link_id, link]));
+  const phaseA = Array.isArray(draft)
+    ? draft.filter(item => item && typeof item === 'object' && (item as any).documented_transaction)
+    : [];
+  if (!phaseA.length) {
+    return (verified || []).map(link => ({
       id: link.link_id,
       transaction: link.transaction,
       continuesPrevious: link.continues_previous,
-      addedByVerification: link.origin === 'verification',
       breakNote: link.break_note,
       verdict: link.verdict,
     }));
   }
-  if (!Array.isArray(draft)) return [];
-  return draft
-    .filter(item => item && typeof item === 'object' && (item as any).documented_transaction)
-    .map((item: any, index) => ({
-      id: String(item.tx_id || index + 1),
+  return phaseA.map((item: any, index) => {
+    const id = String(item.tx_id || index + 1);
+    const checked = byId.get(id);
+    return {
+      id,
       transaction: item.documented_transaction as ChainTransaction,
       continuesPrevious: Boolean(item.continues_previous),
-    }));
+      breakNote: checked?.break_note,
+      verdict: checked?.verdict,
+    };
+  });
 }
 
 function Detail({ label, value }: { label: string; value?: string | null }) {
@@ -44,7 +50,9 @@ type Label = (text: string) => string;
 
 const plain: Label = text => text;
 
-/** The title chain as a compact timeline, earliest first; details open per transfer. */
+const CHECK_TONE: Record<string, string> = { ok: 'good', failed: 'bad', concern: 'warn' };
+
+/** The title chain as a vertical timeline, earliest first; each transfer opens for detail. */
 export function ChainTimeline({ links, label = plain }: { links: TimelineLink[]; label?: Label }) {
   if (!links.length) return <p className="cr-muted">The title chain is not available yet.</p>;
   return (
@@ -52,25 +60,29 @@ export function ChainTimeline({ links, label = plain }: { links: TimelineLink[];
       {links.map((link, index) => {
         const t = link.transaction;
         const verdict = link.verdict ? VERDICT[link.verdict.verdict] : undefined;
-        const date = t.executed_date || t.registration_date || 'Undated';
+        const date = t.executed_date || t.registration_date || '';
+        const year = yearOf(date);
         return (
-          <li key={link.id}>
+          <li key={link.id} className={`cr-tl-item cr-tone-${verdict?.tone || 'neutral'}`}>
             {index > 0 && !link.continuesPrevious && (
               <div className="cr-break"><AlertTriangle size={13} /> Break in the chain{link.breakNote ? `: ${label(link.breakNote)}` : ''}</div>
             )}
             <details className="cr-link">
               <summary>
-                <span className="cr-link-date">{date}</span>
+                <span className="cr-tl-dot" aria-hidden="true" />
+                <span className="cr-link-date">
+                  <b>{year || 'Undated'}</b>
+                  {date && date !== year && <small>{date}</small>}
+                </span>
                 <span className="cr-link-main">
                   <b>{humanizeType(t.transaction_type)}</b>
                   <span className="cr-muted">{(t.transferors || []).join(', ') || 'Earlier owner'} → {(t.transferees || []).join(', ') || 'Acquirer not recorded'}</span>
                 </span>
                 <span className="cr-link-tags">
                   {link.verdict?.property_type && <span className="cr-type">{humanizeType(link.verdict.property_type)}</span>}
-                  {link.addedByVerification && <span className="cr-status cr-tone-neutral">Added by verification</span>}
                   {verdict && <span className={`cr-status cr-tone-${verdict.tone}`}>{verdict.label}</span>}
                 </span>
-                <ChevronDown size={14} className="cr-chevron" />
+                <ChevronDown size={15} className="cr-chevron" />
               </summary>
               <div className="cr-link-body">
                 {link.verdict && <p>{label(link.verdict.summary)}</p>}
@@ -84,7 +96,7 @@ export function ChainTimeline({ links, label = plain }: { links: TimelineLink[];
                   <ul className="cr-proof" aria-label="Documents that prove this transfer">
                     {link.verdict.needed_documents.map((doc, i) => (
                       <li key={i}>
-                        {doc.status === 'found' ? <CheckCircle2 size={13} className="cr-proof-found" /> : <XCircle size={13} className="cr-proof-missing" />}
+                        {doc.status === 'found' ? <CheckCircle2 size={14} className="cr-proof-found" /> : <XCircle size={14} className="cr-proof-missing" />}
                         <span><b>{label(doc.document)}</b> {label(doc.proves)}</span>
                         <span className={`cr-status cr-tone-${doc.status === 'found' ? 'good' : 'warn'}`}>{doc.status === 'found' ? 'Found' : 'Needed'}</span>
                       </li>
@@ -94,7 +106,7 @@ export function ChainTimeline({ links, label = plain }: { links: TimelineLink[];
                 {link.verdict?.checks && link.verdict.checks.length > 0 && (
                   <ul className="cr-checks">
                     {link.verdict.checks.map((check, i) => (
-                      <li key={i}><b>{label(check.check)}</b> <span className={`cr-dot cr-tone-${check.status === 'ok' ? 'good' : check.status === 'failed' ? 'bad' : check.status === 'concern' ? 'warn' : 'neutral'}`} /> {label(check.note)}</li>
+                      <li key={i}><span className={`cr-dot cr-tone-${CHECK_TONE[check.status] || 'neutral'}`} /> <b>{label(check.check)}</b> {label(check.note)}</li>
                     ))}
                   </ul>
                 )}

@@ -45,12 +45,12 @@ export function LiveFeed({ events, running, label }: {
         const Icon = ICONS[event.kind] || Sparkles;
         return (
           <li key={event.id} className={`vf-feed-item vf-feed-${event.kind}`}>
-            <Icon size={14} />
-            <span>{label(event.text)}</span>
+            <span className="vf-feed-icon"><Icon size={13} /></span>
+            <span className="vf-feed-text">{label(event.text)}</span>
           </li>
         );
       })}
-      {running && <li ref={endRef} className="vf-feed-item vf-feed-pending"><span className="vf-pulse" /> Working…</li>}
+      {running && <li ref={endRef} className="vf-feed-item vf-feed-pending"><span className="vf-feed-icon"><span className="vf-pulse" /></span><span className="vf-feed-text">Working…</span></li>}
     </ol>
   );
 }

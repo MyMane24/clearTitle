@@ -146,7 +146,12 @@ export function CaseResultsView(props: CaseResultsViewProps) {
       </header>
 
       {running ? (
-        <Section id="cr-live-title" title="Agent steps" aside="Live">
+        <Section
+          id="cr-live-title"
+          title="Verifying the title"
+          aside={<span className="cr-live"><span className="vf-pulse" /> Live</span>}
+          note="The agent checks each transfer from the oldest to the newest. Steps appear as they happen."
+        >
           <LiveFeed events={liveEvents} running label={refLabeller(state?.case_file)} />
         </Section>
       ) : (
@@ -219,7 +224,7 @@ function ChainPage({ results, state, onOpenPdf }: CaseResultsViewProps) {
 }
 
 /** Is the title clear: opinion, documents needed, the report and the agent's steps. */
-function ReportPage({ state, events, error, uploadingId, start, upload, primary }: CaseResultsViewProps & { primary: string | null }) {
+function ReportPage({ state, error, uploadingId, start, upload, primary }: CaseResultsViewProps & { primary: string | null }) {
   const caseFile = state?.case_file || null;
   const report = state?.report || null;
   const label = refLabeller(caseFile);
@@ -312,12 +317,6 @@ function ReportPage({ state, events, error, uploadingId, start, upload, primary 
         </Section>
       )}
 
-      {events.length > 0 && (
-        <details className="cr-steps">
-          <summary>Agent steps ({events.length})</summary>
-          <LiveFeed events={events} running={false} label={label} />
-        </details>
-      )}
     </>
   );
 }

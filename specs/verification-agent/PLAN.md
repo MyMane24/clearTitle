@@ -104,8 +104,8 @@ These refine the design below. Where they differ from a later section, these win
 15. **Hard cost cap.** `VERIFY_RUN_COST_LIMIT_USD` (default 0.50). After every Lead step the runner estimates Lead + examiner cost from `genai-prices` per-token rates and ends the run `incomplete`, with progress saved, once over the cap. Models without price data skip the cap, with a log warning.
 16. **Results page.**
     - **Two pages under one shared case header** (property, status, one main action), switched by tabs and kept in the URL as `?page=chain|report`:
-      - **Title chain page:** property identity, chain timeline, documents list.
-      - **Verification report page:** opinion card, documents needed (requisitions with upload), report sections, collapsed agent steps. Before any verification it shows a short explanation and a "Verify title" button.
+      - **Title chain page:** property identity, chain timeline, documents list. The timeline shows the chain as Phase A built it; each transfer carries its verification verdict, property type and documents checklist. Transfers inserted during verification appear in the findings and requests, not as timeline rows (2026-11-21).
+      - **Verification report page:** opinion card, findings, documents needed (requisitions with upload). Agent steps show only while a run is live, one by one; they are not shown after the run (2026-11-21). Before any verification it shows a short explanation and a "Verify title" button.
       - The report page opens by default when a report exists, otherwise the chain page.
     - References are shown as file names and transfer names.
     - **Removed:** the old metric tiles and task list, the separate requisition cards, the structured-data viewer, the text chain graph, and their CSS.

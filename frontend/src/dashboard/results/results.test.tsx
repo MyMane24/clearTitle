@@ -282,3 +282,17 @@ test('chain page shows what each transfer conveyed and the documents that prove 
   assert.match(html, /cr-type">Agricultural land</);
   assert.match(html, /Sale deed of 2007.*?Found.*?GPA to Girish.*?Needed/s);
 });
+
+test('the chain page shows the Phase A chain, with each transfer carrying its verdict', () => {
+  const inserted = { ...STATE.case_file!.chain[0], link_id: 'VL-1', origin: 'verification' as const };
+  const links = timelineLinks([inserted, ...STATE.case_file!.chain], RESULTS.agent.title_chain);
+  assert.deepEqual(links.map(link => link.id), ['PA-TC-0001']);  // the inserted link is not shown
+  const html = renderToStaticMarkup(<ChainTimeline links={links} />);
+  assert.match(html, /Manohar → Dinanath/);  // Phase A parties
+  assert.match(html, /cr-tone-bad">Defective/);  // the verdict from verification
+});
+
+test('after a run, the report page shows no agent steps', () => {
+  const html = render(STATE);
+  assert.doesNotMatch(html, /Agent steps|vf-feed/);
+});
