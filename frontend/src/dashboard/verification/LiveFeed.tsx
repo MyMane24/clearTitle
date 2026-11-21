@@ -1,9 +1,12 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   AlertTriangle, BookOpen, CheckCircle2, FileSearch, FileText, GitBranch, Lightbulb,
   ListChecks, PlayCircle, Search, Sparkles, type LucideIcon,
 } from 'lucide-react';
 import type { VerificationEvent } from '../../api/backend';
+
+// Diagnostics for us (refused steps, per-turn tool calls, reopened reports), not steps a buyer follows.
+const HIDDEN = new Set(['rejected', 'calls', 'reopen']);
 
 const ICONS: Record<string, LucideIcon> = {
   run: PlayCircle,
@@ -27,6 +30,12 @@ export function LiveFeed({ events, running, label }: {
   running: boolean;
   label: (text: string) => string;
 }) {
+  const endRef = useRef<HTMLLIElement | null>(null);
+  events = events.filter(event => !HIDDEN.has(event.kind));
+  // Follow the newest step while a run is live.
+  useEffect(() => {
+    if (running) endRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [events.length, running]);
   if (!events.length) {
     return <p className="vf-empty">{running ? 'Starting…' : 'No verification steps yet.'}</p>;
   }
@@ -41,7 +50,7 @@ export function LiveFeed({ events, running, label }: {
           </li>
         );
       })}
-      {running && <li className="vf-feed-item vf-feed-pending"><span className="vf-pulse" /> Working…</li>}
+      {running && <li ref={endRef} className="vf-feed-item vf-feed-pending"><span className="vf-pulse" /> Working…</li>}
     </ol>
   );
 }

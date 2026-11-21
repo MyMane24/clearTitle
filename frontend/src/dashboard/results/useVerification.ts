@@ -53,11 +53,11 @@ export function useVerification(caseId: string) {
     return () => { if (timerRef.current) window.clearTimeout(timerRef.current); };
   }, [state, events, startRequestedAt, refresh]);
 
-  const start = async () => {
+  const start = async (fresh = false) => {
     setError(null);
     try {
       runBeforeStartRef.current = state?.run?.id ?? null;
-      await API.startVerification(caseId);
+      await API.startVerification(caseId, fresh);
       setStartRequestedAt(Date.now());
     } catch (e: any) {
       setError(e.message);

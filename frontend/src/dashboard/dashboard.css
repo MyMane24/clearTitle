@@ -2581,6 +2581,7 @@
 
   .ctd-root .cr-alert{ display: flex; gap: 9px; align-items: flex-start; margin: 6px 0; padding: 2px 0 2px 14px; border-left: 2px solid var(--amber); color: #92400e; font-size: 13.5px; line-height: 1.65; }
   .ctd-root .cr-alert svg{ flex-shrink: 0; margin-top: 2px; }
+  .ctd-root .cr-alert-detail{ display: block; margin-top: 2px; font-size: 12.5px; opacity: .8; }
   .ctd-root .cr-progress{ display: flex; gap: 9px; align-items: center; margin: 6px 0; font-size: 13px; color: var(--gray); }
   .ctd-root .cr-spin{ animation: ctd-spin 1.2s linear infinite; color: var(--blue); flex-shrink: 0; }
 
@@ -2645,6 +2646,36 @@
   .ctd-root .cr-finding h4{ font-size: 15px; font-weight: 600; line-height: 1.45; color: var(--navy); }
   .ctd-root .cr-finding-tags{ display: flex; gap: 14px; flex-wrap: wrap; margin-left: auto; }
   .ctd-root .cr-finding p{ margin-top: 6px; max-width: 72ch; font-size: 14px; line-height: 1.7; color: #44403c; }
+
+  /* Findings on one page: count chips, then one card per finding (problems first). */
+  .ctd-root .cr-chips{ display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .ctd-root .cr-chip{ padding: 4px 10px; border-radius: 6px; font-size: 12.5px; font-weight: 600; }
+  .ctd-root .cr-chip.cr-tone-bad{ background: var(--lred); color: #b91c1c; }
+  .ctd-root .cr-chip.cr-tone-warn{ background: var(--lamber); color: var(--amber); border: 1px solid #fde68a; }
+  .ctd-root .cr-chip.cr-tone-good{ background: var(--lgreen); color: #047857; }
+  .ctd-root .cr-chip.cr-tone-neutral{ background: var(--lgray); color: var(--gray); }
+  .ctd-root .cr-cards{ display: flex; flex-direction: column; gap: 12px; }
+  .ctd-root .cr-card{ padding: 14px 18px; border-radius: 8px; background: #fafaf9; border-left: 3px solid var(--border); }
+  .ctd-root .cr-card.cr-tone-bad{ border-left-color: var(--red); }
+  .ctd-root .cr-card.cr-tone-warn{ border-left-color: #f59e0b; }
+  .ctd-root .cr-card.cr-tone-good{ border-left-color: var(--green); }
+  .ctd-root .cr-card header{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .ctd-root .cr-card h4{ font-size: 15px; font-weight: 600; line-height: 1.4; color: var(--navy); }
+  .ctd-root .cr-card p{ margin-top: 6px; max-width: 80ch; font-size: 13.5px; line-height: 1.65; color: #57534e; }
+  .ctd-root .cr-badge{ padding: 2px 7px; border-radius: 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .ctd-root .cr-badge.cr-tone-bad{ background: var(--lred); color: #b91c1c; }
+  .ctd-root .cr-badge.cr-tone-warn{ background: #fef3c7; color: var(--amber); }
+  .ctd-root .cr-badge.cr-tone-good{ background: var(--lgreen); color: #047857; }
+  .ctd-root .cr-badge.cr-tone-neutral{ background: var(--lgray); color: var(--gray); }
+  .ctd-root .cr-reasons li::before{ content: "•"; }
+  .ctd-root .cr-needed-main .cr-needed-for{ font-size: 12px; color: #a8a29e; }
+
+  /* Per transfer on the chain page: what was conveyed and the documents that prove it. */
+  .ctd-root .cr-type{ padding: 2px 8px; border-radius: 999px; background: var(--lgray); color: #57534e; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+  .ctd-root .cr-proof{ list-style: none; margin: 10px 0; display: flex; flex-direction: column; gap: 6px; }
+  .ctd-root .cr-proof li{ display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: baseline; font-size: 13px; line-height: 1.55; color: #44403c; }
+  .ctd-root .cr-proof-found{ color: var(--green); position: relative; top: 2px; }
+  .ctd-root .cr-proof-missing{ color: var(--amber); position: relative; top: 2px; }
 
   .ctd-root .cr-timeline{ list-style: none; }
   .ctd-root .cr-timeline li + li{ border-top: 1px solid var(--border); }

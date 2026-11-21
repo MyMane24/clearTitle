@@ -76,9 +76,11 @@ function order(html: string, texts: string[]) {
   assert.deepEqual([...positions].sort((a, b) => a - b), positions);
 }
 
-test('report page is case level: opinion, issues and documents needed; no per-transfer detail', () => {
+test('report page is one page: opinion, findings and documents needed; no per-transfer detail', () => {
   const html = render(STATE);
-  order(html, ['Title not clear', 'id="cr-issues-title"', 'id="cr-needed-title"']);
+  order(html, ['Title not clear', 'id="cr-findings-title"', 'id="cr-needed-title"']);
+  assert.match(html, /cr-chip cr-tone-bad">1 critical</);
+  assert.match(html, /cr-badge cr-tone-bad">Critical<\/span><h4>Sale of 2007 is defective/);
   assert.doesNotMatch(html, /cr-limits-title|Limitations/);
   assert.doesNotMatch(html, /cr-timeline|cr-docs|Flow of title|Manohar sold to Dinanath|Scrutiny/);
   // The defective 2007 sale appears as an issue even though no issue was recorded for it.
@@ -100,11 +102,10 @@ test('report page before verification explains it and offers to start', () => {
   assert.equal((html.match(/Verify title/g) || []).length, 2);  // header and empty state
 });
 
-test('references show file names and transfer names, not raw ids', () => {
+test('each document needed names the transfer it is for, in words, not raw ids', () => {
   const html = render(STATE);
-  assert.match(html, /SaleDeed 2007\.pdf/);
-  assert.match(html, /cr-ref">Sale 2007</);
-  assert.doesNotMatch(html, /cr-ref">PA-TC-0001</);
+  assert.match(html, /cr-needed-for">For: Sale 2007</);
+  assert.doesNotMatch(html, /PA-TC-\d+|DOC_\d+/);
 });
 
 test('requisitions appear once, with upload only for open ones, and built sections are not repeated', () => {
@@ -126,6 +127,38 @@ test('main action depends on the state', () => {
   assert.match(render(unfinished), /Continue verification/);
   assert.doesNotMatch(render(STATE), /btn btn-primary/);  // done: no accidental re-run button
   assert.match(render(null, true), /Verifying…/);
+});
+
+test('a failed run shows the provider error, not just the notice', () => {
+  const failed = {
+    ...STATE,
+    run: { ...STATE.run!, status: 'error' as const, error: 'ModelTimeoutError: Request timed out.' },
+  };
+  const html = render(failed);
+  assert.match(html, /The last verification failed/);
+  assert.match(html, /ModelTimeoutError: Request timed out\./);
+});
+
+test('while a run is in progress only this run\u2019s steps show, not the previous report', () => {
+  const running: VerificationState = {
+    ...STATE,
+    run: { ...STATE.run!, id: 'r2', status: 'running' },
+  };
+  const events = [
+    { id: 1, run_id: 'r1', kind: 'verdict', text: 'Old step from the last run', created_at: '' },
+    { id: 2, run_id: 'r2', kind: 'read', text: 'Reading SaleDeed 2007.pdf', created_at: '' },
+  ];
+  const html = renderToStaticMarkup(
+    <CaseResultsView
+      caseId="C1" results={RESULTS} chainBusy={false} onRebuildChain={() => {}} onOpenPdf={() => {}}
+      state={running} events={events} error={null} running uploadingId={null} start={() => {}} upload={() => {}}
+      page="report" onPageChange={() => {}}
+    />,
+  );
+  assert.match(html, /id="cr-live-title"/);
+  assert.match(html, /Reading SaleDeed 2007\.pdf/);
+  assert.doesNotMatch(html, /Old step from the last run/);
+  assert.doesNotMatch(html, /cr-issues-title|Title not clear|Documents needed/);
 });
 
 test('timeline uses verified links with coloured verdicts, else the draft chain', () => {
@@ -212,7 +245,7 @@ test('header names the property from the report schedule, and titles drop intern
   assert.equal(cleanTitle('Canara Bank deposit'), 'Canara Bank deposit');
 });
 
-test('after verification, a document nobody needed is shown as not needed', () => {
+test('after verification, a document left unread is shown as not examined', () => {
   const state: VerificationState = {
     ...STATE,
     case_file: {
@@ -221,5 +254,31 @@ test('after verification, a document nobody needed is shown as not needed', () =
     },
   };
   const html = render(state, false, 'chain');
-  assert.match(html, /EC 2010 to 2026\.pdf.*?Not needed/s);
+  assert.match(html, /EC 2010 to 2026\.pdf.*?Not examined/s);
+});
+
+test('chain page shows what each transfer conveyed and the documents that prove it', () => {
+  const link = STATE.case_file!.chain[0];
+  const state: VerificationState = {
+    ...STATE,
+    case_file: {
+      ...STATE.case_file!,
+      chain: [{
+        ...link,
+        verdict: {
+          ...link.verdict!,
+          property_type: 'agricultural_land',
+          extent: '2 acres',
+          needed_documents: [
+            { document: 'Sale deed of 2007', proves: 'The sale itself.', status: 'found' },
+            { document: 'GPA to Girish', proves: 'Authority to sell.', status: 'missing', requisition_id: 'R1' },
+          ],
+        },
+      }],
+      clear_checks: [{ id: 'C1', title: 'Owner name matches', detail: 'Same name in deed and RTC.' }],
+    },
+  };
+  const html = render(state, false, 'chain');
+  assert.match(html, /cr-type">Agricultural land</);
+  assert.match(html, /Sale deed of 2007.*?Found.*?GPA to Girish.*?Needed/s);
 });

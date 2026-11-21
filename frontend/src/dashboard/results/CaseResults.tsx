@@ -1,14 +1,14 @@
 import React from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  AlertTriangle, CheckCircle2, FileText, GitBranch, Loader2, MoreHorizontal, ScrollText, ShieldCheck, Upload,
+  AlertTriangle, CheckCircle2, FileText, GitBranch, MoreHorizontal, ScrollText, ShieldCheck, Upload,
 } from 'lucide-react';
 import type { CaseResults as CaseResultsData, VerificationEvent, VerificationState } from '../../api/backend';
 import { LiveFeed } from '../verification/LiveFeed';
 import { ChainTimeline, timelineLinks } from './ChainTimeline';
 import { humanizeType, refLabeller } from './labels';
 import { caseIssues } from './issues';
-import { IssuesList, Opinion, Section, opinionLabel, opinionTone } from './ReportView';
+import { FindingsList, Opinion, Section, opinionLabel, opinionTone } from './ReportView';
 import { useVerification } from './useVerification';
 
 export type CasePage = 'chain' | 'report';
@@ -43,7 +43,7 @@ export interface CaseResultsViewProps extends CaseResultsProps {
   error: string | null;
   running: boolean;
   uploadingId: string | null;
-  start: () => void;
+  start: (fresh?: boolean) => void;
   upload: (requisitionId: string, file: File) => void;
   page: CasePage;
   onPageChange: (page: CasePage) => void;
@@ -99,7 +99,7 @@ function reportDate(state: VerificationState | null): string {
 }
 
 export function CaseResultsView(props: CaseResultsViewProps) {
-  const { results, state, running, chainBusy, start, onRebuildChain, page, onPageChange } = props;
+  const { results, state, events, running, chainBusy, start, onRebuildChain, page, onPageChange } = props;
   const caseFile = state?.case_file || null;
   const report = state?.report || null;
   const prepared = reportDate(state);
@@ -107,6 +107,9 @@ export function CaseResultsView(props: CaseResultsViewProps) {
   const unfinished = Boolean(state?.run && ['incomplete', 'error'].includes(state.run.status));
   const badge = status(results, state, running);
   const primary = !chainReady || running ? null : !caseFile ? 'Verify title' : unfinished ? 'Continue verification' : null;
+  // While a run is going, the previous report is stale: show this run's steps only.
+  const liveRunId = state?.run?.status === 'running' ? state.run.id : null;
+  const liveEvents = liveRunId ? events.filter(event => event.run_id === liveRunId) : [];
 
   return (
     <div className="cr-page">
@@ -119,21 +122,21 @@ export function CaseResultsView(props: CaseResultsViewProps) {
               <span className="cr-verdict-code">{badge.code}</span>
               <span className="cr-verdict-label">{badge.label}</span>
             </span>
-            {report && <span className="cr-meta-item">Report v{report.version}</span>}
-            {prepared && <span className="cr-meta-item">{prepared}</span>}
+            {report && !running && <span className="cr-meta-item">Report v{report.version}</span>}
+            {prepared && !running && <span className="cr-meta-item">{prepared}</span>}
             <span className="cr-meta-item">Case {results.case.case_id}</span>
           </div>
         </div>
         <div className="cr-header-actions">
           {primary && (
-            <button className="btn btn-primary" type="button" onClick={start}>
+            <button className="btn btn-primary" type="button" onClick={() => start(false)}>
               <ShieldCheck size={14} /> {primary}
             </button>
           )}
           <details className="cr-menu">
             <summary aria-label="More actions"><MoreHorizontal size={16} /></summary>
             <div className="cr-menu-items">
-              {caseFile && !running && <button type="button" onClick={start}>Run verification again</button>}
+              {caseFile && !running && <button type="button" onClick={() => start(true)}>Run verification again</button>}
               <button type="button" disabled={chainBusy} onClick={onRebuildChain}>
                 {chainBusy ? 'Rebuilding title chain…' : 'Rebuild title chain'}
               </button>
@@ -142,16 +145,24 @@ export function CaseResultsView(props: CaseResultsViewProps) {
         </div>
       </header>
 
-      <nav className="cr-tabs" aria-label="Case pages">
-        <button type="button" className={page === 'chain' ? 'cr-tab cr-tab-active' : 'cr-tab'} aria-current={page === 'chain' ? 'page' : undefined} onClick={() => onPageChange('chain')}>
-          <GitBranch size={14} /> Title chain
-        </button>
-        <button type="button" className={page === 'report' ? 'cr-tab cr-tab-active' : 'cr-tab'} aria-current={page === 'report' ? 'page' : undefined} onClick={() => onPageChange('report')}>
-          <ScrollText size={14} /> Verification report
-        </button>
-      </nav>
+      {running ? (
+        <Section id="cr-live-title" title="Agent steps" aside="Live">
+          <LiveFeed events={liveEvents} running label={refLabeller(state?.case_file)} />
+        </Section>
+      ) : (
+        <>
+          <nav className="cr-tabs" aria-label="Case pages">
+            <button type="button" className={page === 'chain' ? 'cr-tab cr-tab-active' : 'cr-tab'} aria-current={page === 'chain' ? 'page' : undefined} onClick={() => onPageChange('chain')}>
+              <GitBranch size={14} /> Title chain
+            </button>
+            <button type="button" className={page === 'report' ? 'cr-tab cr-tab-active' : 'cr-tab'} aria-current={page === 'report' ? 'page' : undefined} onClick={() => onPageChange('report')}>
+              <ScrollText size={14} /> Verification report
+            </button>
+          </nav>
 
-      {page === 'chain' ? <ChainPage {...props} /> : <ReportPage {...props} primary={primary} />}
+          {page === 'chain' ? <ChainPage {...props} /> : <ReportPage {...props} primary={primary} />}
+        </>
+      )}
     </div>
   );
 }
@@ -187,10 +198,10 @@ function ChainPage({ results, state, onOpenPdf }: CaseResultsViewProps) {
             const docState = examined?.examined ? 'Examined' : examined?.examination_error ? 'Could not be read'
               : doc.status === 'classification_failed' || doc.status === 'failed' ? 'Needs attention'
               : doc.status !== 'structured' ? 'Processing'
-              : examined && report ? 'Not needed' : 'Ready';
+              : examined && report ? 'Not examined' : 'Ready';
             const tone = docState === 'Examined' || docState === 'Ready' ? 'good'
               : docState === 'Could not be read' ? 'bad'
-              : docState === 'Processing' || docState === 'Not needed' ? 'neutral' : 'warn';
+              : docState === 'Processing' ? 'neutral' : 'warn';
             return (
               <li key={doc.doc_id}>
                 <button type="button" className="cr-doc-name" onClick={() => onOpenPdf(String(doc.doc_id))} title="Open the original PDF">
@@ -208,30 +219,35 @@ function ChainPage({ results, state, onOpenPdf }: CaseResultsViewProps) {
 }
 
 /** Is the title clear: opinion, documents needed, the report and the agent's steps. */
-function ReportPage({ state, events, error, running, uploadingId, start, upload, primary }: CaseResultsViewProps & { primary: string | null }) {
+function ReportPage({ state, events, error, uploadingId, start, upload, primary }: CaseResultsViewProps & { primary: string | null }) {
   const caseFile = state?.case_file || null;
   const report = state?.report || null;
   const label = refLabeller(caseFile);
   const unfinished = Boolean(state?.run && ['incomplete', 'error'].includes(state.run.status));
+  // The provider's own message, trimmed: it is the only explanation of a failed run.
+  const runError = (state?.run?.error || '').split('\n')[0].slice(0, 200);
   const requisitions = caseFile?.requisitions || [];
-  const pending = requisitions.filter(item => item.status !== 'resolved');
-  const settled = requisitions.length - pending.length;
-  const lastStep = events.length ? events[events.length - 1].text : 'Starting…';
+  const pending = requisitions.filter(item => item.status === 'open' || item.status === 'fulfilled');
+  const links = new Set((caseFile?.chain || []).map(link => link.link_id));
+  const transferOf = (affects: string[]) => affects.find(ref => links.has(ref));
+  const settled = requisitions.filter(item => item.status === 'resolved').length;
 
   return (
     <>
       {error && <p className="cr-alert"><AlertTriangle size={14} /> {error}</p>}
-      {unfinished && !running && (
+      {unfinished && (
         <p className="cr-alert">
           <AlertTriangle size={14} />
-          {state?.run?.status === 'incomplete'
-            ? 'The last verification stopped at its limit. Progress is saved; continue to finish.'
-            : 'The last verification failed. Progress is saved; continue to retry.'}
+          <span>
+            {state?.run?.status === 'incomplete'
+              ? 'The last verification stopped at its limit. Progress is saved; continue to finish.'
+              : 'The last verification failed. Progress is saved; continue to retry.'}
+            {runError && <span className="cr-alert-detail">{runError}</span>}
+          </span>
         </p>
       )}
-      {running && <div className="cr-progress"><Loader2 size={14} className="cr-spin" /> {lastStep}</div>}
 
-      {!report && !running && (
+      {!report && (
         <section className="cr-empty" aria-label="No report yet">
           <h2>No verification report yet</h2>
           <p>
@@ -240,7 +256,7 @@ function ReportPage({ state, events, error, running, uploadingId, start, upload,
             report with an opinion on whether the title is clear.
           </p>
           {primary && (
-            <div className="cr-empty-action"><button className="btn btn-primary" type="button" onClick={start}><ShieldCheck size={14} /> {primary}</button></div>
+            <div className="cr-empty-action"><button className="btn btn-primary" type="button" onClick={() => start(false)}><ShieldCheck size={14} /> {primary}</button></div>
           )}
         </section>
       )}
@@ -249,7 +265,7 @@ function ReportPage({ state, events, error, running, uploadingId, start, upload,
         <>
           <p className="cr-lede">{label(report.property_summary)}</p>
           <Opinion report={report} label={label} />
-          <IssuesList issues={caseIssues(report, caseFile)} label={label} />
+          <FindingsList issues={caseIssues(report, caseFile)} label={label} />
         </>
       )}
 
@@ -258,7 +274,7 @@ function ReportPage({ state, events, error, running, uploadingId, start, upload,
           id="cr-needed-title"
           title="Documents needed"
           aside={pending.length === 1 ? '1 open item' : `${pending.length} open items`}
-          note="Verification continued without these. Upload one and only what it affects is checked again."
+          note="Upload each document; only the transfer it affects is checked again."
         >
           <ul className="cr-needed">
             {pending.map(item => (
@@ -266,18 +282,19 @@ function ReportPage({ state, events, error, running, uploadingId, start, upload,
                 <div className="cr-needed-main">
                   <b>{label(item.document)}</b>
                   <span>{label(item.reason)}</span>
+                  {transferOf(item.affects) && <span className="cr-needed-for">For: {label(transferOf(item.affects)!)}</span>}
                 </div>
                 <span className={`cr-status cr-tone-${item.status === 'open' ? 'warn' : 'good'}`}>
                   {item.status === 'open' ? 'Open' : 'Received'}
                 </span>
                 {item.status === 'open' ? (
-                  <label className={`cr-action${running || uploadingId ? ' cr-disabled' : ''}`}>
+                  <label className={`cr-action${uploadingId ? ' cr-disabled' : ''}`}>
                     <Upload size={13} /> {uploadingId === item.id ? 'Uploading…' : 'Upload'}
                     <input
                       type="file"
                       accept="application/pdf"
                       hidden
-                      disabled={running || uploadingId !== null}
+                      disabled={uploadingId !== null}
                       onChange={event => {
                         const file = event.target.files?.[0];
                         if (file) upload(item.id, file);
@@ -298,7 +315,7 @@ function ReportPage({ state, events, error, running, uploadingId, start, upload,
       {events.length > 0 && (
         <details className="cr-steps">
           <summary>Agent steps ({events.length})</summary>
-          <LiveFeed events={events} running={running} label={label} />
+          <LiveFeed events={events} running={false} label={label} />
         </details>
       )}
     </>

@@ -156,7 +156,7 @@ export interface VerificationRequisition {
   document: string;
   reason: string;
   affects: string[];
-  status: "open" | "fulfilled" | "resolved";
+  status: "open" | "fulfilled" | "resolved" | "withdrawn";
   doc_id?: string | null;
 }
 export interface ChainTransaction {
@@ -181,8 +181,18 @@ export interface VerificationLink {
     verdict: string;
     summary: string;
     checks?: { check: string; status: string; note: string }[];
+    property_type?: string | null;
+    extent?: string | null;
+    needed_documents?: VerificationNeededDocument[];
   } | null;
 }
+export interface VerificationNeededDocument {
+  document: string;
+  proves: string;
+  status: "found" | "missing";
+  requisition_id?: string | null;
+}
+export interface VerificationClearCheck { id: string; title: string; detail: string }
 export interface VerificationDocument {
   doc_id: string;
   filename: string;
@@ -197,6 +207,7 @@ export interface VerificationCaseFile {
   documents: Record<string, VerificationDocument>;
   leads: VerificationLead[];
   issues: VerificationIssue[];
+  clear_checks?: VerificationClearCheck[];
   requisitions: VerificationRequisition[];
   tasks: VerificationTask[];
 }
@@ -360,8 +371,8 @@ export const API = {
     return request(`/api/results/${caseId}/chain`, { method: "POST" });
   },
 
-  async startVerification(caseId: string): Promise<{ case_id: string; status: string }> {
-    return request(`/api/verify/${caseId}`, { method: "POST" });
+  async startVerification(caseId: string, fresh = false): Promise<{ case_id: string; status: string }> {
+    return request(`/api/verify/${caseId}?fresh=${fresh}`, { method: "POST" });
   },
 
   async getVerification(caseId: string): Promise<VerificationState> {

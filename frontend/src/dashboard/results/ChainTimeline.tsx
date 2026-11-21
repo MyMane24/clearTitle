@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, ChevronDown } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, XCircle } from 'lucide-react';
 import type { ChainTransaction, VerificationLink } from '../../api/backend';
 import { VERDICT, humanizeType } from './labels';
 
@@ -66,6 +66,7 @@ export function ChainTimeline({ links, label = plain }: { links: TimelineLink[];
                   <span className="cr-muted">{(t.transferors || []).join(', ') || 'Earlier owner'} → {(t.transferees || []).join(', ') || 'Acquirer not recorded'}</span>
                 </span>
                 <span className="cr-link-tags">
+                  {link.verdict?.property_type && <span className="cr-type">{humanizeType(link.verdict.property_type)}</span>}
                   {link.addedByVerification && <span className="cr-status cr-tone-neutral">Added by verification</span>}
                   {verdict && <span className={`cr-status cr-tone-${verdict.tone}`}>{verdict.label}</span>}
                 </span>
@@ -74,10 +75,22 @@ export function ChainTimeline({ links, label = plain }: { links: TimelineLink[];
               <div className="cr-link-body">
                 {link.verdict && <p>{label(link.verdict.summary)}</p>}
                 <dl className="cr-facts">
+                  <Detail label="Extent" value={link.verdict?.extent ? label(link.verdict.extent) : null} />
                   <Detail label="Registration no." value={t.transaction_number} />
                   <Detail label="Evidence" value={t.evidence_status ? humanizeType(t.evidence_status) : null} />
                   <Detail label="Sources" value={(t.source_refs || []).map(ref => ref.filename).join(', ')} />
                 </dl>
+                {link.verdict?.needed_documents && link.verdict.needed_documents.length > 0 && (
+                  <ul className="cr-proof" aria-label="Documents that prove this transfer">
+                    {link.verdict.needed_documents.map((doc, i) => (
+                      <li key={i}>
+                        {doc.status === 'found' ? <CheckCircle2 size={13} className="cr-proof-found" /> : <XCircle size={13} className="cr-proof-missing" />}
+                        <span><b>{label(doc.document)}</b> {label(doc.proves)}</span>
+                        <span className={`cr-status cr-tone-${doc.status === 'found' ? 'good' : 'warn'}`}>{doc.status === 'found' ? 'Found' : 'Needed'}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 {link.verdict?.checks && link.verdict.checks.length > 0 && (
                   <ul className="cr-checks">
                     {link.verdict.checks.map((check, i) => (

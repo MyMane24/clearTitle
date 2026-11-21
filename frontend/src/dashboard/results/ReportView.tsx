@@ -2,7 +2,6 @@ import React from 'react';
 import { History } from 'lucide-react';
 import type { DueDiligenceReport, ReportOpinion } from '../../api/backend';
 import type { CaseIssue } from './issues';
-import { verdictTone } from './labels';
 
 const OPINION: Record<ReportOpinion, { label: string; tone: string }> = {
   CLEAR: { label: 'Title clear', tone: 'good' },
@@ -20,27 +19,9 @@ export function opinionTone(opinion: ReportOpinion): string {
 
 type Label = (ref: string) => string;
 
-const MAX_REFS = 6;
-
-function Refs({ refs, label }: { refs?: string[]; label: Label }) {
-  if (!refs || !refs.length) return null;
-  const shown = refs.slice(0, MAX_REFS);
-  return (
-    <span className="cr-refs" title={refs.map(label).join(', ')}>
-      {shown.map(ref => <span key={ref} className="cr-ref">{label(ref)}</span>)}
-      {refs.length > MAX_REFS && <span className="cr-ref">+{refs.length - MAX_REFS} more</span>}
-    </span>
-  );
-}
-
 /** Drops a leading internal id ("PA-TC-0002 — ", "I2 — ") the writer may put in a title. */
 export function cleanTitle(title: string): string {
   return title.replace(/^(?:[A-Z]{2}-TC-\d+|VL-\d+|DOC_\d+|[ILR]\d+)\s*[—–:-]\s*/, '');
-}
-
-function sentenceCase(text: string): string {
-  const plain = text.replace(/_/g, ' ').toLowerCase();
-  return plain.charAt(0).toUpperCase() + plain.slice(1);
 }
 
 /** A titled part of the report: a heading, an optional note, and its content. */
@@ -63,33 +44,14 @@ export function Section({ id, title, aside, note, children }: {
   );
 }
 
-/** One finding: a number, its title and status, and the reasoning behind it. */
-function Finding({ index, title, text, tone, tags, refs, label }: {
-  index?: string;
-  title: string;
-  text: string;
-  tone: string;
-  tags: string[];
-  refs?: string[];
-  label: Label;
-}) {
-  return (
-    <article className="cr-finding">
-      {index && <span className="cr-finding-index">{index}</span>}
-      <div className="cr-finding-main">
-        <header>
-          <h4>{label(cleanTitle(title))}</h4>
-          <span className="cr-finding-tags">
-            {tags.map(tag => <span key={tag} className={`cr-status cr-tone-${tone}`}>{tag}</span>)}
-          </span>
-        </header>
-        <p>{label(text)} <Refs refs={refs} label={label} /></p>
-      </div>
-    </article>
-  );
-}
+const BADGE: Record<CaseIssue['severity'], { badge: string; tone: string }> = {
+  high: { badge: 'Critical', tone: 'bad' },
+  medium: { badge: 'Caution', tone: 'warn' },
+  low: { badge: 'Note', tone: 'neutral' },
+  clear: { badge: 'Clear', tone: 'good' },
+};
 
-/** The opinion and its reasons, shown at the top of the page. */
+/** The opinion and at most two short reasons, shown at the top of the page. */
 export function Opinion({ report, label }: { report: DueDiligenceReport; label: Label }) {
   const opinion = OPINION[report.opinion];
   return (
@@ -97,11 +59,9 @@ export function Opinion({ report, label }: { report: DueDiligenceReport; label: 
       <p className="cr-opinion-label">Opinion</p>
       <p className="cr-opinion-verdict">{opinion.label}</p>
       {report.opinion_reasons.length > 0 && (
-        <ol className="cr-reasons">
-          {report.opinion_reasons.map((reason, i) => (
-            <li key={i}>{label(reason.text)} <Refs refs={reason.refs} label={label} /></li>
-          ))}
-        </ol>
+        <ul className="cr-reasons">
+          {report.opinion_reasons.map((reason, i) => <li key={i}>{label(reason.text)}</li>)}
+        </ul>
       )}
       {report.changes_since_previous.length > 0 && (
         <details className="cr-changes">
@@ -113,31 +73,39 @@ export function Opinion({ report, label }: { report: DueDiligenceReport; label: 
   );
 }
 
-/** Every problem a buyer must know about, most serious first. */
-export function IssuesList({ issues, label }: { issues: CaseIssue[]; label: Label }) {
+/** Findings on one page: count chips, then one short card per finding, problems first. */
+export function FindingsList({ issues, label }: { issues: CaseIssue[]; label: Label }) {
+  const count = (severity: CaseIssue['severity']) => issues.filter(issue => issue.severity === severity).length;
+  const chips = [
+    { n: count('high'), text: 'critical', tone: 'bad' },
+    { n: count('medium'), text: 'to resolve', tone: 'warn' },
+    { n: count('low'), text: count('low') === 1 ? 'note' : 'notes', tone: 'neutral' },
+    { n: count('clear'), text: 'clear', tone: 'good' },
+  ].filter(chip => chip.n > 0);
   return (
-    <Section
-      id="cr-issues-title"
-      title="Issues identified"
-      aside={issues.length ? `${issues.length} ${issues.length === 1 ? 'finding' : 'findings'}` : 'None'}
-    >
+    <Section id="cr-findings-title" title="Findings">
       {issues.length === 0 ? (
-        <p className="cr-muted">No issues were found in the documents examined.</p>
+        <p className="cr-muted">No findings were recorded for the documents examined.</p>
       ) : (
-        <div className="cr-findings">
-          {issues.map((issue, i) => (
-            <Finding
-              key={i}
-              index={String(i + 1).padStart(2, '0')}
-              title={issue.title}
-              text={issue.text}
-              tone={verdictTone(issue.severity)}
-              tags={[sentenceCase(issue.severity)]}
-              refs={issue.refs.filter(ref => !/^I\d+$/.test(ref))}
-              label={label}
-            />
-          ))}
-        </div>
+        <>
+          <p className="cr-chips">
+            {chips.map(chip => <span key={chip.text} className={`cr-chip cr-tone-${chip.tone}`}>{chip.n} {chip.text}</span>)}
+          </p>
+          <div className="cr-cards">
+            {issues.map((issue, i) => {
+              const badge = BADGE[issue.severity] || BADGE.low;
+              return (
+                <article key={i} className={`cr-card cr-tone-${badge.tone}`}>
+                  <header>
+                    <span className={`cr-badge cr-tone-${badge.tone}`}>{badge.badge}</span>
+                    <h4>{label(cleanTitle(issue.title))}</h4>
+                  </header>
+                  <p>{label(issue.text)}</p>
+                </article>
+              );
+            })}
+          </div>
+        </>
       )}
     </Section>
   );
