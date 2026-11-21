@@ -1,14 +1,12 @@
 """The report writer: turns a closed Case File into a due diligence report.
 
-The model writes the narrative sections and the opinion from the Case File
-alone (no OCR text). The application builds the factual tables (documents
-examined, requisitions), checks every reference and the opinion's consistency
-with the Case File, and lists what changed since the previous version.
+The model writes only the opinion and one or two reasons, from the Case File
+alone (no OCR text). The application builds the findings, checks the opinion
+against the Case File, and lists what changed since the previous version.
 """
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 
@@ -16,18 +14,7 @@ from pydantic_ai import Agent, ModelRetry, RunContext, UsageLimits
 
 from backend.config import VERIFY_REPORT_CALL_BUDGET
 from backend.prompts.loader import load_prompt
-from backend.schemas.due_diligence import (
-    DEFAULT_SECTIONS,
-    WRITTEN_SECTION_IDS,
-    DueDiligenceReport,
-    Finding,
-    FindingsBlock,
-    Opinion,
-    ParagraphBlock,
-    Section,
-    TableBlock,
-    WrittenReport,
-)
+from backend.schemas.due_diligence import DueDiligenceReport, Finding, Opinion, WrittenReport
 from backend.services.verification.case_file import CaseFile, link_year
 from backend.services.verification.tools import VERDICT_WORDS, transfer_name
 
@@ -86,36 +73,22 @@ def opinion_problems(case: CaseFile, opinion: Opinion) -> list[str]:
 
 def report_problems(case: CaseFile, written: WrittenReport) -> list[str]:
     """Why the written report does not faithfully reflect the Case File, if it does not."""
-    known = case.known_ids() | set(case.documents)
-    sections = {section.id: section for section in written.sections}
-    problems = [f"Missing section {sid!r}." for sid in WRITTEN_SECTION_IDS if sid not in sections]
-    refs = {ref for section in written.sections for ref in section.refs()}
-    refs |= {ref for reason in written.opinion_reasons for ref in reason.refs}
-    unknown = sorted(refs - known)
-    if unknown:
-        problems.append(f"Unknown ids in refs: {', '.join(unknown)}. Use Case File ids only.")
-    problems += opinion_problems(case, written.opinion)
-    problems += length_problems(written)
-    return problems
+    return opinion_problems(case, written.opinion) + length_problems(written)
 
 
-REASONS_MAX, REASON_CHARS, LIMITATIONS_CHARS = 2, 140, 240
+REASONS_MAX, REASON_CHARS = 2, 140
 
 
 def length_problems(written: WrittenReport) -> list[str]:
-    """The buyer's page is one page: two short reasons and a one-line limitation."""
+    """The buyer's page is one page: at most two short reasons."""
     problems = []
-    if len(written.opinion_reasons) > REASONS_MAX:
-        problems.append(f"Give at most {REASONS_MAX} opinion reasons, the most important first.")
+    if len(written.reasons) > REASONS_MAX:
+        problems.append(f"Give at most {REASONS_MAX} reasons, the most important first.")
     problems += [
-        f"Opinion reason {index} has {len(reason.text)} characters; keep it to {REASON_CHARS}."
-        for index, reason in enumerate(written.opinion_reasons, start=1)
-        if len(reason.text) > REASON_CHARS
+        f"Reason {index} has {len(reason)} characters; keep it to {REASON_CHARS}."
+        for index, reason in enumerate(written.reasons, start=1)
+        if len(reason) > REASON_CHARS
     ]
-    for section in written.sections:
-        text = " ".join(getattr(block, "text", "") for block in section.blocks)
-        if section.id == "limitations" and len(text) > LIMITATIONS_CHARS:
-            problems.append(f"Limitations has {len(text)} characters; keep it to one sentence.")
     return problems
 
 
@@ -127,7 +100,7 @@ def check_written_report(ctx: RunContext[ReportDeps], written: WrittenReport) ->
     return written
 
 
-# -- Built sections and versioning --------------------------------------------
+# -- Findings and versioning ---------------------------------------------------
 
 
 def _transfer_name(link) -> str:
@@ -150,7 +123,6 @@ def case_issues(case: CaseFile) -> list[Finding]:
             title=issue.title,
             text=issue.detail,
             severity=issue.severity,
-            refs=[issue.id, *issue.link_ids],
         )
         for issue in case.issues
     ]
@@ -169,7 +141,6 @@ def case_issues(case: CaseFile) -> list[Finding]:
                     title=f"{_transfer_name(link)} is defective",
                     text=link.verdict.summary,
                     severity="high",
-                    refs=[link.link_id],
                 )
             )
     for index, link in enumerate(case.window()):
@@ -179,7 +150,6 @@ def case_issues(case: CaseFile) -> list[Finding]:
                     title=f"Break in the title chain before the {_transfer_name(link).lower()}",
                     text=link.break_note or "No document shows how ownership passed.",
                     severity="high",
-                    refs=[link.link_id],
                 )
             )
     order = {"high": 0, "medium": 1, "low": 2}
@@ -207,40 +177,13 @@ def clear_findings(case: CaseFile) -> list[Finding]:
                 text=f"Ownership traces{since} through {count} to the current owner; each "
                 "seller is the buyer in the transfer before.",
                 severity="clear",
-                refs=[link.link_id for link in window],
             )
         )
     findings += [
-        Finding(title=check.title, text=check.detail, severity="clear", refs=[check.id])
+        Finding(title=check.title, text=check.detail, severity="clear")
         for check in case.clear_checks
     ]
     return findings
-
-
-def _issues_section(case: CaseFile) -> Section:
-    items = case_issues(case)
-    blocks = (
-        [FindingsBlock(items=items)]
-        if items
-        else [ParagraphBlock(text="No issues were found in the documents examined.")]
-    )
-    return Section(id="issues", title="Issues identified", blocks=blocks)
-
-
-def _requisitions_section(case: CaseFile) -> Section:
-    shown = [item for item in case.requisitions if item.status != "withdrawn"]
-    rows = [[item.document, item.reason, item.status] for item in shown]
-    return Section(
-        id="requisitions",
-        title="Documents needed",
-        blocks=[
-            TableBlock(
-                columns=["Document needed", "Why it is needed", "Status"],
-                rows=rows or [["No further documents are needed", "", ""]],
-                refs=[item.id for item in shown],
-            )
-        ],
-    )
 
 
 OPINION_WORDS = {
@@ -327,49 +270,63 @@ def changes(previous: dict, current: dict) -> list[str]:
 def assemble(
     case: CaseFile, written: WrittenReport, version: int, previous: dict | None
 ) -> DueDiligenceReport:
-    """Merge the written sections with the built ones, in the standard order."""
-    built = {
-        "issues": _issues_section(case),
-        "requisitions": _requisitions_section(case),
-    }
-    by_id = {section.id: section for section in written.sections if section.id not in built}
-    ordered = [
-        built.get(sid) or by_id.pop(sid)
-        for sid, _, _ in DEFAULT_SECTIONS
-        if sid in built or sid in by_id
-    ]
-    current = basis(case, written.opinion)
+    """The saved report: the writer's opinion and reasons, the built findings and changes."""
     return DueDiligenceReport(
         version=version,
-        property_summary=written.property_summary,
         opinion=written.opinion,
-        opinion_reasons=written.opinion_reasons,
-        sections=[*ordered, *by_id.values()],
-        changes_since_previous=changes(previous or {}, current),
-        basis=current,
+        reasons=written.reasons,
+        findings=case_issues(case),
+        changes=changes(previous or {}, basis(case, written.opinion)),
     )
 
 
 def report_input(case: CaseFile) -> str:
-    """The Case File in full detail for the writer (summaries, not OCR text)."""
-    section_lines = [
-        f"- {sid}: {title}. {how}" for sid, title, how in DEFAULT_SECTIONS if how != "built"
+    """What the writer needs for the opinion and its reasons, in words, without ids.
+
+    Each transfer's verdict and summary, the breaks, the issues, the documents still
+    needed and the unreadable documents. Nothing else: no checks, citations or
+    examiner reports.
+    """
+    window = case.window()
+    transfers = []
+    for index, link in enumerate(window):
+        if index and not link.continues_previous:
+            transfers.append(f"- BREAK before {transfer_name(link)}: {link.break_note or 'no note'}")
+        verdict = link.verdict
+        transfers.append(
+            f"- {transfer_name(link).capitalize()}: "
+            + (f"{VERDICT_WORDS[verdict.verdict]}. {verdict.summary}" if verdict else "no verdict")
+        )
+    issues = [f"- [{issue.severity}] {issue.title}: {issue.detail}" for issue in case.issues]
+    needed = [
+        f"- {item.document}: {item.reason}"
+        for item in case.requisitions
+        if item.status in ("open", "fulfilled")
     ]
-    payload = case.model_dump(
-        mode="json",
-        exclude={"counters", "tasks", "schema_version", "version"},
-    )
-    for entry in payload["documents"].values():
-        report = entry.pop("report", None)
-        entry["examined_summary"] = report["summary"] if report else None
+    unreadable = [
+        f"- {entry.filename}: {entry.examination_error}"
+        for entry in case.documents.values()
+        if entry.examination_error
+    ]
+    passed = [f"- {check.title}" for check in case.clear_checks]
     return "\n".join(
         [
-            "Write the due diligence report: property_summary, opinion, opinion_reasons, and "
-            "only these sections (issues and documents needed are added by the application):",
-            *section_lines,
+            "Write the opinion and one or two reasons.",
             "",
-            "CASE FILE (JSON):",
-            json.dumps(payload, ensure_ascii=False, indent=1),
+            "TRANSFERS (root to current owner)",
+            *(transfers or ["- none"]),
+            "",
+            "ISSUES",
+            *(issues or ["- none"]),
+            "",
+            "DOCUMENTS STILL NEEDED",
+            *(needed or ["- none"]),
+            "",
+            "DOCUMENTS THAT COULD NOT BE READ",
+            *(unreadable or ["- none"]),
+            "",
+            "CHECKS THAT PASSED",
+            *(passed or ["- none"]),
         ]
     )
 

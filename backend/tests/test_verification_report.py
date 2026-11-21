@@ -1,8 +1,8 @@
 """The one-page report: short opinion, findings including what checked out."""
 
-from backend.schemas.due_diligence import OpinionReason, ParagraphBlock, Section, WrittenReport
+from backend.schemas.due_diligence import DueDiligenceReport, WrittenReport
 from backend.services.verification import case_file as cf
-from backend.services.verification.report import case_issues, length_problems
+from backend.services.verification.report import case_issues, length_problems, report_input
 from backend.tests.verification_fixtures import new_case_file
 
 
@@ -16,15 +16,8 @@ def verified(case):
     return case
 
 
-def written(reasons, limitation="Rests only on the documents provided."):
-    return WrittenReport(
-        property_summary="Sy.No.45, Hosahalli, owned by Deepa.",
-        opinion="CLEAR",
-        opinion_reasons=[OpinionReason(text=text) for text in reasons],
-        sections=[
-            Section(id="limitations", title="Limitations", blocks=[ParagraphBlock(text=limitation)])
-        ],
-    )
+def written(reasons):
+    return WrittenReport(opinion="CLEAR", reasons=reasons)
 
 
 def test_unbroken_verified_chain_is_a_clear_finding():
@@ -50,11 +43,56 @@ def test_problems_come_before_clear_findings():
     assert [f.severity for f in case_issues(case)] == ["medium", "clear"]
 
 
+def test_writer_gets_verdicts_issues_and_needs_in_words_only():
+    case = verified(new_case_file())
+    case.chain[1].verdict.summary = "Registered sale, vendor title shown."
+    case.issues.append(cf.Issue(id="I1", severity="medium", title="Patta in old name", detail="x"))
+    case.requisitions.append(
+        cf.Requisition(id="R1", document="Release deed", reason="Mortgage.", affects=["PA-TC-0002"])
+    )
+    text = report_input(case)
+    assert "Registered sale, vendor title shown." in text
+    assert "[medium] Patta in old name" in text
+    assert "Release deed: Mortgage." in text
+    assert "PA-TC-" not in text and "citations" not in text
+    assert len(text) < 2000
+
+
 def test_report_text_limits():
     assert length_problems(written(["One.", "Two."])) == []
     assert any("at most 2" in p for p in length_problems(written(["a", "b", "c"])))
     assert any("keep it to 140" in p for p in length_problems(written(["x" * 141])))
-    assert any("one sentence" in p for p in length_problems(written(["a"], "y" * 241)))
+
+
+def test_older_saved_reports_still_load():
+    old = {
+        "version": 4,
+        "opinion": "NOT_CLEAR",
+        "property_summary": "Plot 9.",
+        "opinion_reasons": [{"text": "A bank charge is not discharged.", "refs": ["I1"]}],
+        "sections": [
+            {
+                "id": "issues",
+                "title": "Issues identified",
+                "blocks": [
+                    {
+                        "type": "findings",
+                        "items": [
+                            {"title": "Bank charge", "text": "x", "severity": "high"}
+                        ],
+                    }
+                ],
+            },
+            {"id": "limitations", "title": "Limitations", "blocks": []},
+        ],
+        "changes_since_previous": ["The sale of 2019: now defective."],
+        "basis": {"opinion": "NOT_CLEAR"},
+    }
+    report = DueDiligenceReport.model_validate(old)
+    assert report.reasons == ["A bank charge is not discharged."]
+    assert [(f.title, f.severity) for f in report.findings] == [("Bank charge", "high")]
+    assert report.changes == ["The sale of 2019: now defective."]
+    assert set(report.model_dump()) == {"version", "opinion", "reasons", "findings", "changes"}
 
 
 def test_a_summary_issue_does_not_hide_a_break():

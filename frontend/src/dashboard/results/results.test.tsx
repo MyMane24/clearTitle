@@ -44,19 +44,13 @@ const STATE: VerificationState = {
       { id: 'R1', document: 'Registered GPA to Girish', reason: 'Authority to sell.', affects: ['PA-TC-0001'], status: 'open' },
       { id: 'R2', document: 'Release deed', reason: 'Mortgage.', affects: ['PA-TC-0001'], status: 'resolved' },
     ],
-    tasks: [],
   },
   report: {
     version: 1,
-    property_summary: 'Plot 9, CTS 1360B/9, Anagol. Owned by the Avacharis.',
     opinion: 'NOT_CLEAR',
-    opinion_reasons: [{ text: 'The 2007 sale lacks GPA authority.', refs: ['PA-TC-0001', 'DOC_018'] }],
-    changes_since_previous: [],
-    sections: [
-      { id: 'documents_examined', title: 'Documents examined', blocks: [{ type: 'table', columns: ['Doc'], rows: [['x']] }] },
-      { id: 'flow_of_title', title: 'Flow of title', blocks: [{ type: 'paragraph', text: 'Manohar sold to Dinanath.', refs: ['PA-TC-0001'] }] },
-      { id: 'requisitions', title: 'Requisitions', blocks: [{ type: 'table', columns: ['Id'], rows: [['R1']] }] },
-    ],
+    reasons: ['The 2007 sale lacks GPA authority.'],
+    findings: [],
+    changes: [],
   },
 };
 
@@ -108,12 +102,24 @@ test('each document needed names the transfer it is for, in words, not raw ids',
   assert.doesNotMatch(html, /PA-TC-\d+|DOC_\d+/);
 });
 
-test('requisitions appear once, with upload only for open ones, and built sections are not repeated', () => {
+test('requisitions appear once, with upload only for open ones', () => {
   const html = render(STATE);
   assert.equal((html.match(/type="file"/g) || []).length, 1);
   assert.match(html, /1 already settled/);
-  assert.doesNotMatch(html, /Documents examined/);
-  assert.doesNotMatch(html, /\d\. Requisitions/);
+});
+
+test('the report page shows the opinion, its reasons and the report findings, nothing else', () => {
+  const state: VerificationState = {
+    ...STATE,
+    report: {
+      ...STATE.report!,
+      findings: [{ title: 'Bank charge not released', text: 'Canara Bank, 2025.', severity: 'high' }],
+      changes: ['The sale of 2019: now defective.'],
+    },
+  };
+  const html = render(state);
+  order(html, ['Title not clear', 'The 2007 sale lacks GPA authority.', 'What changed since version 0', 'Bank charge not released']);
+  assert.doesNotMatch(html, /cr-lede/);  // no property summary line
 });
 
 test('no clutter: no task list, no metric tiles, no structured data viewer', () => {
@@ -210,13 +216,8 @@ test('saved report text written with ids renders in words', () => {
     ...STATE,
     report: {
       ...STATE.report!,
-      opinion_reasons: [{ text: 'See PA-TC-0001 and DOC_018; request R1.', refs: ['PA-TC-0001', 'DOC_018'] }],
-      changes_since_previous: ['PA-TC-0001 is now verified; see I1.'],
-      sections: [{
-        id: 'limitations',
-        title: 'Limitations',
-        blocks: [{ type: 'paragraph', text: 'L1 is still open and DOC_018 could not be read.', refs: [] }],
-      }],
+      reasons: ['See PA-TC-0001 and DOC_018; request R1.'],
+      changes: ['PA-TC-0001 is now verified; see I1.'],
     },
   };
   const html = render(state);
@@ -224,21 +225,10 @@ test('saved report text written with ids renders in words', () => {
   assert.doesNotMatch(html, /PA-TC-0001|DOC_018|\bI1\b|\bL1\b|\bR1\b/);
 });
 
-test('header names the property from the report schedule, and titles drop internal ids', async () => {
+test('header names the property from the Phase A identity, and titles drop internal ids', async () => {
   const { propertyLine } = await import('./CaseResults');
   const { cleanTitle } = await import('./ReportView');
-  const withSchedule: VerificationState = {
-    ...STATE,
-    report: {
-      ...STATE.report!,
-      property_summary: 'The property is Plot No. 9, CTS 1360B/9.',
-      sections: [{ id: 'property_schedule', title: 'Property schedule', blocks: [{
-        type: 'table', columns: ['Particular', 'Details'],
-        rows: [['Identifiers', 'Plot No. 9; CTS No. 1360B/9'], ['Location', 'Anagol village']],
-      }] }],
-    },
-  };
-  assert.equal(propertyLine(RESULTS, withSchedule), 'Plot No. 9; CTS No. 1360B/9 · Anagol village');
+  assert.equal(propertyLine(RESULTS, STATE), 'CTS 1360B/9');
   assert.equal(propertyLine(RESULTS, null), 'CTS 1360B/9');
   assert.equal(cleanTitle('PA-TC-0002 — Partition dated 09/06/2008'), 'Partition dated 09/06/2008');
   assert.equal(cleanTitle('I2 — Extent inconsistent'), 'Extent inconsistent');

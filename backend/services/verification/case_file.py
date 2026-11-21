@@ -17,9 +17,9 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from backend.schemas.chain import DocumentedTransaction, RelatedEvent
+from backend.schemas.chain import DocumentedTransaction
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -165,9 +165,7 @@ class WorkingLink(_Model):
         default=None, description="Why no recorded transfer connects this link to the previous."
     )
     transaction: DocumentedTransaction
-    related_events: list[RelatedEvent] = Field(default_factory=list)
     verdict: LinkVerdict | None = None
-    amendments: list[str] = Field(default_factory=list)
 
 
 class Lead(_Model):
@@ -211,26 +209,23 @@ class Requisition(_Model):
     source: str | None = None
 
 
-class Task(_Model):
-    id: str
-    text: Text
-    status: Literal["pending", "in_progress", "done"] = "pending"
-
-
 class CaseFile(_Model):
     schema_version: int = SCHEMA_VERSION
     case_id: str
     version: int = 0
     phase_a_hash: str | None = None
-    property_identity: dict[str, Any] = Field(default_factory=dict)
     chain: list[WorkingLink] = Field(default_factory=list)
     documents: dict[str, DocumentEntry] = Field(default_factory=dict)
     leads: list[Lead] = Field(default_factory=list)
     issues: list[Issue] = Field(default_factory=list)
     clear_checks: list[ClearCheck] = Field(default_factory=list)
     requisitions: list[Requisition] = Field(default_factory=list)
-    tasks: list[Task] = Field(default_factory=list)
     counters: dict[str, int] = Field(default_factory=dict)
+    report_basis: dict[str, Any] | None = Field(
+        default=None,
+        description="Verdicts, issues and requests when the last report was written; the "
+        "next report lists what changed since then.",
+    )
 
     def next_id(self, prefix: str) -> str:
         """A new id such as ``L3``; never reused within this case file."""
@@ -307,16 +302,12 @@ def from_phase_a(case_id: str, agent_result: dict, documents: list[dict]) -> Cas
             link_id=str(link.get("tx_id") or f"PA-{index}"),
             continues_previous=bool(link.get("continues_previous")),
             transaction=DocumentedTransaction.model_validate(link["documented_transaction"]),
-            related_events=[
-                RelatedEvent.model_validate(event) for event in link.get("related_events") or []
-            ],
         )
         for index, link in enumerate(agent_result.get("title_chain") or [], start=1)
     ]
     return CaseFile(
         case_id=case_id,
         phase_a_hash=agent_result.get("phase_a_hash"),
-        property_identity=agent_result.get("property_identity") or {},
         chain=chain,
         documents={
             document["doc_id"]: DocumentEntry(
@@ -336,10 +327,17 @@ def migrate(data: dict) -> dict:
     version = int(data.get("schema_version") or 1)
     if version > SCHEMA_VERSION:
         raise ValueError(f"case file schema {version} is newer than this code ({SCHEMA_VERSION})")
-    # Add one block per version, e.g.:
-    # if version == 1:
-    #     data = {**data, "new_field": default, "schema_version": 2}
-    #     version = 2
+    if version == 1:  # 2026-11-21: drop fields nothing read
+        data = {
+            key: value
+            for key, value in data.items()
+            if key not in ("tasks", "property_identity")
+        }
+        data["chain"] = [
+            {key: value for key, value in link.items() if key not in ("amendments", "related_events")}
+            for link in data.get("chain") or []
+        ]
+        data["schema_version"] = version = 2
     return data
 
 

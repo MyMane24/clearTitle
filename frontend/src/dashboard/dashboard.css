@@ -1905,7 +1905,6 @@
   .ctd-root .cr-type{ padding: 3px 9px; border-radius: 999px; background: #fff7ed; color: #c2410c; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
 
   /* Report: summary line and opinion hero */
-  .ctd-root .cr-lede{ padding: 2px 2px 0; max-width: 75ch; font-size: 14.5px; line-height: 1.7; color: var(--cr-soft); }
   .ctd-root .cr-opinion{ position: relative; overflow: hidden; padding: 24px 26px; }
   .ctd-root .cr-opinion::before{ content: ""; position: absolute; inset: 0 auto 0 0; width: 5px; background: var(--cr-faint); }
   .ctd-root .cr-opinion.cr-tone-good{ background: linear-gradient(180deg, #f0fdf4, #fff 70%); } .ctd-root .cr-opinion.cr-tone-good::before{ background: var(--green); }

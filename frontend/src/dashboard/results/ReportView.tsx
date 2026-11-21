@@ -58,15 +58,15 @@ export function Opinion({ report, label }: { report: DueDiligenceReport; label: 
     <section className={`cr-opinion cr-tone-${opinion.tone}`} aria-label="Opinion">
       <p className="cr-opinion-label">Opinion</p>
       <p className="cr-opinion-verdict">{opinion.label}</p>
-      {report.opinion_reasons.length > 0 && (
+      {report.reasons.length > 0 && (
         <ul className="cr-reasons">
-          {report.opinion_reasons.map((reason, i) => <li key={i}>{label(reason.text)}</li>)}
+          {report.reasons.map((reason, i) => <li key={i}>{label(reason)}</li>)}
         </ul>
       )}
-      {report.changes_since_previous.length > 0 && (
+      {report.changes.length > 0 && (
         <details className="cr-changes">
           <summary><History size={13} /> What changed since version {report.version - 1}</summary>
-          <ul>{report.changes_since_previous.map((change, i) => <li key={i}>{label(change)}</li>)}</ul>
+          <ul>{report.changes.map((change, i) => <li key={i}>{label(change)}</li>)}</ul>
         </details>
       )}
     </section>

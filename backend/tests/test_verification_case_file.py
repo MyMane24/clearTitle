@@ -42,5 +42,16 @@ def test_older_schema_without_version_loads():
     assert cf.load(data).schema_version == cf.SCHEMA_VERSION
 
 
+def test_version_1_case_file_drops_the_unused_fields():
+    data = new_case_file().model_dump(mode="json")
+    data.update(schema_version=1, tasks=[], property_identity={"details": []})
+    for link in data["chain"]:
+        link.update(amendments=["Corrected: x"], related_events=[])
+    case = cf.load(data)
+    assert case.schema_version == 2
+    assert case.model_dump(mode="json")["chain"][0].keys() >= {"link_id", "transaction"}
+    assert "amendments" not in case.model_dump(mode="json")["chain"][0]
+
+
 def test_text_hash_changes_with_text():
     assert cf.text_hash("a") != cf.text_hash("b")

@@ -31,7 +31,7 @@ from backend.services.verification.context import render_case_file
 from backend.services.verification.cost import CostLimitError, estimate_cost
 from backend.services.verification.deps import TextCache, VerifyDeps
 from backend.services.verification.events import record_node
-from backend.services.verification.report import write_report
+from backend.services.verification.report import basis, write_report
 from backend.services.verification.store import Store
 
 logger = get_logger(__name__)
@@ -93,6 +93,8 @@ def prepare_case_file(
     else:
         case = cf.from_phase_a(case_id, phase_a, documents)
         version = loaded[1] if loaded else 0
+        if loaded:
+            case.report_basis = loaded[0].report_basis
         if loaded and not fresh:
             _carry_over_examinations(store, loaded[0], case)
     return case, version, sync_documents(case, documents)
@@ -203,10 +205,11 @@ async def run(
             case,
             models.report,
             version=(previous.version + 1) if previous else 1,
-            previous_basis=previous.basis if previous else None,
+            previous_basis=case.report_basis,
             usage=deps.sub_usage,
         )
         store.save_report(case_id, report)
+        case.report_basis = basis(case, report.opinion)
         emit("report", f"Report v{report.version}: {report.opinion.replace('_', ' ')}", run_id)
         status, result = DONE, {"report_version": report.version, "summary": closing}
     except UsageLimitExceeded as exc:

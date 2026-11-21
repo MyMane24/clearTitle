@@ -1,123 +1,75 @@
-"""The due diligence report contract.
+"""The due diligence report contract: what the buyer's report page shows, nothing more.
 
-A report is a list of generic sections, each made of typed blocks. The
-dashboard renders any section, so adding or renaming a section needs no UI
-change: edit ``DEFAULT_SECTIONS`` (and the report prompt).
-
-Every block names the Case File items it rests on in ``refs`` (link, issue,
-lead, requisition or document ids). The report gate checks those ids exist.
+The model writes only the opinion and one or two reasons. The application builds
+the findings and the changes from the Case File.
 """
 
 from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 Opinion = Literal["CLEAR", "CLEAR_SUBJECT_TO", "NOT_CLEAR"]
+Severity = Literal["high", "medium", "low", "clear"]
 
 
-class _Model(BaseModel):
+class Finding(BaseModel):
+    """One finding card: a problem (high, medium, low) or a check that passed (clear)."""
+
     model_config = ConfigDict(extra="forbid")
 
-
-class ParagraphBlock(_Model):
-    type: Literal["paragraph"] = "paragraph"
-    text: Text
-    refs: list[str] = Field(default_factory=list)
-
-
-class ListItem(_Model):
-    text: Text
-    refs: list[str] = Field(default_factory=list)
-
-
-class ListBlock(_Model):
-    type: Literal["list"] = "list"
-    items: list[ListItem] = Field(min_length=1)
-
-
-class TableBlock(_Model):
-    type: Literal["table"] = "table"
-    columns: list[Text] = Field(min_length=1)
-    rows: list[list[str]] = Field(default_factory=list)
-    refs: list[str] = Field(default_factory=list)
-
-
-class Finding(_Model):
     title: Text
     text: Text
-    severity: Literal["high", "medium", "low", "clear"] | None = Field(
-        default=None, description="high = critical, medium = to resolve, clear = a positive check."
-    )
-    status: str | None = Field(default=None, description="e.g. verified, defective, open.")
-    refs: list[str] = Field(default_factory=list)
+    severity: Severity
 
 
-class FindingsBlock(_Model):
-    type: Literal["findings"] = "findings"
-    items: list[Finding] = Field(min_length=1)
-
-
-Block = Annotated[
-    ParagraphBlock | ListBlock | TableBlock | FindingsBlock, Field(discriminator="type")
-]
-
-
-class Section(_Model):
-    id: Text
-    title: Text
-    blocks: list[Block] = Field(min_length=1)
-
-    def refs(self) -> set[str]:
-        found: set[str] = set()
-        for block in self.blocks:
-            if isinstance(block, ParagraphBlock | TableBlock):
-                found.update(block.refs)
-            else:
-                for item in block.items:
-                    found.update(item.refs)
-        return found
-
-
-class OpinionReason(_Model):
-    text: Text
-    refs: list[str] = Field(default_factory=list)
-
-
-class WrittenReport(_Model):
+class WrittenReport(BaseModel):
     """What the report writer produces from the Case File."""
 
-    property_summary: Text = Field(description="One paragraph identifying the property.")
+    model_config = ConfigDict(extra="forbid")
+
     opinion: Opinion
-    opinion_reasons: list[OpinionReason] = Field(min_length=1)
-    sections: list[Section] = Field(min_length=1)
+    reasons: list[Text] = Field(min_length=1, description="One or two short reasons.")
 
 
-class DueDiligenceReport(_Model):
-    """The saved report: the writer's text plus sections the application builds."""
+class DueDiligenceReport(BaseModel):
+    """The saved report."""
+
+    model_config = ConfigDict(extra="ignore")
 
     version: int = Field(ge=1)
-    property_summary: Text
     opinion: Opinion
-    opinion_reasons: list[OpinionReason]
-    sections: list[Section]
-    changes_since_previous: list[str] = Field(default_factory=list)
-    basis: dict = Field(
-        default_factory=dict,
-        description="Snapshot of verdicts, issues and requisitions, used to list changes.",
-    )
+    reasons: list[str]
+    findings: list[Finding] = Field(default_factory=list)
+    changes: list[str] = Field(default_factory=list)
 
-
-# (id, title, what the writer puts there). Sections marked "built" are written
-# by the application from the Case File, not by the model. The report is a
-# case-level result: per-transfer detail lives on the title chain page.
-DEFAULT_SECTIONS: list[tuple[str, str, str]] = [
-    ("issues", "Issues identified", "built"),
-    ("requisitions", "Documents needed", "built"),
-    ("limitations", "Limitations", "One short sentence: the opinion rests only on these "
-     "documents, naming any document that could not be read."),
-]  # fmt: skip
-
-WRITTEN_SECTION_IDS = [sid for sid, _, how in DEFAULT_SECTIONS if how != "built"]
+    @model_validator(mode="before")
+    @classmethod
+    def _from_older_shape(cls, data):
+        """Read reports saved before 2026-11-21, which used generic sections."""
+        if not isinstance(data, dict) or "sections" not in data:
+            return data
+        findings = [
+            {
+                "title": item["title"],
+                "text": item["text"],
+                "severity": item.get("severity") or "low",
+            }
+            for section in data.get("sections") or []
+            if section.get("id") == "issues"
+            for block in section.get("blocks") or []
+            if block.get("type") == "findings"
+            for item in block.get("items") or []
+        ]
+        return {
+            "version": data.get("version"),
+            "opinion": data.get("opinion"),
+            "reasons": [
+                reason["text"] if isinstance(reason, dict) else reason
+                for reason in data.get("opinion_reasons") or []
+            ],
+            "findings": findings,
+            "changes": data.get("changes_since_previous") or [],
+        }

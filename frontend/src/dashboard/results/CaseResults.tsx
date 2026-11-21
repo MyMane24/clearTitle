@@ -49,18 +49,9 @@ export interface CaseResultsViewProps extends CaseResultsProps {
   onPageChange: (page: CasePage) => void;
 }
 
-/** A one-line name for the property: report schedule identifiers and location, else Phase A identity. */
+/** A one-line name for the property, from the Phase A property identity. */
 export function propertyLine(results: CaseResultsData, state: VerificationState | null): string {
   const label = refLabeller(state?.case_file);
-  const schedule = state?.report?.sections.find(section => section.id === 'property_schedule');
-  const table = schedule?.blocks.find(block => block.type === 'table');
-  if (table && table.type === 'table') {
-    const pick = (pattern: RegExp) => table.rows.find(row => pattern.test(row[0] || ''))?.[1];
-    const parts = [pick(/identif/i), pick(/location/i)]
-      .filter((value): value is string => Boolean(value))
-      .map(value => label(value));
-    if (parts.length) return parts.join(' · ');
-  }
   const details = identityDetails(results);
   const parts = details.slice(0, 3).map(detail => `${detail.label} ${label(detail.value)}`);
   return parts.length ? parts.join(' · ') : `Case ${results.case.case_id}`;
@@ -268,7 +259,6 @@ function ReportPage({ state, error, uploadingId, start, upload, primary }: CaseR
 
       {report && (
         <>
-          <p className="cr-lede">{label(report.property_summary)}</p>
           <Opinion report={report} label={label} />
           <FindingsList issues={caseIssues(report, caseFile)} label={label} />
         </>

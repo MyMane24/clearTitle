@@ -88,7 +88,7 @@ These refine the design below. Where they differ from a later section, these win
 5. **Requisition lifecycle:** `open` → `fulfilled` (a document arrived; set by the upload route) → `resolved` or back to `open` (decided by the Lead with `review_requisition`). A fulfilled requisition whose document fails processing returns to `open`. The closure gate requires every fulfilled requisition to be reviewed. One PDF per requisition upload.
 6. **Documents that cannot be examined** (no OCR text, or the Examiner failed twice) get `examination_error`. They are report limitations, cannot be cited, and prevent a `CLEAR` opinion.
 7. **No report from an incomplete run.** A run that hits its budget or fails ends `incomplete` or `error` with the Case File saved; running again continues from it.
-8. **Report assembly.** The model writes the narrative sections and the opinion. The application builds "Documents examined" and "Requisitions" from the Case File, and computes "Changes since previous version" from a stored basis (verdicts, issues, requisitions, opinion).
+8. **Report assembly** (revised 2026-11-21, decision 21). The model writes only the opinion and its reasons. The application builds the findings from the Case File and lists what changed since the previous version from `CaseFile.report_basis` (verdicts, issues, requisitions and opinion when the last report was written).
 9. **Severity:** high = a defect, title is not clear; medium = clear only subject to rectification; low = observation. The opinion gate: any high issue, defective link or break forces `NOT_CLEAR`; `CLEAR` needs every link verified and no medium issue, open requisition or unexamined document.
 10. **Shared upload path.** The "upload more documents" logic moved from `routers/cases.py` into `services/case_documents.py`, so manual uploads and requisition uploads (and future government sources) use one path.
 11. **Extra Case File tools** beyond the original list: `view_case_file`, `correct_link`, `mark_break`, `remove_link` (the `amend_chain` operations as separate, clearer tools) and `review_requisition`.
@@ -144,10 +144,15 @@ These refine the design below. Where they differ from a later section, these win
       - Count chips: `n critical`, `n to resolve`, `n clear`.
       - Finding cards: badge, title (at most 70 characters), text (at most 220 characters); the schema enforces both limits. Critical = high severity, To resolve = medium, Clear = a positive check that cites its evidence ("Chain of title is unbroken" is built by code from the verified chain).
       - Documents needed: one row per document with a one-line reason, the transfer it is for, and Upload.
-      - Limitations: one line.
       - The chain page shows each transfer's property-type chip and its documents checklist.
     - **As built (2026-11-21):** low-severity issues show as a grey "Note" card; positive findings come from the `record_clear_check` tool (cited) plus the code-built "Chain of title is unbroken"; refused tool calls are stored as "rejected" events, hidden from the buyer's feed.
     - **Example:** A→B 1995 agricultural land, Sy 45 (RTC and mutation found: verified). B→C 2006 "Site No. 12": the type changed, so the model looks for the conversion order and layout approval; the conversion order is found, the layout approval is missing (one requisition). C→D 2016 "Flat 302": changed again, so it looks for the building plan, CC/OC, the JDA with the landowner and the undivided share; the OC is missing (requisition); RERA is not needed because the building was completed before 2017 (a note, not a requisition).
+21. **The saved report holds only what the report page shows** (product owner's decision, 2026-11-21). The report is `{version, opinion, reasons, findings, changes}`.
+    - **Removed:** `property_summary` (the header already names the property from Phase A), `refs` (hidden ids nobody read), `basis` (moved to `CaseFile.report_basis`, hidden from the dashboard), and the generic sections with their "Documents needed" table and "Limitations" note. The Documents needed list on the page reads the live Case File, and unreadable documents show as "Could not be read" on the chain page.
+    - **The writer** returns only `{opinion, reasons}`. The gates check the opinion against the Case File and the reasons' length (at most 2, 140 characters each).
+    - **Older reports** (saved with sections) are converted when read (`DueDiligenceReport._from_older_shape`), so v1–v4 still display.
+    - **Writer input is a short text, not the Case File JSON:** each in-window transfer's verdict and summary, breaks, issues, open requests, unreadable documents and passed checks, in words without ids (`report.report_input`). On 8A14D132 it dropped from 85K to 6K characters.
+    - **Case File schema 2** drops fields nothing read: `tasks`, `property_identity`, and each link's `amendments` and `related_events`. `migrate` removes them from stored version-1 files. The live feed still records every chain correction.
 
 ---
 

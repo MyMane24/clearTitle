@@ -261,7 +261,7 @@ case_file_tools = FunctionToolset[VerifyDeps](id="case_file", max_retries=_TOOL_
 
 @case_file_tools.tool
 def view_case_file(ctx: RunContext[VerifyDeps]) -> str:
-    """Show the current Case File: chain, documents, leads, issues, requisitions, tasks,
+    """Show the current Case File: chain, documents, leads, issues, requisitions,
     and what is still to do before the case can close. It is the source of truth.
     Call it once at the start; every change replies with what is still to do."""
     deps = ctx.deps
@@ -378,7 +378,6 @@ def insert_link(
         origin="verification",
         continues_previous=transfer.continues_previous,
         transaction=DocumentedTransaction(**fields, source_refs=_source_refs(deps, citations)),
-        amendments=[f"Inserted: {reason}"],
     )
     _change_chain(deps, lambda: deps.case.chain.insert(index, new_link))
     deps.emit(
@@ -422,7 +421,6 @@ def correct_link(
         if continues is not None:
             link.continues_previous = continues
             link.break_note = None if continues else link.break_note
-        link.amendments.append(f"Corrected: {reason}")
 
     _change_chain(deps, apply)
     deps.emit("chain", f"Corrected {transfer_name(link)}: {reason}", link_id)
@@ -444,7 +442,6 @@ def mark_break(ctx: RunContext[VerifyDeps], link_id: str, note: str) -> str:
     def apply() -> None:
         link.continues_previous = False
         link.break_note = note
-        link.amendments.append(f"Break recorded: {note}")
 
     _change_chain(deps, apply)
     deps.emit("chain", f"Break in the chain before {transfer_name(link)}: {note}", link_id)

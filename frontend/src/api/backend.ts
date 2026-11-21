@@ -134,7 +134,6 @@ export interface VerificationRun {
   finished_at?: string | null;
 }
 
-export interface VerificationTask { id: string; text: string; status: "pending" | "in_progress" | "done" }
 export interface VerificationLead { id: string; text: string; source: string; status: "open" | "resolved"; outcome?: string | null; resolution?: string | null }
 export interface VerificationIssue { id: string; severity: "high" | "medium" | "low"; title: string; detail: string; link_ids: string[] }
 export interface VerificationRequisition {
@@ -195,25 +194,21 @@ export interface VerificationCaseFile {
   issues: VerificationIssue[];
   clear_checks?: VerificationClearCheck[];
   requisitions: VerificationRequisition[];
-  tasks: VerificationTask[];
 }
 
-export interface ReportRefs { refs?: string[] }
-export type ReportBlock =
-  | ({ type: "paragraph"; text: string } & ReportRefs)
-  | { type: "list"; items: ({ text: string } & ReportRefs)[] }
-  | ({ type: "table"; columns: string[]; rows: string[][] } & ReportRefs)
-  | { type: "findings"; items: ({ title: string; text: string; severity?: string | null; status?: string | null } & ReportRefs)[] };
+export interface ReportFinding {
+  title: string;
+  text: string;
+  severity: "high" | "medium" | "low" | "clear";
+}
 
-export interface ReportSection { id: string; title: string; blocks: ReportBlock[] }
-
+/** The report page: opinion with short reasons, finding cards, and what changed. */
 export interface DueDiligenceReport {
   version: number;
-  property_summary: string;
   opinion: ReportOpinion;
-  opinion_reasons: ({ text: string } & ReportRefs)[];
-  sections: ReportSection[];
-  changes_since_previous: string[];
+  reasons: string[];
+  findings: ReportFinding[];
+  changes: string[];
 }
 
 export interface VerificationState {

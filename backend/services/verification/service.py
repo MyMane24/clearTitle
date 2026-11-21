@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 
 from backend.database.repositories import verification_repo as repo
 from backend.logger import get_logger
+from backend.schemas.due_diligence import DueDiligenceReport
 from backend.services.verification import case_file as cf
 from backend.services.verification.store import DbStore
 
@@ -65,7 +66,11 @@ def get_state(case_id: str) -> dict:
         "case_id": case_id,
         "run": _run_view(latest_run),
         "case_file": _case_view(case) if case else None,
-        "report": report["report"] if report else None,
+        "report": (
+            DueDiligenceReport.model_validate(report["report"]).model_dump(mode="json")
+            if report
+            else None
+        ),
     }
 
 
@@ -160,7 +165,7 @@ def _run_view(run: dict | None) -> dict | None:
 
 def _case_view(case: cf.CaseFile) -> dict:
     """The Case File without examiner report bodies (the dashboard needs summaries only)."""
-    data = case.model_dump(mode="json", exclude={"counters"})
+    data = case.model_dump(mode="json", exclude={"counters", "report_basis"})
     for entry in data["documents"].values():
         report = entry.pop("report", None)
         entry["examined_summary"] = report["summary"] if report else None

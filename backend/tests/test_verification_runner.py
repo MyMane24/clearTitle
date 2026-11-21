@@ -207,18 +207,7 @@ FULL_RUN_STEPS = [
 
 
 def written_report(opinion):
-    return {
-        "property_summary": "Sy.No.45, Hosahalli, owned by Deepa.",
-        "opinion": opinion,
-        "opinion_reasons": [{"text": "Minor's share sold without permission.", "refs": ["I1"]}],
-        "sections": [
-            {
-                "id": "limitations",
-                "title": "Limitations",
-                "blocks": [{"type": "paragraph", "text": "Rests on these documents.", "refs": []}],
-            }
-        ],
-    }
+    return {"opinion": opinion, "reasons": ["Minor's share sold without permission."]}
 
 
 def full_run():
@@ -251,9 +240,9 @@ def test_full_run_closes_the_chain_and_writes_report_v1():
 
     report = store.reports[-1]
     assert report.version == 1 and report.opinion == "NOT_CLEAR"
-    assert [section.id for section in report.sections] == ["issues", "requisitions", "limitations"]
-    issues = report.sections[0].blocks[0].items
-    assert issues[0].severity == "high"  # the minor's-share issue, most serious first
+    assert report.reasons == ["Minor's share sold without permission."]
+    assert report.findings[0].severity == "high"  # the minor's-share issue, most serious first
+    assert report.changes == []  # nothing to compare with in version 1
 
     lead_messages, report_messages = messages
     refused_closes = [
@@ -330,10 +319,10 @@ def test_incremental_run_examines_only_the_uploaded_document():
     assert v2.version == 2
     assert (
         "The partition: now verified (before: cannot be verified until a document is provided)."
-        in v2.changes_since_previous
+        in v2.changes
     )
-    assert "Received and accepted: Partition deed of 2005." in v2.changes_since_previous
-    assert not any(INTERNAL_ID.search(line) for line in v2.changes_since_previous)
+    assert "Received and accepted: Partition deed of 2005." in v2.changes
+    assert not any(INTERNAL_ID.search(line) for line in v2.changes)
     case = runner.prepare_case_file(store, "CASE1")[0]
     assert case.link("PA-TC-0002").verdict.verdict == "defective"  # kept from v1
 
