@@ -152,6 +152,7 @@ These refine the design below. Where they differ from a later section, these win
     - **The writer** returns only `{opinion, reasons}`. The gates check the opinion against the Case File and the reasons' length (at most 2, 140 characters each).
     - **Older reports** (saved with sections) are converted when read (`DueDiligenceReport._from_older_shape`), so v1–v4 still display.
     - **Writer input is a short text, not the Case File JSON:** each in-window transfer's verdict and summary, breaks, issues, open requests, unreadable documents and passed checks, in words without ids (`report.report_input`). On 8A14D132 it dropped from 85K to 6K characters.
+    - **One property type per transfer:** `DocumentedTransaction.property_type` (Phase A's free-text label) is removed; the verdict's `property_type` (a fixed list) is the only one. Saved chains and Case Files that still carry it load unchanged; the field is dropped on read.
     - **Case File schema 2** drops fields nothing read: `tasks`, `property_identity`, and each link's `amendments` and `related_events`. `migrate` removes them from stored version-1 files. The live feed still records every chain correction.
 
 ---

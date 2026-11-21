@@ -31,8 +31,7 @@ Build the title chain for this case. Read every history document listed at the e
   Mutation numbers and notes such as "inheritance" do not belong here.
 - `transaction_type`: a plain label for the act (Sale, Gift, Partition,
   Succession). Keep notes about where it was found out of it.
-- Property fields: `property_type` is a short label for the kind of property
-  this link transfers. `property_schedule` is the schedule wording.
+- Property fields: `property_schedule` is the schedule wording.
   `survey_number`, `plot_number`, `site_flat_number` and `cts_number` each hold
   only the bare identifier as written ("699A/15", "9", "G-04"), never a
   description, and never the same value in two fields.

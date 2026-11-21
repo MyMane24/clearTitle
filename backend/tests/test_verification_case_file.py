@@ -53,5 +53,12 @@ def test_version_1_case_file_drops_the_unused_fields():
     assert "amendments" not in case.model_dump(mode="json")["chain"][0]
 
 
+def test_saved_transactions_with_the_old_property_type_still_load():
+    data = new_case_file().model_dump(mode="json")
+    data["chain"][0]["transaction"]["property_type"] = "Residential plot"
+    case = cf.load(data)
+    assert "property_type" not in case.chain[0].transaction.model_dump()
+
+
 def test_text_hash_changes_with_text():
     assert cf.text_hash("a") != cf.text_hash("b")

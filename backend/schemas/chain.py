@@ -87,11 +87,18 @@ class DocumentedTransaction(_Strict):
 
     @model_validator(mode="before")
     @classmethod
-    def _remove_empty_document_requests(cls, data: object) -> object:
-        """Discard only an empty legacy field nested in a transaction by the model."""
-        if isinstance(data, dict) and data.get("missing_documents") == []:
-            return {key: value for key, value in data.items() if key != "missing_documents"}
-        return data
+    def _remove_legacy_fields(cls, data: object) -> object:
+        """Discard fields saved by older versions or misplaced by the model.
+
+        ``property_type`` was removed on 2026-11-21: the verification verdict records
+        what each transfer conveyed. ``missing_documents`` is dropped only when empty.
+        """
+        if not isinstance(data, dict):
+            return data
+        drop = {"property_type"}
+        if data.get("missing_documents") == []:
+            drop.add("missing_documents")
+        return {key: value for key, value in data.items() if key not in drop}
 
     transaction_number: str | None = Field(
         description="Registration or instrument number as written; null when none is stated."
@@ -108,7 +115,6 @@ class DocumentedTransaction(_Strict):
     transferees: list[Text] = Field(
         min_length=1, description="Who acquired the property. A transfer always names them."
     )
-    property_type: str | None = None
     property_schedule: str | None = None
     survey_number: str | None = None
     plot_number: str | None = None
