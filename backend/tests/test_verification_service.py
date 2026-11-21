@@ -51,7 +51,16 @@ def test_start_queues_the_task():
         patch("backend.workers.verification_tasks.run_verification_task.apply_async") as queue,
     ):
         assert service.start("C1")["status"] == "queued"
-    queue.assert_called_once_with(args=["C1"], kwargs={"kind": "full"})
+    queue.assert_called_once_with(args=["C1"], kwargs={"kind": "full", "fresh": False})
+
+
+def test_start_can_request_a_fresh_run():
+    with (
+        patch.object(service.repo, "get_latest_run", return_value=None),
+        patch("backend.workers.verification_tasks.run_verification_task.apply_async") as queue,
+    ):
+        assert service.start("C1", fresh=True)["fresh"] is True
+    queue.assert_called_once_with(args=["C1"], kwargs={"kind": "full", "fresh": True})
 
 
 def test_incremental_run_is_queued_only_for_arrived_requisition_documents():
@@ -73,8 +82,14 @@ def test_attach_marks_the_requisition_fulfilled():
     saved = {}
     with (
         patch.object(service, "is_running", return_value=False),
-        patch.object(service.DbStore, "load_case_file", return_value=(cf.load(stored_case("open")[0]), 3)),
-        patch.object(service.DbStore, "save_case_file", side_effect=lambda case, v: saved.update(case=case, v=v)),
+        patch.object(
+            service.DbStore, "load_case_file", return_value=(cf.load(stored_case("open")[0]), 3)
+        ),
+        patch.object(
+            service.DbStore,
+            "save_case_file",
+            side_effect=lambda case, v: saved.update(case=case, v=v),
+        ),
     ):
         service.attach_requisition_document("C1", "R1", "DOC_009", "manual_upload")
     requisition = saved["case"].requisition("R1")
@@ -89,7 +104,9 @@ def test_attach_marks_the_requisition_fulfilled():
 def test_attach_refuses_a_closed_requisition():
     with (
         patch.object(service, "is_running", return_value=False),
-        patch.object(service.DbStore, "load_case_file", return_value=(cf.load(stored_case("resolved")[0]), 3)),
+        patch.object(
+            service.DbStore, "load_case_file", return_value=(cf.load(stored_case("resolved")[0]), 3)
+        ),
         pytest.raises(service.RequisitionError),
     ):
         service.attach_requisition_document("C1", "R1", "DOC_009", "manual_upload")
@@ -117,7 +134,10 @@ def test_finalize_skips_chain_rebuild_once_verification_owns_the_chain():
 
     with (
         patch("backend.database.repositories.case_repo.recompute_case_status"),
-        patch("backend.database.repositories.document_repo.get_case_documents", return_value=[{"status": "structured"}]),
+        patch(
+            "backend.database.repositories.document_repo.get_case_documents",
+            return_value=[{"status": "structured"}],
+        ),
         patch("backend.database.repositories.verification_repo.append_pipeline_log"),
         patch("backend.integrations.redis.state_store.set_case_status"),
         patch("backend.integrations.redis.lock.RedisLock"),
@@ -159,7 +179,9 @@ def test_requisition_upload_rejects_unknown_requisition():
 
     with (
         patch.object(routes, "_enforce_access"),
-        patch.object(service, "get_open_requisition", side_effect=service.RequisitionError("No R9")),
+        patch.object(
+            service, "get_open_requisition", side_effect=service.RequisitionError("No R9")
+        ),
         pytest.raises(HTTPException) as raised,
     ):
         asyncio.run(routes.upload_for_requisition("C1", "R9", Upload(), None))
@@ -185,6 +207,20 @@ def test_chain_rebuild_resets_the_case_file_but_keeps_unchanged_examinations():
     assert reset.phase_a_hash == "hash-2" and reset.leads == []
     assert reset.documents["EC"].examined  # unchanged text: report kept
     assert not reset.documents["D2010"].examined  # changed text: examined again
+
+
+def test_a_fresh_run_examines_every_document_again():
+    store = MemoryStore(phase_a_result(), list(DOCUMENTS), dict(TEXTS))
+    case, version, _ = runner.prepare_case_file(store, "CASE1")
+    for doc_id in ("EC", "D2010"):
+        entry = case.documents[doc_id]
+        entry.examined, entry.text_hash = True, cf.text_hash(TEXTS[doc_id])
+        entry.report = cf.ExaminerReport(doc_id=doc_id, summary="saved")
+    store.save_case_file(case, version)
+
+    fresh, _, _ = runner.prepare_case_file(store, "CASE1", fresh=True)
+    assert not any(entry.examined for entry in fresh.documents.values())
+    assert all(entry.report is None for entry in fresh.documents.values())
 
 
 # -- report rules ---------------------------------------------------------------------
@@ -255,7 +291,9 @@ def test_issues_section_adds_defects_and_breaks_no_issue_covers():
         "Mortgage not released",
     ]
     case.issues.append(
-        cf.Issue(id="I2", severity="high", title="Bad 2018 sale", detail="x", link_ids=["PA-TC-0003"])
+        cf.Issue(
+            id="I2", severity="high", title="Bad 2018 sale", detail="x", link_ids=["PA-TC-0003"]
+        )
     )
     titles = [item.title for item in report_module.case_issues(case)]
     assert "Sale of 2018 is defective" not in titles  # covered by the recorded issue

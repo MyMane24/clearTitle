@@ -31,14 +31,17 @@ class RequisitionError(ValueError):
     """The requisition does not exist or cannot take a document now."""
 
 
-def start(case_id: str, kind: str = "full") -> dict:
-    """Queue a verification run. Raises if one is already running."""
+def start(case_id: str, kind: str = "full", fresh: bool = False) -> dict:
+    """Queue a verification run. Raises if one is already running.
+
+    ``fresh`` throws away the saved Case File and examines every document again.
+    """
     if is_running(case_id):
         raise VerificationBusyError("Verification is already running for this case.")
     from backend.workers.verification_tasks import run_verification_task
 
-    run_verification_task.apply_async(args=[case_id], kwargs={"kind": kind})
-    return {"case_id": case_id, "status": "queued", "kind": kind}
+    run_verification_task.apply_async(args=[case_id], kwargs={"kind": kind, "fresh": fresh})
+    return {"case_id": case_id, "status": "queued", "kind": kind, "fresh": fresh}
 
 
 def is_running(case_id: str) -> bool:

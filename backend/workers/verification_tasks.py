@@ -12,11 +12,11 @@ logger = get_logger(__name__)
 
 
 @celery_app.task(ignore_result=True)
-def run_verification_task(case_id: str, kind: str = "full"):
+def run_verification_task(case_id: str, kind: str = "full", fresh: bool = False):
     """Run title verification for a case under the case's agent lock.
 
     The same lock guards the title-chain builder, so the chain never changes
-    under a running verification.
+    under a running verification. ``fresh`` examines every document again.
     """
     from backend.integrations.redis.state_store import append_log
     from backend.services.verification import runner
@@ -36,7 +36,9 @@ def run_verification_task(case_id: str, kind: str = "full"):
             lock = None
     try:
         outcome = asyncio.run(
-            runner.run(case_id, store=DbStore(), models=runner.default_models(), kind=kind)
+            runner.run(
+                case_id, store=DbStore(), models=runner.default_models(), kind=kind, fresh=fresh
+            )
         )
     finally:
         if lock is not None:

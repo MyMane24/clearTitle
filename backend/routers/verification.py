@@ -21,11 +21,16 @@ def _enforce_access(case_id: str, user: dict | None) -> None:
 
 
 @router.post("/verify/{case_id}")
-async def start_verification(case_id: str, user: dict | None = Depends(get_optional_user)):
-    """Start (or continue) verifying the case's title chain."""
+async def start_verification(
+    case_id: str, fresh: bool = False, user: dict | None = Depends(get_optional_user)
+):
+    """Start (or continue) verifying the case's title chain.
+
+    ``fresh=true`` discards the saved Case File and examines every document again.
+    """
     _enforce_access(case_id, user)
     try:
-        return service.start(case_id)
+        return service.start(case_id, fresh=fresh)
     except service.VerificationBusyError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     except Exception as error:
