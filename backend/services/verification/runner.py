@@ -74,22 +74,26 @@ def default_models() -> Models:
     )
 
 
-def prepare_case_file(store: Store, case_id: str) -> tuple[cf.CaseFile, int, list[str]] | None:
+def prepare_case_file(
+    store: Store, case_id: str, *, fresh: bool = False
+) -> tuple[cf.CaseFile, int, list[str]] | None:
     """Load the Case File (fresh if the title chain changed) and add new documents.
 
-    Returns ``(case, version, notes)``, or None when there is no title chain to verify.
+    A ``fresh`` run discards the saved Case File, so every document is examined
+    again. Returns ``(case, version, notes)``, or None when there is no title
+    chain to verify.
     """
     phase_a = store.phase_a(case_id)
     if not phase_a or not phase_a.get("title_chain"):
         return None
     documents = store.documents(case_id)
     loaded = store.load_case_file(case_id)
-    if loaded and loaded[0].phase_a_hash == phase_a.get("phase_a_hash"):
+    if loaded and not fresh and loaded[0].phase_a_hash == phase_a.get("phase_a_hash"):
         case, version = loaded
     else:
         case = cf.from_phase_a(case_id, phase_a, documents)
         version = loaded[1] if loaded else 0
-        if loaded:
+        if loaded and not fresh:
             _carry_over_examinations(store, loaded[0], case)
     return case, version, sync_documents(case, documents)
 
@@ -131,9 +135,16 @@ def sync_documents(case: cf.CaseFile, documents: list[dict]) -> list[str]:
     return notes
 
 
-def task_prompt(case: cf.CaseFile, deps: VerifyDeps, kind: str, notes: list[str]) -> str:
+def task_prompt(
+    case: cf.CaseFile, deps: VerifyDeps, kind: str, notes: list[str], fresh: bool = False
+) -> str:
     arrived = [item for item in case.requisitions if item.status == "fulfilled"]
-    if kind == "incremental" and arrived:
+    if fresh:
+        lines = [
+            "Verify the title chain of this case from the beginning. Examine every document "
+            "yourself; no earlier examination or finding is carried over."
+        ]
+    elif kind == "incremental" and arrived:
         lines = [
             "New documents have arrived for these requisitions. Examine each new document, "
             "decide with review_requisition whether it settles the requisition, update every "
@@ -147,12 +158,17 @@ def task_prompt(case: cf.CaseFile, deps: VerifyDeps, kind: str, notes: list[str]
         ]
     if notes:
         lines += ["", "Changes since the last run:", *(f"- {note}" for note in notes)]
-    return "\n".join([*lines, "", render_case_file(case, deps.gate_context)])
+    return "\n".join([*lines, "", render_case_file(case, deps.gate_context, lean=True)])
 
 
-async def run(case_id: str, *, store: Store, models: Models, kind: str = "full") -> dict:
-    """Run verification for a case and return ``{status, run_id, ...}``."""
-    prepared = prepare_case_file(store, case_id)
+async def run(
+    case_id: str, *, store: Store, models: Models, kind: str = "full", fresh: bool = False
+) -> dict:
+    """Run verification for a case and return ``{status, run_id, ...}``.
+
+    ``fresh`` starts from an empty Case File, so every document is examined again.
+    """
+    prepared = prepare_case_file(store, case_id, fresh=fresh)
     if prepared is None:
         return {"case_id": case_id, "status": ERROR, "reason": "build the title chain first"}
     case, version, notes = prepared
@@ -168,10 +184,10 @@ async def run(case_id: str, *, store: Store, models: Models, kind: str = "full")
     version = store.save_case_file(case, version)
     agent_run = None
     status, error, result = ERROR, None, {}
-    emit("run", f"Verification started ({kind})", run_id)
+    emit("run", f"Verification started ({'fresh' if fresh else kind})", run_id)
     try:
         async with lead_agent.iter(
-            task_prompt(case, deps, kind, notes),
+            task_prompt(case, deps, kind, notes, fresh),
             deps=deps,
             model=models.lead,
             usage_limits=UsageLimits(request_limit=VERIFY_LEAD_CALL_BUDGET),
@@ -214,6 +230,7 @@ async def run(case_id: str, *, store: Store, models: Models, kind: str = "full")
             "sub_requests": deps.sub_usage.requests,
             "input_tokens": lead_usage.input_tokens + deps.sub_usage.input_tokens,
             "output_tokens": lead_usage.output_tokens + deps.sub_usage.output_tokens,
+            "cache_read_tokens": lead_usage.cache_read_tokens + deps.sub_usage.cache_read_tokens,
         }
         store.finish_run(run_id, status, usage, error)
     return {"case_id": case_id, "run_id": run_id, "status": status, "error": error, **result}

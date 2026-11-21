@@ -11,6 +11,8 @@ add a step to ``migrate``. Older case files then still load.
 from __future__ import annotations
 
 import hashlib
+import re
+from datetime import date
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
@@ -26,6 +28,10 @@ LinkVerdictKind = Literal[
 ]
 CheckStatus = Literal["ok", "concern", "failed", "not_verifiable"]
 Severity = Literal["high", "medium", "low"]
+PropertyType = Literal[
+    "agricultural_land", "converted_plot", "layout_site", "house", "flat", "commercial", "other",
+]  # fmt: skip
+WINDOW_YEARS = 30  # how far back title is verified
 PartyCapacity = Literal[
     "self", "gpa_holder", "guardian_of_minor", "legal_heir", "partner", "director",
     "trustee", "other",
@@ -44,7 +50,9 @@ class Citation(_Model):
 
     doc_id: Text
     page: int = Field(ge=1)
-    quote: Text = Field(description="Exact words copied from that page of the OCR text.")
+    quote: Text = Field(
+        description="The fact's wording from its examiner report, or exact words from the page."
+    )
 
 
 class Fact(_Model):
@@ -124,10 +132,27 @@ class CheckResult(_Model):
     citations: list[Citation] = Field(default_factory=list)
 
 
+class NeededDocument(_Model):
+    """A document that legally proves part of one transfer, as the Lead judged it."""
+
+    document: Text = Field(description="e.g. 'registered sale deed of 2010', 'NA order'.")
+    proves: Text = Field(description="One line: what it proves for this transfer.")
+    status: Literal["found", "missing"]
+    citations: list[Citation] = Field(
+        default_factory=list, description="found: the passages that show it proves the transfer."
+    )
+    requisition_id: str | None = Field(
+        default=None, description="missing: the requisition that asks for it."
+    )
+
+
 class LinkVerdict(_Model):
     verdict: LinkVerdictKind
     summary: Text
     checks: list[CheckResult] = Field(min_length=1)
+    property_type: PropertyType | None = None
+    extent: str | None = None
+    needed_documents: list[NeededDocument] = Field(default_factory=list)
 
 
 class WorkingLink(_Model):
@@ -165,6 +190,15 @@ class Issue(_Model):
     citations: list[Citation] = Field(default_factory=list)
 
 
+class ClearCheck(_Model):
+    """A positive finding the buyer should see ("Owner name matches across documents")."""
+
+    id: str
+    title: Text
+    detail: Text
+    citations: list[Citation] = Field(min_length=1)
+
+
 class Requisition(_Model):
     """A document that is needed. It records what is needed, never how it is obtained."""
 
@@ -172,7 +206,7 @@ class Requisition(_Model):
     document: Text
     reason: Text
     affects: list[str] = Field(min_length=1, description="Link, lead or issue ids.")
-    status: Literal["open", "fulfilled", "resolved"] = "open"
+    status: Literal["open", "fulfilled", "resolved", "withdrawn"] = "open"
     doc_id: str | None = None
     source: str | None = None
 
@@ -193,6 +227,7 @@ class CaseFile(_Model):
     documents: dict[str, DocumentEntry] = Field(default_factory=dict)
     leads: list[Lead] = Field(default_factory=list)
     issues: list[Issue] = Field(default_factory=list)
+    clear_checks: list[ClearCheck] = Field(default_factory=list)
     requisitions: list[Requisition] = Field(default_factory=list)
     tasks: list[Task] = Field(default_factory=list)
     counters: dict[str, int] = Field(default_factory=dict)
@@ -211,17 +246,46 @@ class CaseFile(_Model):
     def requisition(self, requisition_id: str) -> Requisition | None:
         return next((item for item in self.requisitions if item.id == requisition_id), None)
 
+    def window_start(self, this_year: int | None = None) -> int:
+        """Index of the root link: the latest transfer dated at or before 30 years ago.
+
+        Title is verified from the root to the current owner. When no link is that
+        old, the root is the earliest link. Undated links never become the root.
+        """
+        cutoff = (this_year or date.today().year) - WINDOW_YEARS
+        start = 0
+        for index, link in enumerate(self.chain):
+            year = link_year(link)
+            if year is not None and year <= cutoff:
+                start = index
+        return start
+
+    def window(self, this_year: int | None = None) -> list[WorkingLink]:
+        """The links to verify, root first."""
+        return self.chain[self.window_start(this_year) :]
+
     def known_ids(self) -> set[str]:
         """Every id a requisition or report may refer to."""
         return {
             *(link.link_id for link in self.chain),
             *(lead.id for lead in self.leads),
             *(issue.id for issue in self.issues),
+            *(check.id for check in self.clear_checks),
             *(item.id for item in self.requisitions),
         }
 
 
 # -- Construction and migration ----------------------------------------------
+
+
+def link_year(link: WorkingLink) -> int | None:
+    """The year a transfer was executed (or registered), if its date names one."""
+    transaction = link.transaction
+    match = re.search(
+        r"\b(1[89]\d{2}|20\d{2})\b",
+        transaction.executed_date or transaction.registration_date or "",
+    )
+    return int(match.group(1)) if match else None
 
 
 def text_hash(text: str) -> str:

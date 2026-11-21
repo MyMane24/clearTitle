@@ -17,12 +17,16 @@ from pydantic_ai.toolsets import FunctionToolset
 
 from backend.schemas.chain import DocumentedTransaction, SourceRef
 from backend.services.verification.case_file import (
+    WINDOW_YEARS,
     CheckResult,
     Citation,
+    ClearCheck,
     Issue,
     Lead,
     LinkVerdict,
     LinkVerdictKind,
+    NeededDocument,
+    PropertyType,
     Requisition,
     Severity,
     WorkingLink,
@@ -30,11 +34,14 @@ from backend.services.verification.case_file import (
 from backend.services.verification.context import render_case_file
 from backend.services.verification.deps import VerifyDeps
 from backend.services.verification.gates import (
+    ACTIVE_REQUISITION,
+    SEVERAL_DOCUMENTS,
+    alike,
     chain_problems,
     citation_problems,
-    is_deed_type,
+    duplicate_requisitions,
     link_evidence_problems,
-    unexamined_link_sources,
+    unexamined_documents,
 )
 from backend.services.verification.pages import normalize, split_pages
 
@@ -106,21 +113,56 @@ def _source_refs(deps: VerifyDeps, citations: list[Citation]) -> list[SourceRef]
     return list(seen.values())
 
 
-def _own_instruments_examined(deps: VerifyDeps, link: WorkingLink) -> list[str]:
-    """Examined deeds that are this link's own instrument: their instrument facts carry
-    the link's registration number (a later deed merely reciting it does not count)."""
-    number = re.sub(r"[^0-9a-z]", "", (link.transaction.transaction_number or "").casefold())
-    if len(number) < 4:
-        return []
-    found = []
-    for ref in link.transaction.source_refs:
-        entry = deps.case.documents.get(ref.doc_id)
-        if not (entry and entry.examined and entry.report and is_deed_type(entry.document_type)):
+def _order_problems(deps: VerifyDeps, link: WorkingLink) -> list[str]:
+    """Transfers are verified oldest first, each connected to the one before it."""
+    window = deps.case.window()
+    if link not in window:
+        return [
+            f"{link.link_id} is older than the {WINDOW_YEARS}-year window; it needs no verdict. "
+            f"Start from {window[0].link_id}."
+        ]
+    index = window.index(link)
+    earlier = [item.link_id for item in window[:index] if item.verdict is None]
+    if earlier:
+        return [f"Verify the earlier transfers first, oldest first: {', '.join(earlier)}."]
+    if index and not link.continues_previous and not link.break_note:
+        return [
+            f"Settle how ownership reached the transferors of {link.link_id} first: insert the "
+            "missing transfer (succession, partition, ...) if any document reports it, or "
+            "mark_break if none does."
+        ]
+    return []
+
+
+def _needed_document_problems(
+    deps: VerifyDeps, link_id: str, verdict: str, needed: list[NeededDocument]
+) -> list[str]:
+    """Each needed document is found with citations, or missing with its requisition."""
+    if not needed:
+        return ["List the documents that legally prove this transfer in needed_documents."]
+    problems = []
+    for item in needed:
+        problems += _plain("needed document", item.document) + _plain("proves", item.proves)
+        if item.status == "found":
+            if not item.citations:
+                problems.append(f"{item.document!r} is found but cites nothing. Cite it.")
+            problems += citation_problems(deps.gate_context, item.citations)
+            problems += link_evidence_problems(deps.gate_context, item.citations)
             continue
-        facts = " ".join(f"{fact.text} {fact.quote}" for fact in entry.report.instrument)
-        if number in re.sub(r"[^0-9a-z]", "", facts.casefold()):
-            found.append(ref.doc_id)
-    return found
+        requisition = deps.case.requisition(item.requisition_id or "")
+        if requisition is None or requisition.status in ("resolved", "withdrawn"):
+            problems.append(
+                f"{item.document!r} is missing: add it with add_requisition first and give its "
+                "requisition_id."
+            )
+        elif link_id not in requisition.affects:
+            requisition.affects = [*requisition.affects, link_id]  # it is needed for this one too
+    missing = [item for item in needed if item.status == "missing"]
+    if verdict == "verified" and missing:
+        problems.append("verified needs every needed document found.")
+    if verdict == "unverified_missing_document" and not missing:
+        problems.append("unverified_missing_document needs a missing needed document.")
+    return problems
 
 
 VERDICT_WORDS = {
@@ -143,6 +185,17 @@ def transfer_name(link: WorkingLink) -> str:
     return f"the {kind}{year}"
 
 
+MAX_ISSUE_LINKS = 3  # one problem concerns one or a few transfers
+TITLE_MAX, DETAIL_MAX = 70, 220  # what fits one finding card on the buyer's page
+
+
+def _short(field: str, text: str | None, limit: int) -> list[str]:
+    """Refuse buyer-facing text longer than the page shows."""
+    if text and len(text) > limit:
+        return [f"{field} is {len(text)} characters; keep it to {limit}. Buyers read short lines."]
+    return []
+
+
 def _plain(field: str, text: str | None) -> list[str]:
     """Refuse buyer-facing text that mentions internal ids."""
     ids = sorted(set(_INTERNAL_ID.findall(text or "")))
@@ -162,23 +215,25 @@ def _digest(deps: VerifyDeps) -> str:
     """
     case = deps.case
     parts = []
-    no_verdict = [link.link_id for link in case.chain if link.verdict is None]
+    no_verdict = [link.link_id for link in case.window() if link.verdict is None]
     if no_verdict:
-        parts.append(f"no verdict: {', '.join(no_verdict)}")
-    sources = unexamined_link_sources(case)
-    if sources:
-        docs = sorted({doc for docs in sources.values() for doc in docs})
-        parts.append(f"examine sources: {', '.join(docs)}")
+        parts.append(f"next transfer to verify: {no_verdict[0]} (then {len(no_verdict) - 1} more)")
+    docs = unexamined_documents(case)
+    if docs:
+        parts.append(f"not yet examined: {', '.join(docs)}")
     open_leads = [lead.id for lead in case.leads if lead.status == "open"]
     if open_leads:
         parts.append(f"open leads: {', '.join(open_leads)}")
     breaks = [
         link.link_id
-        for link in case.chain[1:]
+        for link in case.window()[1:]
         if not link.continues_previous and not link.break_note
     ]
     if breaks:
         parts.append(f"unrecorded break before: {', '.join(breaks)}")
+    duplicates = duplicate_requisitions(case)
+    if duplicates:
+        parts.append("duplicate requests: " + ", ".join(f"{a}={b}" for a, b in duplicates))
     arrived = [item.id for item in case.requisitions if item.status == "fulfilled"]
     if arrived:
         parts.append(f"review arrived documents for: {', '.join(arrived)}")
@@ -207,8 +262,17 @@ case_file_tools = FunctionToolset[VerifyDeps](id="case_file", max_retries=_TOOL_
 @case_file_tools.tool
 def view_case_file(ctx: RunContext[VerifyDeps]) -> str:
     """Show the current Case File: chain, documents, leads, issues, requisitions, tasks,
-    and what is still to do before the case can close. It is the source of truth."""
-    return render_case_file(ctx.deps.case, ctx.deps.gate_context)
+    and what is still to do before the case can close. It is the source of truth.
+    Call it once at the start; every change replies with what is still to do."""
+    deps = ctx.deps
+    fingerprint = deps.case.model_dump_json()
+    if fingerprint == deps.last_view:
+        return (
+            "Nothing changed since your last view_case_file. Act on it: verify the next "
+            "transfer, then call record_link_verdict." + _digest(deps)
+        )
+    deps.last_view = fingerprint
+    return render_case_file(deps.case, deps.gate_context)
 
 
 @case_file_tools.tool
@@ -218,26 +282,36 @@ def record_link_verdict(
     verdict: LinkVerdictKind,
     summary: str,
     checks: list[CheckResult],
+    property_type: PropertyType,
+    extent: str,
+    needed_documents: list[NeededDocument],
 ) -> str:
-    """Record the verification result for one chain link.
+    """Record the verification result for one transfer. Verify transfers oldest first.
 
     Every check marked ok must cite the passage that proves it. An encumbrance
     certificate cannot be cited as proof of a transfer.
 
     Args:
-        link_id: The link verified.
-        verdict: verified (every check ok), verified_with_concerns (some concern,
-            none failed), unverified_missing_document (a needed document is
-            absent; add a requisition naming this link), or defective (a check failed).
+        link_id: The transfer verified.
+        verdict: verified (every check ok, no document missing), verified_with_concerns
+            (some concern, none failed), unverified_missing_document (a needed
+            document is missing), or defective (a check failed).
         summary: One or two sentences for the report.
         checks: The individual checks (vendor title, parties and capacity,
             schedule and extent, execution, registration, stamp duty, consideration).
+        property_type: What this transfer conveyed, as its instrument describes it.
+        extent: The extent conveyed, as the instrument states it.
+        needed_documents: Every document that legally proves this transfer, as you
+            judge it: found (cite the passages that show it proves this transfer) or
+            missing (the requisition that asks for it).
     """
     deps = ctx.deps
     link = _link(deps, link_id)
+    _require(_order_problems(deps, link))
     statuses = {check.status for check in checks}
     citations = [citation for check in checks for citation in check.citations]
-    problems = [
+    problems = _needed_document_problems(deps, link_id, verdict, needed_documents)
+    problems += [
         f"Check {check.check!r} is ok but cites nothing. Cite the passage that proves it."
         for check in checks
         if check.status == "ok" and not check.citations
@@ -248,18 +322,10 @@ def record_link_verdict(
         problems.append("defective needs at least one failed check.")
     if verdict == "verified_with_concerns" and ("failed" in statuses or "concern" not in statuses):
         problems.append("verified_with_concerns needs a concern and no failed check.")
-    if verdict == "unverified_missing_document" and "not_verifiable" not in statuses:
-        problems.append("unverified_missing_document needs a not_verifiable check.")
     if verdict != "unverified_missing_document" and not citations:
         problems.append(
             f"A {verdict} verdict must cite evidence. Reopen the saved examiner reports of "
             "this link's documents with examine_document (free) and cite their passages."
-        )
-    examined_instruments = _own_instruments_examined(deps, link)
-    if verdict == "unverified_missing_document" and examined_instruments:
-        problems.append(
-            f"The link's own instrument ({', '.join(examined_instruments)}) has been examined, "
-            "so it is not missing. Reopen its report with examine_document and verify against it."
         )
     problems += citation_problems(deps.gate_context, citations)
     problems += link_evidence_problems(deps.gate_context, citations)
@@ -267,10 +333,20 @@ def record_link_verdict(
     for check in checks:
         problems += _plain(f"Check {check.check!r} name", check.check)
         problems += _plain(f"Check {check.check!r} note", check.note)
+    problems += _plain("extent", extent)
     _require(problems)
-    link.verdict = LinkVerdict(verdict=verdict, summary=summary, checks=checks)
+    link.verdict = LinkVerdict(
+        verdict=verdict,
+        summary=summary,
+        checks=checks,
+        property_type=property_type,
+        extent=extent,
+        needed_documents=needed_documents,
+    )
     deps.emit(
-        "verdict", f"{transfer_name(link).capitalize()}: {VERDICT_WORDS[verdict]}. {summary}", link_id
+        "verdict",
+        f"{transfer_name(link).capitalize()}: {VERDICT_WORDS[verdict]}. {summary}",
+        link_id,
     )
     return f"Recorded {verdict} for {link_id}." + _digest(deps)
 
@@ -402,10 +478,10 @@ def open_lead(ctx: RunContext[VerifyDeps], text: str, source: str) -> str:
 
     Args:
         text: What must be checked, e.g. "2005 partition may change B's title".
-        source: Where it was seen, e.g. "EC p.2".
+        source: Where it was seen, e.g. "DOC_002 p.2" (internal; ids are fine here).
     """
     case = ctx.deps.case
-    _require(_plain("text", text) + _plain("source", source))
+    _require(_plain("text", text))
     lead = Lead(id=case.next_id("L"), text=text, source=source)
     case.leads.append(lead)
     ctx.deps.emit("lead", f"Found something to follow up: {text}", lead.id)
@@ -471,8 +547,8 @@ def record_issue(
     Args:
         severity: high (a defect: title is not clear), medium (title is clear
             only subject to rectifying it), or low (an observation).
-        title: Short title.
-        detail: What is wrong and why it matters.
+        title: A few words, at most 70 characters.
+        detail: What is wrong and why it matters, at most 220 characters.
         link_ids: Links it concerns.
         citations: Passages that show it.
         distinct: Set true only if a similar existing issue is a different problem.
@@ -481,8 +557,14 @@ def record_issue(
     link_ids, citations = link_ids or [], citations or []
     known = {link.link_id for link in deps.case.chain}
     problems = [f"No link {link_id!r}." for link_id in link_ids if link_id not in known]
+    if len(link_ids) > MAX_ISSUE_LINKS:
+        problems.append(
+            f"An issue names at most {MAX_ISSUE_LINKS} transfers. Record each problem as its own "
+            "issue (the unreleased mortgage, the unproven heirs, ...), not a summary of the case."
+        )
     problems += citation_problems(deps.gate_context, citations)
     problems += _plain("title", title) + _plain("detail", detail)
+    problems += _short("title", title, TITLE_MAX) + _short("detail", detail, DETAIL_MAX)
     _require(problems)
     similar = None if distinct else _similar_issue(deps, title, detail)
     if similar is not None:
@@ -517,7 +599,7 @@ def update_issue(
     Args:
         issue_id: The issue.
         severity: New severity, if it changes.
-        detail: Replacement detail, if it changes.
+        detail: Replacement detail, if it changes (at most 220 characters).
         link_ids: Replacement list of links it concerns, if it changes.
     """
     deps = ctx.deps
@@ -525,8 +607,11 @@ def update_issue(
     if issue is None:
         raise ModelRetry(f"No issue {issue_id!r}.")
     known = {link.link_id for link in deps.case.chain}
-    _require([f"No link {link_id!r}." for link_id in link_ids or [] if link_id not in known])
-    _require(_plain("detail", detail))
+    problems = [f"No link {link_id!r}." for link_id in link_ids or [] if link_id not in known]
+    if link_ids and len(link_ids) > MAX_ISSUE_LINKS:
+        problems.append(f"An issue names at most {MAX_ISSUE_LINKS} transfers.")
+    _require(problems)
+    _require(_plain("detail", detail) + _short("detail", detail, DETAIL_MAX))
     issue.severity = severity or issue.severity
     issue.detail = detail or issue.detail
     issue.link_ids = link_ids if link_ids is not None else issue.link_ids
@@ -534,22 +619,54 @@ def update_issue(
     return f"Updated {issue_id}." + _digest(deps)
 
 
-def _words(text: str) -> set[str]:
-    return {word for word in re.findall(r"[a-z0-9]+", text.casefold()) if len(word) >= 4}
+@case_file_tools.tool
+def record_clear_check(
+    ctx: RunContext[VerifyDeps], title: str, detail: str, citations: list[Citation]
+) -> str:
+    """Record a positive finding the buyer should see, e.g. "Owner name matches across
+    documents" or "Encumbrance certificate reaches the present day". Cite what proves it.
+
+    Args:
+        title: A few words, at most 70 characters.
+        detail: One or two short sentences, at most 220 characters.
+        citations: Passages that prove it.
+    """
+    deps = ctx.deps
+    problems = ["Cite the passages that prove it."] if not citations else []
+    problems += citation_problems(deps.gate_context, citations)
+    problems += _plain("title", title) + _plain("detail", detail)
+    problems += _short("title", title, TITLE_MAX) + _short("detail", detail, DETAIL_MAX)
+    _require(problems)
+    same = next(
+        (c for c in deps.case.clear_checks if alike(title, detail, c.title, c.detail)), None
+    )
+    if same is not None:
+        return f"Not recorded: already noted as {same.id} ({same.title})."
+    item = ClearCheck(id=deps.case.next_id("C"), title=title, detail=detail, citations=citations)
+    deps.case.clear_checks.append(item)
+    deps.emit("clear", f"Clear: {title}", item.id)
+    return f"Recorded {item.id}." + _digest(deps)
 
 
 def _similar_issue(deps: VerifyDeps, title: str, detail: str) -> Issue | None:
-    """An existing issue that is probably the same problem (most title words shared)."""
-    new_title = _words(title)
-    for issue in deps.case.issues:
-        old_title = _words(issue.title)
-        if not new_title or not old_title:
-            continue
-        shared = len(new_title & old_title) / min(len(new_title), len(old_title))
-        overall = _words(f"{title} {detail}") & _words(f"{issue.title} {issue.detail}")
-        if shared >= 0.6 or (shared >= 0.34 and len(overall) >= 6):
-            return issue
-    return None
+    """An existing issue that is probably the same problem."""
+    return next(
+        (issue for issue in deps.case.issues if alike(title, detail, issue.title, issue.detail)),
+        None,
+    )
+
+
+def _similar_requisition(deps: VerifyDeps, document: str, reason: str) -> Requisition | None:
+    """An open requisition that probably asks for the same document."""
+    return next(
+        (
+            item
+            for item in deps.case.requisitions
+            if item.status in ACTIVE_REQUISITION
+            and alike(document, reason, item.document, item.reason)
+        ),
+        None,
+    )
 
 
 @case_file_tools.tool
@@ -560,12 +677,16 @@ def add_requisition(
     affects: list[str],
     closes_leads: list[str] | None = None,
 ) -> str:
-    """Note a document that is needed, then carry on with what you have. Never wait for it.
+    """Request ONE missing document, then carry on with what you have. Never wait for it.
+
+    Call once per document: the buyer gets one upload button per request. Asking again
+    for a document already requested only extends that request; it never adds a row.
 
     Args:
-        document: What is needed, e.g. "Partition deed of 2005 among B, B2, B3".
-        reason: What it would establish.
-        affects: Link, lead or issue ids it would settle.
+        document: The one document needed, at most 150 characters, e.g. "Partition deed
+            of 2005 among B, B2, B3".
+        reason: One sentence, at most 160 characters: what it would prove.
+        affects: The transfer (link id) it is needed for, plus any lead or issue ids it settles.
         closes_leads: Open lead ids this requisition covers; they are resolved in the
             same call, so no separate resolve_lead is needed.
     """
@@ -573,24 +694,38 @@ def add_requisition(
     closes_leads = closes_leads or []
     unknown = sorted(set(affects) - deps.case.known_ids())
     problems = [f"Unknown ids: {', '.join(unknown)}."] if unknown else []
-    problems += ["Name at least one link, lead or issue it affects."] if not affects else []
+    anchors = {link.link_id for link in deps.case.chain} | {issue.id for issue in deps.case.issues}
+    if not anchors & {*affects}:
+        problems.append(
+            "Name in affects the transfer (link id) this document is needed for, or the issue "
+            "it settles."
+        )
     open_leads = {lead.id for lead in deps.case.leads if lead.status == "open"}
     problems += [
         f"{lead_id} is not an open lead." for lead_id in closes_leads if lead_id not in open_leads
     ]
+    if SEVERAL_DOCUMENTS.search(document):
+        problems.append(
+            "document names several documents. Request one document per call; call "
+            "add_requisition again for each of the others."
+        )
     problems += _plain("document", document) + _plain("reason", reason)
+    problems += _short("document", document, 150) + _short("reason", reason, 160)
     _require(problems)
     requisition = next(
         (
             item
             for item in deps.case.requisitions
-            if item.status == "open" and normalize(item.document) == normalize(document)
+            if item.status in ACTIVE_REQUISITION and normalize(item.document) == normalize(document)
         ),
         None,
-    )
+    ) or _similar_requisition(deps, document, reason)
     if requisition is not None:
         requisition.affects = sorted({*requisition.affects, *affects, *closes_leads})
-        reply = f"Already requested as {requisition.id}; added to what it affects."
+        reply = (
+            f"Already requested as {requisition.id} ({requisition.document}); added to what it "
+            "affects. Do not request it again."
+        )
     else:
         requisition = Requisition(
             id=deps.case.next_id("R"),
@@ -607,6 +742,37 @@ def add_requisition(
         lead.resolution = f"Covered by the document request: {document}"
         deps.emit("lead", f"Followed up by requesting: {requisition.document}", lead_id)
     return reply + _digest(deps)
+
+
+@case_file_tools.tool
+def withdraw_requisition(
+    ctx: RunContext[VerifyDeps], requisition_id: str, reason: str, replaced_by: str | None = None
+) -> str:
+    """Withdraw a request that is a duplicate, already uploaded, or not needed after all.
+
+    Args:
+        requisition_id: The request to withdraw.
+        reason: Why, in one short sentence.
+        replaced_by: For a duplicate, the request that covers it instead; what it affects
+            and every verdict naming it move there.
+    """
+    deps = ctx.deps
+    requisition = deps.case.requisition(requisition_id)
+    if requisition is None or requisition.status != "open":
+        raise ModelRetry(f"{requisition_id} is not an open requisition.")
+    target = deps.case.requisition(replaced_by) if replaced_by else None
+    if replaced_by and (target is None or target.status not in ACTIVE_REQUISITION):
+        raise ModelRetry(f"{replaced_by} is not an active requisition.")
+    _require(_plain("reason", reason))
+    if target is not None:
+        target.affects = sorted({*target.affects, *requisition.affects})
+        for link in deps.case.chain:
+            for needed in link.verdict.needed_documents if link.verdict else []:
+                if needed.requisition_id == requisition_id:
+                    needed.requisition_id = target.id
+    requisition.status = "withdrawn"
+    deps.emit("requisition", f"No longer needed: {requisition.document} ({reason})", requisition_id)
+    return f"Withdrew {requisition_id}." + _digest(deps)
 
 
 @case_file_tools.tool

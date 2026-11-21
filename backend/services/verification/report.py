@@ -28,7 +28,7 @@ from backend.schemas.due_diligence import (
     TableBlock,
     WrittenReport,
 )
-from backend.services.verification.case_file import CaseFile
+from backend.services.verification.case_file import CaseFile, link_year
 from backend.services.verification.tools import VERDICT_WORDS, transfer_name
 
 
@@ -52,22 +52,25 @@ report_agent = Agent(
 def opinion_problems(case: CaseFile, opinion: Opinion) -> list[str]:
     """Why ``opinion`` is inconsistent with the Case File, if it is."""
     defects = [f"high issue {i.id}" for i in case.issues if i.severity == "high"]
+    window = case.window()
     defects += [
         f"defective {link.link_id}"
-        for link in case.chain
+        for link in window
         if link.verdict and link.verdict.verdict == "defective"
     ]
     defects += [
-        f"break before {link.link_id}" for link in case.chain[1:] if not link.continues_previous
+        f"break before {link.link_id}" for link in window[1:] if not link.continues_previous
     ]
     reservations = [f"medium issue {i.id}" for i in case.issues if i.severity == "medium"]
     reservations += [
         f"{link.link_id} is {link.verdict.verdict if link.verdict else 'unverified'}"
-        for link in case.chain
+        for link in window
         if not link.verdict or link.verdict.verdict != "verified"
     ]
     reservations += [
-        f"requisition {item.id} is open" for item in case.requisitions if item.status != "resolved"
+        f"requisition {item.id} is open"
+        for item in case.requisitions
+        if item.status in ("open", "fulfilled")
     ]
     reservations += [
         f"{entry.doc_id} was not examined"
@@ -92,6 +95,27 @@ def report_problems(case: CaseFile, written: WrittenReport) -> list[str]:
     if unknown:
         problems.append(f"Unknown ids in refs: {', '.join(unknown)}. Use Case File ids only.")
     problems += opinion_problems(case, written.opinion)
+    problems += length_problems(written)
+    return problems
+
+
+REASONS_MAX, REASON_CHARS, LIMITATIONS_CHARS = 2, 140, 240
+
+
+def length_problems(written: WrittenReport) -> list[str]:
+    """The buyer's page is one page: two short reasons and a one-line limitation."""
+    problems = []
+    if len(written.opinion_reasons) > REASONS_MAX:
+        problems.append(f"Give at most {REASONS_MAX} opinion reasons, the most important first.")
+    problems += [
+        f"Opinion reason {index} has {len(reason.text)} characters; keep it to {REASON_CHARS}."
+        for index, reason in enumerate(written.opinion_reasons, start=1)
+        if len(reason.text) > REASON_CHARS
+    ]
+    for section in written.sections:
+        text = " ".join(getattr(block, "text", "") for block in section.blocks)
+        if section.id == "limitations" and len(text) > LIMITATIONS_CHARS:
+            problems.append(f"Limitations has {len(text)} characters; keep it to one sentence.")
     return problems
 
 
@@ -130,7 +154,12 @@ def case_issues(case: CaseFile) -> list[Finding]:
         )
         for issue in case.issues
     ]
-    covered = {link_id for issue in case.issues for link_id in issue.link_ids}
+    covered = {
+        link_id
+        for issue in case.issues
+        if len(issue.link_ids) <= 3  # a summary naming most of the chain covers nothing
+        for link_id in issue.link_ids
+    }
     for link in case.chain:
         if link.link_id in covered:
             continue
@@ -143,7 +172,7 @@ def case_issues(case: CaseFile) -> list[Finding]:
                     refs=[link.link_id],
                 )
             )
-    for index, link in enumerate(case.chain):
+    for index, link in enumerate(case.window()):
         if index and not link.continues_previous and link.link_id not in covered:
             findings.append(
                 Finding(
@@ -154,7 +183,38 @@ def case_issues(case: CaseFile) -> list[Finding]:
                 )
             )
     order = {"high": 0, "medium": 1, "low": 2}
-    return sorted(findings, key=lambda finding: order.get(finding.severity or "low", 3))
+    findings = sorted(findings, key=lambda finding: order.get(finding.severity or "low", 3))
+    return findings + clear_findings(case)
+
+
+def clear_findings(case: CaseFile) -> list[Finding]:
+    """What checked out: the unbroken chain (built from the verdicts) and the Lead's
+    cited clear checks. Never claimed for a chain with a break or an unjudged transfer."""
+    findings = []
+    window = case.window()
+    judged = all(
+        link.verdict and link.verdict.verdict in ("verified", "verified_with_concerns")
+        for link in window
+    )
+    connected = all(link.continues_previous for link in window[1:])
+    if window and judged and connected:
+        years = [year for link in window if (year := link_year(link))]
+        since = f" from {years[0]}" if years else ""
+        count = "one transfer" if len(window) == 1 else f"{len(window)} transfers"
+        findings.append(
+            Finding(
+                title="Chain of title is unbroken",
+                text=f"Ownership traces{since} through {count} to the current owner; each "
+                "seller is the buyer in the transfer before.",
+                severity="clear",
+                refs=[link.link_id for link in window],
+            )
+        )
+    findings += [
+        Finding(title=check.title, text=check.detail, severity="clear", refs=[check.id])
+        for check in case.clear_checks
+    ]
+    return findings
 
 
 def _issues_section(case: CaseFile) -> Section:
@@ -168,7 +228,8 @@ def _issues_section(case: CaseFile) -> Section:
 
 
 def _requisitions_section(case: CaseFile) -> Section:
-    rows = [[item.document, item.reason, item.status] for item in case.requisitions]
+    shown = [item for item in case.requisitions if item.status != "withdrawn"]
+    rows = [[item.document, item.reason, item.status] for item in shown]
     return Section(
         id="requisitions",
         title="Documents needed",
@@ -176,7 +237,7 @@ def _requisitions_section(case: CaseFile) -> Section:
             TableBlock(
                 columns=["Document needed", "Why it is needed", "Status"],
                 rows=rows or [["No further documents are needed", "", ""]],
-                refs=[item.id for item in case.requisitions],
+                refs=[item.id for item in shown],
             )
         ],
     )
@@ -250,6 +311,8 @@ def changes(previous: dict, current: dict) -> list[str]:
             lines.append(f"A new document is needed: {document}.")
         elif old_status != status and status == "resolved":
             lines.append(f"Received and accepted: {document}.")
+        elif old_status != status and status == "withdrawn":
+            lines.append(f"No longer needed: {document}.")
         elif old_status != status and status == "open":
             lines.append(f"Still needed after review: {document}.")
     old_issues = previous.get("issues", {})

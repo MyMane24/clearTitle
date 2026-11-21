@@ -28,7 +28,9 @@ def report(quote="partition of 2005", page=2, **extra):
                 "quote": "Bhimesh (minor",
             }
         ],
-        "recitals": [{"topic": "acquisition", "text": "2005 partition", "page": page, "quote": quote}],
+        "recitals": [
+            {"topic": "acquisition", "text": "2005 partition", "page": page, "quote": quote}
+        ],
         "unexpected": [
             {"topic": "minor", "text": "A minor's share is sold.", "page": 1, "quote": "minor"}
         ],
@@ -57,7 +59,8 @@ def test_one_call_with_the_full_text_returns_a_cited_report():
     assert "--- Page 1 ---" in prompt and "--- Page 2 ---" in prompt
     entry = ctx.deps.case.documents["D2010"]
     assert entry.examined and entry.report.doc_id == "D2010"  # id comes from the app
-    assert "RECITALS" in text and "partition of 2005" in text and "UNEXPECTED" in text
+    assert "RECITALS" in text and "2005 partition [F2 p.2]" in text and "UNEXPECTED" in text
+    assert "partition of 2005" not in text  # long OCR quotes stay out of the Lead's context
     assert entry.text_hash
     assert any("Examined deed-2010.pdf" in line for line in sink.texts("examine"))
 

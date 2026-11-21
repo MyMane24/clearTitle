@@ -116,12 +116,38 @@ These refine the design below. Where they differ from a later section, these win
     - **Built by code from the Case File, not the model:** "Issues identified" is every recorded issue, plus defective transfers and chain breaks no issue covers, most serious first (`report.case_issues`); "Documents needed" lists each requisition and its reason. The report writer writes only a one-line property summary, the opinion with 2–4 reasons, and a short limitations note, so its output drops from about 6.5K tokens to a few hundred. The opinion gate is unchanged.
     - **Lead prompt:** it must record every buyer-relevant problem as an issue in plain words, and give every requisition a one-sentence reason saying what the document will prove.
     - **Where per-transfer verdicts show:** they stay in the Case File and show on the title chain page.
-17. **Read only what a transaction needs** (product owner's decision).
+17. **Read only what a transaction needs** (product owner's decision). *Superseded by decision 20: every uploaded document is examined.*
     - **Choice:** the Lead chooses from the document list and summaries the documents each transaction needs: its own deed, the documents its chain entry cites, the revenue records for its mutation, and anything a lead points to. It leaves unrelated documents unread. The application still never suggests documents.
     - **Closing check:** requires every transaction's own source documents to be examined, not every document (`gates._link_sources_examined` replaces `_every_document_examined`). The "Still to do" digest names the unexamined sources.
     - **Report and page:** unread documents are listed as "Not examined: not needed to verify any transaction". This alone does not block a `CLEAR` opinion; only unreadable documents do. The results page marks them "Not needed".
     - **Trade-off:** land-use and approval documents are read only when a transaction or lead calls for them.
 19. **No internal ids in buyer-facing text.** Ids (PA-TC-0002, VL-1, DOC_018, I1, R1, L1) stay in the hidden fields that link records: `refs`, id fields and basis keys. Everything a buyer reads names the transfer and document in words: the prompts require it, the tools refuse text that mentions an id (`tools._plain`), built report text and events are worded without ids, and the results page replaces any id found in older saved data. The existing report for 8A14D132 is covered by the page replacement.
+20. **Transaction-by-transaction verification** (product owner's decision, 2026-11-21). Replaces the activity-wide method ("read everything, follow up, judge every link at the end"), which spent run f0223f1e's 80 Lead calls and judged only 3 of 8 links.
+    - **Goal:** prove the chain is valid and unbroken, one transfer at a time, from the root owner to the current owner.
+    - **Window:** 30 years. The root is the latest transfer on or before today minus 30 years (or the earliest link if none is that old). Older links stay on the chain page, greyed out; they are neither judged nor requested.
+    - **Order:** the Lead verifies links strictly oldest first. For each link:
+      1. **read the transaction first:** its chain entry and its own instrument, so it knows who transferred what, when and how;
+      2. record what was transferred: **property type** (agricultural land, converted plot, layout site, house, flat, other) and extent;
+      3. **decide which documents legally prove this transfer** (the model decides, from the playbooks). For each one: if it is uploaded, examine it and confirm it really proves this transfer (right parties, right property, right date, registered or issued by the right authority); if it is not uploaded, raise a requisition;
+      4. **continuity:** the seller is the previous buyer (or their heirs, GPA holder or successor, with evidence), and the property sold is the one the previous buyer received (same survey or site, extent not larger). If not, insert the missing transfer (succession, partition, ...) or mark a break before judging;
+      5. **property-type change:** when the type differs from the previous link (agricultural land bought, Flat 302 sold), the model works out what happened in between (conversion, layout, construction, apartment project) and which documents prove it (NA order, layout approval, building plan, CC/OC, RERA where it applies). **No rules table in code:** the model applies the lawyer guidance in the playbooks;
+      6. record the verdict with each needed document as found (cited) or missing (its requisition), then move to the next link.
+    - **After the last link:** case-level checks (EC up to today, every mortgage released, revenue records and khata in the current owner's name, taxes paid) become findings.
+    - **Code enforces only the process,** never legal rules:
+      - a link's verdict is refused until every earlier in-window link has one;
+      - the verdict must carry the property type, extent and the list of documents the transfer needs (found or missing);
+      - every uploaded document is examined (reverses decision 17); the page says "Not examined" for any left over;
+      - each requisition names exactly one document, the transfer it is for, and a one-sentence reason; a requisition that repeats an open one is refused;
+      - every rejected tool call is written to the feed and the log, so wasted calls are visible.
+    - **Report and dashboard (refines decision 18): one page.**
+      - Opinion (NOT CLEAR / CLEAR SUBJECT TO / CLEAR) with at most 2 one-line reasons.
+      - Count chips: `n critical`, `n to resolve`, `n clear`.
+      - Finding cards: badge, title (at most 70 characters), text (at most 220 characters); the schema enforces both limits. Critical = high severity, To resolve = medium, Clear = a positive check that cites its evidence ("Chain of title is unbroken" is built by code from the verified chain).
+      - Documents needed: one row per document with a one-line reason, the transfer it is for, and Upload.
+      - Limitations: one line.
+      - The chain page shows each transfer's property-type chip and its documents checklist.
+    - **As built (2026-11-21):** low-severity issues show as a grey "Note" card; positive findings come from the `record_clear_check` tool (cited) plus the code-built "Chain of title is unbroken"; refused tool calls are stored as "rejected" events, hidden from the buyer's feed.
+    - **Example:** A→B 1995 agricultural land, Sy 45 (RTC and mutation found: verified). B→C 2006 "Site No. 12": the type changed, so the model looks for the conversion order and layout approval; the conversion order is found, the layout approval is missing (one requisition). C→D 2016 "Flat 302": changed again, so it looks for the building plan, CC/OC, the JDA with the landowner and the undivided share; the OC is missing (requisition); RERA is not needed because the building was completed before 2017 (a note, not a requisition).
 
 ---
 

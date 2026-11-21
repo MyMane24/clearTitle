@@ -52,7 +52,9 @@ def fake_examiner(seen):
         report = {
             "doc_id": doc_id,
             "summary": f"Document {doc_id}.",
-            "instrument": [{"topic": "opening", "text": first_line, "page": 1, "quote": first_line}],
+            "instrument": [
+                {"topic": "opening", "text": first_line, "page": 1, "quote": first_line}
+            ],
         }
         return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, report)])
 
@@ -67,7 +69,45 @@ def cite(doc_id, page, quote):
 
 
 def check(name, status, citations=()):
-    return {"check": name, "status": status, "note": f"{name}: {status}.", "citations": list(citations)}
+    return {
+        "check": name,
+        "status": status,
+        "note": f"{name}: {status}.",
+        "citations": list(citations),
+    }
+
+
+def found(doc_id, page, quote):
+    return {
+        "document": "Registered instrument of this transfer",
+        "proves": "The transfer itself.",
+        "status": "found",
+        "citations": [cite(doc_id, page, quote)],
+    }
+
+
+def missing(document, requisition_id):
+    return {
+        "document": document,
+        "proves": "The transfer itself.",
+        "status": "missing",
+        "requisition_id": requisition_id,
+    }
+
+
+def verdict(link_id, kind, summary, checks, needed):
+    return (
+        "record_link_verdict",
+        {
+            "link_id": link_id,
+            "verdict": kind,
+            "summary": summary,
+            "checks": checks,
+            "property_type": "agricultural_land",
+            "extent": "2 acres 10 guntas",
+            "needed_documents": needed,
+        },
+    )
 
 
 PARTITION_LINK = {
@@ -125,45 +165,42 @@ FULL_RUN_STEPS = [
             },
         ),
     ],
+    # One transfer at a time, oldest first.
     [
-        (
-            "record_link_verdict",
-            {
-                "link_id": "PA-TC-0001",
-                "verdict": "verified",
-                "summary": "Registered sale by Anand Rao.",
-                "checks": [check("vendor title", "ok", [cite("D1998", 1, "Purchaser: Basavaraj")])],
-            },
-        ),
-        (
-            "record_link_verdict",
-            {
-                "link_id": "VL-1",
-                "verdict": "unverified_missing_document",
-                "summary": "Known only from a recital.",
-                "checks": [check("partition instrument", "not_verifiable")],
-            },
-        ),
-        (
-            "record_link_verdict",
-            {
-                "link_id": "PA-TC-0002",
-                "verdict": "defective",
-                "summary": "Minor's share sold without court permission.",
-                "checks": [
-                    check("parties and capacity", "failed", [cite("D2010", 1, "Bhimesh (minor")])
-                ],
-            },
-        ),
-        (
-            "record_link_verdict",
-            {
-                "link_id": "PA-TC-0003",
-                "verdict": "verified",
-                "summary": "Registered sale to Deepa.",
-                "checks": [check("vendor title", "ok", [cite("D2018", 1, "Vendor: Chandrashekar")])],
-            },
-        ),
+        verdict(
+            "PA-TC-0001",
+            "verified",
+            "Registered sale by Anand Rao.",
+            [check("vendor title", "ok", [cite("D1998", 1, "Purchaser: Basavaraj")])],
+            [found("D1998", 1, "Purchaser: Basavaraj")],
+        )
+    ],
+    [
+        verdict(
+            "VL-1",
+            "unverified_missing_document",
+            "Known only from a recital.",
+            [check("partition instrument", "not_verifiable")],
+            [missing("Partition deed of 2005", "R1")],
+        )
+    ],
+    [
+        verdict(
+            "PA-TC-0002",
+            "defective",
+            "Minor's share sold without court permission.",
+            [check("parties and capacity", "failed", [cite("D2010", 1, "Bhimesh (minor")])],
+            [found("D2010", 1, "Bhimesh (minor")],
+        )
+    ],
+    [
+        verdict(
+            "PA-TC-0003",
+            "verified",
+            "Registered sale to Deepa.",
+            [check("vendor title", "ok", [cite("D2018", 1, "Vendor: Chandrashekar")])],
+            [found("D2018", 1, "Vendor: Chandrashekar")],
+        )
     ],
     [("result", {"summary": "Chain verified with one defect and one requisition."})],
 ]
@@ -229,7 +266,11 @@ def test_full_run_closes_the_chain_and_writes_report_v1():
     assert len(refused_closes) == 1  # the early close was refused by the closure gate
     assert any("must be NOT_CLEAR" in p for p in retry_prompts(report_messages))  # CLEAR refused
 
-    feed = store.events.texts()
+    refused = store.events.texts("rejected")
+    assert len(refused) == 1 and refused[0].startswith("Step refused (closing)")
+    assert "lead" in refused[0].lower()
+    # Refusals are diagnostics (gate wording, ids included); the buyer's feed is everything else.
+    feed = [text for kind, text, _ in store.events.events if kind != "rejected"]
     assert any("Found something to follow up" in line for line in feed)
     assert any("Added a transfer to the chain: the partition." in line for line in feed)
     assert any("Report v1: NOT CLEAR" in line for line in feed)
@@ -269,16 +310,12 @@ def test_incremental_run_examines_only_the_uploaded_document():
                     "citations": [cite("PD2005", 1, "Schedule B allotted to Basavaraj")],
                 },
             ),
-            (
-                "record_link_verdict",
-                {
-                    "link_id": "VL-1",
-                    "verdict": "verified",
-                    "summary": "Registered partition allotting Schedule B to Basavaraj.",
-                    "checks": [
-                        check("allotment", "ok", [cite("PD2005", 1, "Schedule B allotted")])
-                    ],
-                },
+            verdict(
+                "VL-1",
+                "verified",
+                "Registered partition allotting Schedule B to Basavaraj.",
+                [check("allotment", "ok", [cite("PD2005", 1, "Schedule B allotted")])],
+                [found("PD2005", 1, "Schedule B allotted")],
             ),
         ],
         [("result", {"summary": "Partition verified."})],

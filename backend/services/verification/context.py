@@ -37,18 +37,28 @@ CLEARED = (
 )
 
 
-def render_case_file(case: CaseFile, ctx: GateContext | None = None) -> str:
-    """A compact, readable snapshot of the Case File for the model."""
+def render_case_file(case: CaseFile, ctx: GateContext | None = None, lean: bool = False) -> str:
+    """A compact, readable snapshot of the Case File for the model.
+
+    ``lean`` leaves out each document's recitals and unexpected findings. The first
+    prompt uses it: that prompt is never compacted, so it is re-sent on every call.
+    """
     lines = [
         f"CASE FILE (case {case.case_id})",
         "",
-        f"CHAIN ({len(case.chain)} links, earliest first)",
+        f"CHAIN ({len(case.chain)} links, earliest first; verify from the root, oldest first)",
     ]
-    for link in case.chain:
+    start = case.window_start()
+    for index, link in enumerate(case.chain):
         transaction = link.transaction
         date = transaction.executed_date or transaction.registration_date or "undated"
-        verdict = link.verdict.verdict if link.verdict else "NO VERDICT"
+        verdict = "NO VERDICT"
+        if index < start:
+            verdict = "before the 30-year window: not verified"
+        elif link.verdict:
+            verdict = f"{link.verdict.verdict} ({link.verdict.property_type or 'type not set'})"
         origin = " [added during verification]" if link.origin == "verification" else ""
+        origin += " [ROOT]" if index == start else ""
         lines.append(
             f"- {link.link_id}{origin} | {transaction.transaction_type} | {date} | "
             f"{transaction.transaction_number or 'no number'} | "
@@ -56,9 +66,13 @@ def render_case_file(case: CaseFile, ctx: GateContext | None = None) -> str:
             f"{transaction.evidence_status} | sources: "
             f"{', '.join(ref.doc_id for ref in transaction.source_refs)} | {verdict}"
         )
-        if not link.continues_previous and link is not case.chain[0]:
+        if not link.continues_previous and index > start:
             lines.append(f"    BREAK: {link.break_note or 'not yet recorded'}")
-    lines += ["", "DOCUMENTS (recitals R and unexpected findings U from each examiner report)"]
+    lines += [
+        "",
+        "DOCUMENTS (each examiner report's recitals and unexpected findings, with the fact "
+        "number to cite, e.g. F3)",
+    ]
     for entry in case.documents.values():
         state = "examined" if entry.examined else "NOT EXAMINED"
         if entry.examination_error:
@@ -67,9 +81,16 @@ def render_case_file(case: CaseFile, ctx: GateContext | None = None) -> str:
             f"- {entry.doc_id} | {entry.document_type} | {entry.filename} | {state} | "
             f"{(entry.report.summary if entry.report else entry.summary) or ''}"[:300]
         )
-        if entry.report:
-            lines += [f"    R p.{fact.page}: {fact.text}"[:180] for fact in entry.report.recitals]
-            lines += [f"    U p.{fact.page}: {fact.text}"[:180] for fact in entry.report.unexpected]
+        if entry.report and not lean:
+            number = {id(fact): n for n, fact in enumerate(entry.report.facts(), start=1)}
+            lines += [
+                f"    recital F{number[id(fact)]} p.{fact.page}: {fact.text}"[:190]
+                for fact in entry.report.recitals
+            ]
+            lines += [
+                f"    unexpected F{number[id(fact)]} p.{fact.page}: {fact.text}"[:190]
+                for fact in entry.report.unexpected
+            ]
     lines += _section("LEADS", [f"{lead.id} [{lead.status}] {lead.text}" for lead in case.leads])
     lines += _section(
         "ISSUES", [f"{issue.id} [{issue.severity}] {issue.title}" for issue in case.issues]

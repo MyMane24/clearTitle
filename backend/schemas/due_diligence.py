@@ -48,7 +48,9 @@ class TableBlock(_Model):
 class Finding(_Model):
     title: Text
     text: Text
-    severity: Literal["high", "medium", "low"] | None = None
+    severity: Literal["high", "medium", "low", "clear"] | None = Field(
+        default=None, description="high = critical, medium = to resolve, clear = a positive check."
+    )
     status: str | None = Field(default=None, description="e.g. verified, defective, open.")
     refs: list[str] = Field(default_factory=list)
 
@@ -114,8 +116,8 @@ class DueDiligenceReport(_Model):
 DEFAULT_SECTIONS: list[tuple[str, str, str]] = [
     ("issues", "Issues identified", "built"),
     ("requisitions", "Documents needed", "built"),
-    ("limitations", "Limitations", "Two to four sentences: what the documents provided cannot "
-     "show, documents that could not be read, and that the opinion rests only on these documents."),
+    ("limitations", "Limitations", "One short sentence: the opinion rests only on these "
+     "documents, naming any document that could not be read."),
 ]  # fmt: skip
 
 WRITTEN_SECTION_IDS = [sid for sid, _, how in DEFAULT_SECTIONS if how != "built"]

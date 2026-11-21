@@ -53,7 +53,9 @@ def test_after_compaction_history_is_append_only_again(monkeypatch):
 def test_all_playbooks_go_into_the_instructions(tmp_path):
     (tmp_path / "skill.md").write_text("# Playbook: Verify\n\nMethod.", encoding="utf-8")
     (tmp_path / "partition").mkdir()
-    (tmp_path / "partition" / "skill.md").write_text("# Skill: Partition\n\nChecks.", encoding="utf-8")
+    (tmp_path / "partition" / "skill.md").write_text(
+        "# Skill: Partition\n\nChecks.", encoding="utf-8"
+    )
     text = skills.all_playbooks(tmp_path)
     assert text.index("# Playbook: Verify") < text.index("# Skill: Partition")
 
@@ -90,10 +92,29 @@ def test_snapshot_lists_each_documents_recitals_and_unexpected_findings():
     entry.report = cf.ExaminerReport(
         doc_id="D2010",
         summary="2010 sale deed.",
-        recitals=[cf.Fact(topic="title", text="Vendor got it by 2005 partition", page=2, quote="q")],
+        recitals=[
+            cf.Fact(topic="title", text="Vendor got it by 2005 partition", page=2, quote="q")
+        ],
         unexpected=[cf.Fact(topic="minor", text="A minor co-vendor", page=1, quote="q")],
     )
     text = context.render_case_file(case)
-    assert "R p.2: Vendor got it by 2005 partition" in text
-    assert "U p.1: A minor co-vendor" in text
+    assert "recital F1 p.2: Vendor got it by 2005 partition" in text
+    assert "unexpected F2 p.1: A minor co-vendor" in text
     assert "TASKS" not in text
+
+
+def test_lean_snapshot_for_the_first_prompt_leaves_out_recitals():
+    from backend.services.verification import case_file as cf
+    from backend.tests.verification_fixtures import new_case_file
+
+    case = new_case_file()
+    entry = case.documents["D2010"]
+    entry.examined = True
+    entry.report = cf.ExaminerReport(
+        doc_id="D2010",
+        summary="2010 sale deed.",
+        recitals=[cf.Fact(topic="title", text="Vendor got it by 2005 partition", page=2, quote="q")],
+    )
+    assert "2005 partition" in context.render_case_file(case)
+    lean = context.render_case_file(case, lean=True)
+    assert "2005 partition" not in lean and "D2010" in lean

@@ -91,7 +91,12 @@ def _chain_background(deps: VerifyDeps) -> str:
 
 
 def render_report(report: ExaminerReport) -> str:
-    """The report as compact text for the Lead's context."""
+    """The report as compact text for the Lead's context.
+
+    Facts are shown in the examiner's words with a number and page (``[F3 p.2]``),
+    without the long OCR quotes: the Lead cites a fact by its number and the
+    citation gate maps it to the verified quote. This keeps reports small.
+    """
     sections = [
         ("INSTRUMENT", report.instrument),
         ("PARTIES", report.parties),
@@ -103,18 +108,23 @@ def render_report(report: ExaminerReport) -> str:
         ("ANSWERS TO YOUR QUESTIONS", report.answers),
         ("UNEXPECTED (follow up or explain)", report.unexpected),
     ]
-    lines = [f"EXAMINER REPORT {report.doc_id}: {report.summary}"]
+    number = {id(fact): index for index, fact in enumerate(report.facts(), start=1)}
+    lines = [
+        f"EXAMINER REPORT {report.doc_id} (cite facts by number, e.g. F3)",
+        f"Summary (not citable): {report.summary}",
+    ]
     for title, items in sections:
         if not items:
             continue
         lines.append(title)
         for item in items:
+            ref = f"[F{number[id(item)]} p.{item.page}]"
             if hasattr(item, "capacity"):
                 who = f"{item.name} ({item.role}, {item.capacity}"
                 who += f", for {item.represented_by})" if item.represented_by else ")"
-                lines.append(f'- {who} [p.{item.page}: "{item.quote}"]')
+                lines.append(f"- {who} {ref}")
             else:
-                lines.append(f'- {item.topic}: {item.text} [p.{item.page}: "{item.quote}"]')
+                lines.append(f"- {item.topic}: {item.text} {ref}")
     return "\n".join(lines)
 
 
@@ -142,6 +152,7 @@ async def examine_document(
     text = deps.text_of(doc_id)
     fingerprint = text_hash(text)
     if entry.examined and entry.report and entry.text_hash == fingerprint:
+        deps.emit("reopen", f"Reopened the saved report of {entry.filename}", doc_id)
         return (
             "Already examined; saved report below. For new questions use read_pages.\n\n"
             + render_report(entry.report)

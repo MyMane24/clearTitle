@@ -152,14 +152,16 @@ def test_unexamined_source_of_a_transaction_blocks_closure():
     ctx = closable(context())
     ctx.case.documents["D2018"].examined = False  # source of PA-TC-0003
     problems = gates.closure_problems(ctx)
-    assert any("PA-TC-0003 rests on documents not yet examined: D2018" in p for p in problems)
+    assert any("not yet examined: D2018" in p for p in problems)
 
 
-def test_document_unrelated_to_any_transaction_may_stay_unread():
+def test_every_uploaded_document_is_examined_before_closing():
     ctx = closable(context())
     ctx.case.documents["TAX"] = cf.DocumentEntry(
         doc_id="TAX", filename="tax.pdf", document_type="TAX_RECEIPT"
     )
+    assert any("not yet examined: TAX" in p for p in gates.closure_problems(ctx))
+    ctx.case.documents["TAX"].examination_error = "no OCR text"  # unreadable: a limitation
     assert gates.closure_problems(ctx) == []
 
 
@@ -187,3 +189,16 @@ def test_missing_document_verdict_needs_an_open_requisition():
         cf.Requisition(id="R1", document="Deed", reason="Title", affects=["PA-TC-0002"])
     )
     assert gates.closure_problems(ctx) == []
+
+
+def test_a_bundled_request_left_from_an_older_run_blocks_closure():
+    ctx = closable(context())
+    ctx.case.requisitions.append(
+        cf.Requisition(
+            id="R1",
+            document="Complete succession set: death, legal-heir certificate and mutation",
+            reason="Heirs.",
+            affects=["PA-TC-0003"],
+        )
+    )
+    assert any("asks for several documents" in p for p in gates.closure_problems(ctx))

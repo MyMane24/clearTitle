@@ -8,6 +8,7 @@ must fix the problem before it can continue.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import pairwise
@@ -19,7 +20,7 @@ from backend.domain.chain_continuity import (
 )
 from backend.schemas.chain import is_non_transfer, parse_date
 from backend.services.verification.case_file import CaseFile, Citation
-from backend.services.verification.pages import locate_quote, split_pages
+from backend.services.verification.pages import locate_quote, normalize, split_pages
 from backend.shared.constants import (
     CHAIN_DEED_DOC_TYPES,
     CHAIN_HISTORY_DOC_TYPES,
@@ -52,6 +53,37 @@ def is_deed_type(document_type: str) -> bool:
     return document_type.endswith("_DEED") or document_type in CHAIN_DEED_DOC_TYPES
 
 
+# -- Similarity ---------------------------------------------------------------
+
+
+def _words(text: str) -> set[str]:
+    return {word for word in re.findall(r"[a-z0-9]+", text.casefold()) if len(word) >= 4}
+
+
+def alike(title: str, detail: str, other_title: str, other_detail: str) -> bool:
+    """Probably the same thing: most title words shared, or some plus much of the detail."""
+    new_title, old_title = _words(title), _words(other_title)
+    if not new_title or not old_title:
+        return False
+    shared = len(new_title & old_title) / min(len(new_title), len(old_title))
+    overall = _words(f"{title} {detail}") & _words(f"{other_title} {other_detail}")
+    return shared >= 0.6 or (shared >= 0.34 and len(overall) >= 6)
+
+
+ACTIVE_REQUISITION = ("open", "fulfilled")
+
+
+def duplicate_requisitions(case) -> list[tuple[str, str]]:
+    """Pairs of active requisitions that ask for the same document."""
+    active = [item for item in case.requisitions if item.status in ACTIVE_REQUISITION]
+    return [
+        (first.id, second.id)
+        for index, first in enumerate(active)
+        for second in active[index + 1 :]
+        if alike(first.document, first.reason, second.document, second.reason)
+    ]
+
+
 # -- Evidence -----------------------------------------------------------------
 
 
@@ -70,6 +102,11 @@ def citation_problems(ctx: GateContext, citations: list[Citation]) -> list[str]:
             continue
         pages = split_pages(ctx.text_of(citation.doc_id))
         page = locate_quote(citation.quote, pages, citation.page)
+        fact = None if page is not None else examiner_fact(entry.report, citation.quote)
+        if fact is not None:
+            # The Lead cited the examiner's wording of a verified fact: cite its real quote.
+            citation.quote, citation.page = fact.quote, fact.page
+            continue
         if page is None:
             problems.append(
                 f"The quote {citation.quote[:80]!r} is not in {citation.doc_id}. "
@@ -79,6 +116,33 @@ def citation_problems(ctx: GateContext, citations: list[Citation]) -> list[str]:
             # OCR page markers are often missing; keep the real quote, fix its page.
             citation.page = page
     return problems
+
+
+_MIN_FACT_MATCH = 12
+
+
+def examiner_fact(report, quote: str):
+    """The examiner fact this citation means, when the Lead quoted the fact's wording
+    (or a truncated copy of it) instead of the document's words.
+
+    Every fact kept in an examiner report already has a quote that was found in the
+    document, so citing the fact is citing that quote.
+    """
+    if report is None:
+        return None
+    numbered = re.match(r"\s*\[?F(\d+)\b", quote, re.IGNORECASE)
+    if numbered:  # cited by number, as the report shows it: "F3"
+        facts = report.facts()
+        index = int(numbered.group(1)) - 1
+        return facts[index] if 0 <= index < len(facts) else None
+    wanted = normalize(quote).rstrip(" .…")
+    if len(wanted) < _MIN_FACT_MATCH:
+        return None
+    for fact in report.facts():
+        for wording in (getattr(fact, "text", ""), fact.quote):
+            if wanted in normalize(wording):
+                return fact
+    return None
 
 
 def link_evidence_problems(ctx: GateContext, citations: list[Citation]) -> list[str]:
@@ -191,9 +255,10 @@ def chain_problems(ctx: GateContext) -> list[str]:
 
 
 def _every_link_has_a_verdict(ctx: GateContext) -> list[str]:
+    """Every transfer in the 30-year window, root to current owner, has a verdict."""
     return [
         f"{link.link_id} has no verdict; record one with record_link_verdict."
-        for link in ctx.case.chain
+        for link in ctx.case.window()
         if link.verdict is None
     ]
 
@@ -202,7 +267,7 @@ def _every_break_is_recorded(ctx: GateContext) -> list[str]:
     return [
         f"{link.link_id} does not continue the previous link and no break is recorded. "
         "Insert the connecting transfer, or mark the break with its reason."
-        for link in ctx.case.chain[1:]
+        for link in ctx.case.window()[1:]
         if not link.continues_previous and not link.break_note
     ]
 
@@ -216,31 +281,18 @@ def _no_open_leads(ctx: GateContext) -> list[str]:
     ]
 
 
-def unexamined_link_sources(case) -> dict[str, list[str]]:
-    """Per link, its own source documents that are not examined (and not unreadable).
-
-    Only documents needed for a transaction must be read; documents unrelated to
-    any transaction may stay unread.
-    """
-    missing: dict[str, list[str]] = {}
-    for link in case.chain:
-        docs = [
-            ref.doc_id
-            for ref in link.transaction.source_refs
-            if (entry := case.documents.get(ref.doc_id))
-            and not entry.examined
-            and not entry.examination_error
-        ]
-        if docs:
-            missing[link.link_id] = docs
-    return missing
-
-
-def _link_sources_examined(ctx: GateContext) -> list[str]:
+def unexamined_documents(case) -> list[str]:
+    """Uploaded documents not yet examined (unreadable ones are a limitation instead)."""
     return [
-        f"{link_id} rests on documents not yet examined: {', '.join(docs)}."
-        for link_id, docs in unexamined_link_sources(ctx.case).items()
+        doc_id
+        for doc_id, entry in case.documents.items()
+        if not entry.examined and not entry.examination_error
     ]
+
+
+def _every_document_examined(ctx: GateContext) -> list[str]:
+    docs = unexamined_documents(ctx.case)
+    return [f"Documents not yet examined: {', '.join(docs)}."] if docs else []
 
 
 def _requisitions_name_what_they_affect(ctx: GateContext) -> list[str]:
@@ -275,15 +327,43 @@ def _arrived_documents_reviewed(ctx: GateContext) -> list[str]:
     ]
 
 
+# Text that joins several documents into one request: "the deed; the Will", "set: A, B",
+# "records plus the agreement", "completion certificate and occupancy certificate".
+SEVERAL_DOCUMENTS = re.compile(
+    r"[;:]|\b(?:plus|together with|along with|as well as|and any)\b"
+    r"|\b(certificates?|deeds?|orders?|plans?|letters?|agreements?|records?)\b.*\band\b.*\b\1\b",
+    re.I,
+)
+
+
+def _one_document_per_requisition(ctx: GateContext) -> list[str]:
+    return [
+        f"Requisition {item.id} asks for several documents ({item.document}). Withdraw it and "
+        "request each document on its own."
+        for item in ctx.case.requisitions
+        if item.status == "open" and SEVERAL_DOCUMENTS.search(item.document)
+    ]
+
+
+def _no_duplicate_requisitions(ctx: GateContext) -> list[str]:
+    return [
+        f"Requisitions {first} and {second} ask for the same document. Withdraw one with "
+        "withdraw_requisition, naming the other in replaced_by."
+        for first, second in duplicate_requisitions(ctx.case)
+    ]
+
+
 CLOSURE_GATES: list[Gate] = [
     chain_problems,
     _every_link_has_a_verdict,
     _every_break_is_recorded,
     _no_open_leads,
-    _link_sources_examined,
+    _every_document_examined,
     _requisitions_name_what_they_affect,
     _missing_document_verdicts_have_requisitions,
     _arrived_documents_reviewed,
+    _no_duplicate_requisitions,
+    _one_document_per_requisition,
 ]
 
 
