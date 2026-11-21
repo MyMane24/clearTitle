@@ -61,6 +61,19 @@ def finalize_case_task(results: list, case_id: str):
     except Exception as e:
         logger.error("Failed to release pipeline lock for case %s: %s", case_id, e)
 
+    # Once verification has started it maintains the working chain: documents
+    # uploaded for its requisitions are verified incrementally, and an automatic
+    # chain rebuild (which would discard verification progress) is skipped.
+    try:
+        from backend.services.verification import service as verification
+
+        if verification.owns_chain(case_id):
+            if verification.after_documents_processed(case_id):
+                append_pipeline_log(case_id, "-- Verifying the requested documents --")
+            return
+    except Exception as e:
+        logger.error("Failed to check verification state for %s: %s", case_id, e)
+
     # Build (or rebuild) the title chain once document processing finishes.
     try:
         if _should_build_chain(get_case_documents(case_id)):

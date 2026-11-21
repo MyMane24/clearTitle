@@ -13,13 +13,12 @@ from backend.workers.idempotency import idempotent_stage
 from backend.workers.stage_adapter import run_stage
 from backend.workers.stages import (
     ClassificationFailed,
-    OcrInsufficientCredits,
     ClassifyStage,
     MergeStage,
+    OcrInsufficientCredits,
     OcrStage,
     PersistStage,
     PreprocessStage,
-    StructureStage,
 )
 
 logger = get_logger(__name__)
@@ -59,12 +58,6 @@ def merge_ocr_task(case_id: str, doc_id: str):
 @idempotent_stage(Stage.CLASSIFYING, Stage.CLASSIFIED)
 def classify_document_task(case_id: str, doc_id: str):
     return run_stage(ClassifyStage(), task_name="classify", case_id=case_id, doc_id=doc_id)
-
-
-@celery_app.task(**TASK_RETRY_CONFIG)
-@idempotent_stage(Stage.STRUCTURING, Stage.STRUCTURING_DONE)
-def structure_document_task(case_id: str, doc_id: str):
-    return run_stage(StructureStage(), task_name="structure", case_id=case_id, doc_id=doc_id)
 
 
 @celery_app.task(**TASK_RETRY_CONFIG)

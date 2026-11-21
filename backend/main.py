@@ -23,6 +23,7 @@ from backend.logger import get_logger
 from backend.routers import auth as auth_router
 from backend.routers import cases as cases_router
 from backend.routers import results as results_router
+from backend.routers import verification as verification_router
 
 logger = get_logger(__name__)
 
@@ -61,6 +62,7 @@ app.add_middleware(
 app.include_router(auth_router.router, prefix="/api")
 app.include_router(cases_router.router, prefix="/api")
 app.include_router(results_router.router, prefix="/api")
+app.include_router(verification_router.router, prefix="/api")
 # Google OAuth lives at the site root so its callback matches the redirect URI
 # registered with Google (http://localhost:8000/auth/google/callback).
 app.include_router(auth_router.google_router)

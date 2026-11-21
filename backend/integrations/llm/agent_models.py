@@ -29,21 +29,26 @@ _MAX_OUTPUT_TOKENS = 32000
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
 
-def build_agent_model() -> Model:
+def build_agent_model(model_name: str | None = None) -> Model:
     """Return the agent model for ``CLEARTITLE_AGENT_PROVIDER``.
+
+    Args:
+        model_name: A model for this role, e.g. ``VERIFY_LEAD_MODEL``. Defaults
+            to ``CLEARTITLE_AGENT_MODEL``.
 
     Raises:
         AgentLLMError: The provider is unknown or its API key is not set.
     """
+    name = model_name or CLEARTITLE_AGENT_MODEL
     provider = (CLEARTITLE_AGENT_PROVIDER or "openai").lower()
     if provider in {"openai", "luna"}:
-        return _openai_model()
+        return _openai_model(name)
     if provider == "gemini":
-        return _gemini_model()
+        return _gemini_model(name)
     raise AgentLLMError(f"unknown agent provider {provider!r}")
 
 
-def _openai_model() -> Model:
+def _openai_model(name: str) -> Model:
     from openai import AsyncOpenAI
     from pydantic_ai.models.openai import OpenAIChatModel, OpenAIChatModelSettings
     from pydantic_ai.providers.openai import OpenAIProvider
@@ -56,7 +61,7 @@ def _openai_model() -> Model:
         default_query={"api-version": OPENAI_API_VERSION} if OPENAI_API_BASE else None,
     )
     return OpenAIChatModel(
-        CLEARTITLE_AGENT_MODEL,
+        name,
         provider=OpenAIProvider(openai_client=client),
         # Chat Completions supports tool calls on this model family only
         # with reasoning switched off.
@@ -66,14 +71,14 @@ def _openai_model() -> Model:
     )
 
 
-def _gemini_model() -> Model:
+def _gemini_model(name: str) -> Model:
     from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
     from pydantic_ai.providers.google import GoogleProvider
 
     if not GEMINI_API_KEY:
         raise AgentLLMError("GEMINI_API_KEY not set")
     return GoogleModel(
-        CLEARTITLE_AGENT_MODEL,
+        name,
         provider=GoogleProvider(api_key=GEMINI_API_KEY),
         settings=GoogleModelSettings(temperature=0.0, max_tokens=_MAX_OUTPUT_TOKENS),
     )

@@ -29,8 +29,8 @@ from backend.database.repositories.document_repo import (
     skip_document,
     update_document_status,
 )
+from backend.integrations.document_sources.manual_upload import ManualUploadSource
 from backend.integrations.redis.state_store import (
-    add_files_to_case,
     append_log,
     get_case_job,
     reset_for_retry,
@@ -53,6 +53,7 @@ from backend.integrations.storage.file_utils import (
     save_upload,
 )
 from backend.logger import get_logger
+from backend.services import case_documents
 from backend.services.auth import get_current_user, get_optional_user
 from backend.services.orchestrator import (
     start_case_pipeline,
@@ -377,77 +378,24 @@ async def upload_more_documents(
 
     if any(not (f.filename or "").lower().endswith(".pdf") for f in files):
         raise HTTPException(status_code=400, detail="Only PDF documents can be uploaded")
-    pipeline_lock = None
-    if PIPELINE_LOCK_ENABLED:
-        from backend.integrations.redis.lock import RedisLock
-        pipeline_lock = RedisLock(f"case:{case_id}:pipeline_lock")
-        if not pipeline_lock.acquire():
-            raise HTTPException(status_code=409, detail="Document pipeline is already processing")
+    return await add_uploaded_files(case_id, files)
 
-    meta = get_case_job(case_id)
-    if meta.get("status") == STATUS_PROCESSING:
-        if pipeline_lock:
-            pipeline_lock.release()
-        raise HTTPException(status_code=409, detail="Document pipeline is already processing")
-    existing_files = meta.get("files", [])
-    # Next doc_id follows the highest existing number, not the list length:
-    # gaps from removed documents must never collide with surviving doc_ids.
-    start_idx = max(
-        (int(str(f.get("doc_id", "DOC_000")).split("_")[1]) for f in existing_files),
-        default=0,
-    )
 
-    case_dir = get_case_dir(case_id)
-
-    saved = []
-    for i, f in enumerate(files):
-        filename = f.filename or ""
-        if not filename.lower().endswith(".pdf"):
-            raise HTTPException(status_code=400,
-                                detail=f"{f.filename or 'Uploaded file'} is not a PDF")
-        dest = await save_upload(f, case_dir / "raw")
-        doc_id = f"DOC_{str(start_idx + i + 1).zfill(3)}"
-        saved.append({
-            "doc_id":        doc_id,
-            "original_name": filename,
-            "saved_path":    str(dest),
-            "size_kb":       round(dest.stat().st_size / 1024, 1),
-        })
-
-    new_total = start_idx + len(saved)
-
+async def add_uploaded_files(case_id: str, files: list[UploadFile]) -> dict:
+    """Save uploaded PDFs into the case and start their pipeline (HTTP errors on failure)."""
     try:
-        from backend.database.repositories.case_repo import upload_docs_reset
-        upload_docs_reset(case_id=case_id, new_total=new_total)
-    except Exception as e:
-        logger.warning("Failed to update cases total_docs: %s", e)
-
+        pipeline_lock = case_documents.reserve_pipeline(case_id)
+    except case_documents.PipelineBusyError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
     try:
-        for s in saved:
-            init_document(
-                case_id=case_id,
-                doc_id=s["doc_id"],
-                doc_index=int(s["doc_id"].split("_")[1]),
-                filename=s["original_name"],
-                file_paths={"raw": s["saved_path"]},
-            )
-    except Exception as e:
-        logger.warning("Failed to init documents in MySQL: %s", e)
-
-    add_files_to_case(case_id, saved)
-    append_log(case_id, f"Uploaded {len(saved)} additional file(s) — total docs is now {new_total}")
-
-    set_case_status(case_id, STATUS_PROCESSING)
+        obtained = await ManualUploadSource(files).obtain(case_id, {}, get_case_dir(case_id) / "raw")
+    except Exception:
+        case_documents.release_pipeline(pipeline_lock)
+        raise
     try:
-        start_case_pipeline(case_id)
-    except Exception as e:
-        if pipeline_lock:
-            pipeline_lock.release()
-        set_case_status(case_id, STATUS_FAILED)
-        append_log(case_id, f"FATAL: Failed to start uploaded-document pipeline — {e}")
-        raise HTTPException(status_code=500, detail="Could not process the uploaded document")
-
-    return {"case_id": case_id, "files": saved, "total_docs": new_total, "status": STATUS_PROCESSING}
+        return case_documents.add_files(case_id, obtained, pipeline_lock)
+    except case_documents.PipelineStartError as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
 
 
 @router.post("/case/{case_id}/doc/{doc_id}/replace")

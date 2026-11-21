@@ -3,11 +3,10 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import './dashboard.css';
 import clearTitleLogo from '../assets/clearTitle.png';
 import {
-  API, AuthResponse, AuthUser, CaseListItem, CaseResults,
+  API, AuthResponse, AuthUser, CaseListItem, CaseResults as CaseResultsData,
   HealthStatus, StatusResponse, getToken, setToken,
 } from '../api/backend';
-import { DocSummary } from './utils';
-import { PhaseAChainView } from './PhaseAResult';
+import { CaseResults } from './results/CaseResults';
 import {
   AlertTriangle, Check, CheckCircle2, FileText, FileUp,
   LogIn, LogOut, Menu, Play, Plus, RefreshCw, Sparkles,
@@ -213,9 +212,8 @@ export function VerificationDashboard() {
   const [progressLabel, setProgressLabel] = useState('Initialising...');
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [statusData, setStatusData] = useState<StatusResponse | null>(null);
-  const [results, setResults] = useState<CaseResults | null>(null);
+  const [results, setResults] = useState<CaseResultsData | null>(null);
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
-  const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
   const [chainBusy, setChainBusy] = useState(false);
   const [historyUploadBusy, setHistoryUploadBusy] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -580,6 +578,17 @@ export function VerificationDashboard() {
   };
 
   // -- Results actions --
+  const openPdf = (docId: string) => {
+    const url = `/api/case/${currentCaseId}/doc/${docId}/pdf`;
+    const token = getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    fetch(url, { headers })
+      .then(r => { if (!r.ok) throw new Error('Failed'); return r.blob(); })
+      .then(blob => window.open(URL.createObjectURL(blob), '_blank'))
+      .catch(() => alert('Could not load the PDF. Please try again.'));
+  };
+
   const skipDoc = async (docId: string) => {
     if (!currentCaseId) return;
     try {
@@ -911,20 +920,20 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
             <div className="report-main-wrap">
               {/* Action Required Banner (if any errors or unclassified docs) */}
               {(needsAction.length > 0 || visibleErrors.length > 0) && (
-                <div className="card" style={{ marginBottom: 24 }}>
-                  <div className="card-title">
-                    <AlertTriangle size={16} style={{ verticalAlign: '-2px', marginRight: 8 }} /> Action Required
+                <div className="cr-notice">
+                  <div className="cr-notice-title">
+                    <AlertTriangle size={16} /> Action required
                   </div>
                   {needsAction.map((d: any) => (
-                    <div key={d.doc_id} style={{ marginTop: 12, padding: 12, background: 'var(--white)', borderRadius: 8, border: '1px solid var(--border)' }}>
-                      <p style={{ fontSize: 14, marginBottom: 10 }}>
+                    <div key={d.doc_id} className="cr-notice-item">
+                      <p>
                         <strong>{d.filename}</strong>
                         {d.document_type && <span> — detected: {String(d.document_type).replace(/_/g, ' ')}</span>}
                         <br />{d.message || 'This document needs review. Replace it with a property document or skip it.'}
                       </p>
-                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                        <button className="btn btn-secondary" onClick={() => skipDoc(d.doc_id)}><CheckCircle2 size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> Continue without this document</button>
-                        <button className="btn btn-primary" onClick={() => document.getElementById(`replace-input-${d.doc_id}`)?.click()}><Upload size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> Upload a replacement document</button>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
+                        <button className="btn btn-secondary" onClick={() => skipDoc(d.doc_id)}><CheckCircle2 size={14} /> Continue without this document</button>
+                        <button className="btn btn-primary" onClick={() => document.getElementById(`replace-input-${d.doc_id}`)?.click()}><Upload size={14} /> Upload a replacement document</button>
                         <input
                           type="file"
                           id={`replace-input-${d.doc_id}`}
@@ -951,7 +960,7 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                       </div>
                       {visibleErrors.some((e: any) => e.step !== "classify" || !e.action_required) && (
                         <div style={{ marginTop: 12 }}>
-                          <button className="btn btn-primary" onClick={retryFailed}><RefreshCw size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> Retry Failed</button>
+                          <button className="btn btn-primary" onClick={retryFailed}><RefreshCw size={14} /> Retry failed</button>
                         </div>
                       )}
                     </>
@@ -960,10 +969,10 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
               )}
 
               {historyRequest && (
-                <div className="vr-sheet-empty" style={{ marginBottom: 24 }}>
+                <div className="cr-notice" style={{ marginBottom: 24 }}>
                   <p style={{ margin: '0 0 12px' }}>{historyRequest}</p>
-                  <label className="btn btn-primary" style={{ cursor: historyUploadBusy ? 'default' : 'pointer' }}>
-                    <Upload size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+                  <label className="btn btn-primary" style={{ cursor: historyUploadBusy ? 'default' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <Upload size={14} />
                     {historyUploadBusy ? 'Uploading…' : 'Upload documents'}
                     <input
                       type="file"
@@ -980,109 +989,13 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                 </div>
               )}
 
-              <div className="pl-actions-row" style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
-                <button
-                  className="btn btn-primary"
-                  disabled={chainBusy}
-                  onClick={runChainBuild}
-                  title="Rebuild the title chain from this case's history documents and deeds"
-                >
-                  <RefreshCw size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-                  {chainBusy ? 'Building…' : 'Rebuild title chain'}
-                </button>
-              </div>
-
-              <PhaseAChainView result={agent || {}} onBack={backToUpload} />
-
-                  {/* Document extractions */}
-                  <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 24, marginTop: 8 }}>
-                    <div style={{ marginBottom: 16 }}>
-                      <span className="font-mono" style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                        UPLOADED DOCUMENTS
-                      </span>
-                    </div>
-
-                    {results.documents && results.documents.length > 0 ? (
-                      <div>
-                        {results.documents.map(d => {
-                          const isExpanded = expandedDocId === String(d.doc_id);
-                          return (
-                            <div key={String(d.doc_id)} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                              <div className="doc-row">
-                                {/* Col 1: Document name */}
-                                <div className="doc-name">
-                                  <FileText size={16} style={{ color: '#6b7280', flexShrink: 0 }} />
-                                  <span style={{ fontSize: 13, fontWeight: 600, color: '#292524', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {d.filename || `DOC-${d.doc_id}`}
-                                  </span>
-                                </div>
-
-                                {/* Col 2 & 3: Buttons */}
-                                <div className="doc-actions">
-                                  <button
-                                    onClick={() => setExpandedDocId(isExpanded ? null : String(d.doc_id))}
-                                    style={{
-                                      fontSize: 12, fontWeight: 600, color: '#ea580c', background: 'none', border: '1px solid #fed7aa',
-                                      borderRadius: 6, padding: '5px 12px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-                                    }}
-                                  >
-                                    {isExpanded ? 'Hide Data' : 'View Structured Data'}
-                                  </button>
-
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const url = `/api/case/${currentCaseId || caseInfo?.case_id}/doc/${d.doc_id}/pdf`;
-                                      const token = getToken();
-                                      const headers: Record<string, string> = {};
-                                      if (token) headers['Authorization'] = `Bearer ${token}`;
-                                      fetch(url, { headers })
-                                        .then(r => { if (!r.ok) throw new Error('Failed'); return r.blob(); })
-                                        .then(blob => {
-                                          const blobUrl = URL.createObjectURL(blob);
-                                          window.open(blobUrl, '_blank');
-                                        })
-                                        .catch(() => alert('Could not load PDF. Please try again.'));
-                                    }}
-                                    style={{
-                                      fontSize: 12, fontWeight: 600, color: '#2563eb', background: 'none', border: '1px solid #bfdbfe',
-                                      borderRadius: 6, padding: '5px 12px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, textDecoration: 'none',
-                                    }}
-                                  >
-                                    View Original PDF
-                                  </button>
-                                </div>
-                              </div>
-
-                              {/* Expanded Structured Data */}
-                              {isExpanded && d.status === 'structured' && (
-                                <div style={{ paddingBottom: 16 }}>
-                                  <div className="doc-details-card">
-                                    <DocSummary res={{ ...d, structured: d.structured || d.structured_json }} />
-                                  </div>
-                                </div>
-                              )}
-
-                              {isExpanded && d.status !== 'structured' && (
-                                <div style={{ paddingBottom: 16 }}>
-                                  <div className="doc-details-card" style={{ padding: 16 }}>
-                                    <div className="vr-sheet-empty">
-                                      <AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />
-                                      {d.filename} — {d.error || d.status}
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="doc-details-card" style={{ padding: 24 }}>
-                        <div className="vr-sheet-empty">No document extractions available yet.</div>
-                      </div>
-                    )}
-                  </div>
+              <CaseResults
+                caseId={currentCaseId || caseInfo?.case_id || ''}
+                results={results}
+                chainBusy={chainBusy}
+                onRebuildChain={runChainBuild}
+                onOpenPdf={openPdf}
+              />
             </div>
           )}
         </div>
