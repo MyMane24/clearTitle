@@ -145,16 +145,27 @@ These refine the design below. Where they differ from a later section, these win
       - Finding cards: badge, title (at most 70 characters), text (at most 220 characters); the schema enforces both limits. Critical = high severity, To resolve = medium, Clear = a positive check that cites its evidence ("Chain of title is unbroken" is built by code from the verified chain).
       - Documents needed: one row per document with a one-line reason, the transfer it is for, and Upload.
       - The chain page shows each transfer's property-type chip and its documents checklist.
-    - **As built (2026-11-21):** low-severity issues show as a grey "Note" card; positive findings come from the `record_clear_check` tool (cited) plus the code-built "Chain of title is unbroken"; refused tool calls are stored as "rejected" events, hidden from the buyer's feed.
+    - **As built (2026-11-21):** low-severity issues show as a grey "Note" card; positive findings come from the code-built "Chain of title is unbroken" (the `record_clear_check` tool was removed on 2026-11-23, decision 21); refused tool calls are stored as "rejected" events, hidden from the buyer's feed.
     - **Example:** A→B 1995 agricultural land, Sy 45 (RTC and mutation found: verified). B→C 2006 "Site No. 12": the type changed, so the model looks for the conversion order and layout approval; the conversion order is found, the layout approval is missing (one requisition). C→D 2016 "Flat 302": changed again, so it looks for the building plan, CC/OC, the JDA with the landowner and the undivided share; the OC is missing (requisition); RERA is not needed because the building was completed before 2017 (a note, not a requisition).
 21. **The saved report holds only what the report page shows** (product owner's decision, 2026-11-21). The report is `{version, opinion, reasons, findings, changes}`.
     - **Removed:** `property_summary` (the header already names the property from Phase A), `refs` (hidden ids nobody read), `basis` (moved to `CaseFile.report_basis`, hidden from the dashboard), and the generic sections with their "Documents needed" table and "Limitations" note. The Documents needed list on the page reads the live Case File, and unreadable documents show as "Could not be read" on the chain page.
     - **The writer** returns only `{opinion, reasons}`. The gates check the opinion against the Case File and the reasons' length (at most 2, 140 characters each).
     - **Older reports** (saved with sections) are converted when read (`DueDiligenceReport._from_older_shape`), so v1–v4 still display.
-    - **Writer input is a short text, not the Case File JSON:** each in-window transfer's verdict and summary, breaks, issues, open requests, unreadable documents and passed checks, in words without ids (`report.report_input`). On 8A14D132 it dropped from 85K to 6K characters.
+    - **Writer input is a short text, not the Case File JSON:** each in-window transfer's verdict and summary, breaks, issues, open requests and unreadable documents, in words without ids (`report.report_input`). On 8A14D132 it dropped from 85K to 6K characters.
     - **One property type per transfer:** `DocumentedTransaction.property_type` (Phase A's free-text label) is removed; the verdict's `property_type` (a fixed list) is the only one. Saved chains and Case Files that still carry it load unchanged; the field is dropped on read.
     - **No `checks` list on a verdict** (product owner's decision, 2026-11-23). A verdict is its result, summary, property type, extent and `needed_documents`. The evidence rules run on the found documents' citations: each must be a real examiner fact, none may be an encumbrance certificate, and any verdict other than "document missing" needs at least one found document. A concern or defect is named in the summary (and becomes a finding). The playbooks keep the legal checklist as guidance. Case File schema 3 strips `checks` from stored verdicts.
+    - **No clear checks** (product owner's decision, 2026-11-23). The `record_clear_check` tool and `CaseFile.clear_checks` are removed; the only "clear" finding is the code-built "Chain of title is unbroken". Problems still go through `record_issue`. Case File schema 4 drops stored `clear_checks`.
     - **Case File schema 2** drops fields nothing read: `tasks`, `property_identity`, and each link's `amendments` and `related_events`. `migrate` removes them from stored version-1 files. The live feed still records every chain correction.
+22. **One complete record per transfer** (product owner's decision, 2026-11-23). Case File schema 5. The result for a transfer used to be spread over a verdict, issues, requisitions, leads and a break flag that the Lead had to keep in step; it now lives in one record the Lead writes in one call.
+    - **Shape:** `transfers[]` (each: `transaction` from Phase A, `added_because` for steps the Lead inserted, then the record: `property {survey, extent, type}`, `connects {ok, note}`, `documents[] {name, proves, status found|missing, citations | request_id}`, `concerns[] {severity, text, citations}`, `summary`); `property_today {encumbrances, revenue_records, tax_and_approvals}` (each `{note, documents[], concerns[]}`); `requests[]`; `set_aside[]`; `documents{}` (examiner reports, unchanged).
+    - **Code works out the result** (`case_file.transfer_result`): any high concern, or a break with no missing document, makes it defective; else any missing document makes it waiting for documents; else any concern makes it verified with concerns; else verified. The Lead judges what proves the transfer and how serious each concern is; the mapping is fixed. Each section's "in order" is worked out the same way.
+    - **Requests are filed by code**, never the Lead: a missing document reuses an active request for the same document (named by `request_id`, or matched by wording) or files a new one. A request no record lists any more is dropped if nothing arrived, or settled once its uploaded document is recorded as found. An uploaded document recorded as still missing reopens its request.
+    - **Unexpected findings replace leads:** each examiner `unexpected` fact must be cited in a record or set aside with a reason (`set_aside`); the closure gate lists the rest.
+    - **Tools (8):** `view_case_file`, `examine_document`, `read_pages`, `record_transfer` (also corrects parties, date, number or survey, citing a found document), `insert_transfer`, `remove_transfer`, `record_property_today`, `set_aside`. Removed: `record_link_verdict`, `correct_link`, `mark_break`, `open_lead`, `resolve_lead`, `record_issue`, `update_issue`, `add_requisition`, `withdraw_requisition`, `review_requisition`.
+    - **Findings** (`report.case_issues`): each transfer's break and concerns (titled by the transfer), then each section's concerns, most serious first, then "Chain of title is unbroken" when every transfer is proven and connected. The opinion stays with the writer; its gate reads the results and sections.
+    - **The chain page** shows the Case File's transfers (inserted ones marked "Added during verification" with the reason), each with its documents and concerns, then "The property today". Before a Case File exists it shows the Phase A chain.
+    - **Migration from schema 4:** verdicts become records (needed documents, summary, property); issues naming one to three transfers become their concerns; a break becomes `connects.ok = false` (never for the root); requisitions become requests (withdrawn ones dropped). Issues naming no transfer or more than three, and leads, are dropped; the next run records the property today again.
+    - Example: the 2008 sale, Ramesh to Suresh. `connects` false ("the 1995 buyer was Ramappa"), sale deed found, legal-heir and death certificates missing, no concern: result waiting for documents, two requests filed.
 
 ---
 
@@ -206,15 +217,13 @@ async with lead_agent.iter(task_prompt(case_file), deps=deps,
 **Lead tools** (few, distinct, hard to misuse):
 | Tool | Purpose |
 |---|---|
+| `view_case_file()` | The Case File snapshot and what is still to do (decision 22). |
 | `examine_document(doc_id, focus_questions)` | Runs the Document Examiner. It returns facts and discoveries with page and quote, and caches the report per document so later runs reuse it. |
 | `read_pages(doc_id, from, to)` | A targeted look at specific pages to settle a doubt, without a full examination. |
-| `load_skill(name)` | Loads lawyer playbooks on demand (title link, succession, partition, GPA, encumbrances, revenue, land use…). |
-| `record_link_verdict(tx_id, checks[], verdict, citations)` | Per-transfer verification result. |
-| `amend_chain(op, …)` | Changes the working chain: insert a link, correct a party or extent, mark a break, merge duplicates. Each change needs citations and passes the chain gates. |
-| `open_lead(text, source)` / `resolve_lead(id, outcome)` | Tracks something discovered that must be followed up. |
-| `record_issue(severity, text, citations)` | Records a red flag or observation. |
-| `add_requisition(document, reason, affects[])` | Notes a missing document **without stopping**. |
-| `update_tasks(...)` | The Lead's own plan or to-do list, visible in the UI like Codex's checklist. |
+| `record_transfer(transfer_id, property, documents[], summary, connects, concerns[], correction)` | The whole record of one transfer, oldest first. Code works out the result and files the requests. |
+| `insert_transfer(after, transfer, reason, citations)` / `remove_transfer(id, reason, citations)` | Fix the chain; each change needs citations and passes the chain gates. |
+| `record_property_today(section, note, documents[], concerns[])` | Encumbrances, revenue records, tax and approvals, after the last transfer. |
+| `set_aside(items[])` | Unexpected examiner findings that do not affect title, each with a reason. |
 | final output `LeadClosure` | Lets the Lead declare it is done, and is checked by the closure gates. |
 
 **Document Examiner** output (`ExaminerReport`):
@@ -321,7 +330,7 @@ Every finding links to its document, page and quote.
 ## 7. Data (additive, idempotent, in `backend/database/migrations.py`)
 | Table | Contents |
 |---|---|
-| `verification_case_files` | case_id, version, data JSON (chain, facts, leads, issues, requisitions, tasks, examiner reports) |
+| `verification_case_files` | case_id, version, data JSON (transfers with their records, property today, requests, set-aside findings, examiner reports; decision 22) |
 | `verification_runs` | id, case_id, kind (`full` or `incremental`), status, usage, error, timestamps |
 | `verification_events` | id, run_id, kind, text, ref, created_at (live feed, read by cursor) |
 | `due_diligence_reports` | id, case_id, version, report JSON, opinion, created_at |

@@ -15,17 +15,17 @@ from backend.services.verification.store import MemoryStore
 from backend.tests.verification_fixtures import DOCUMENTS, TEXTS, new_case_file, phase_a_result
 
 
-def stored_case(requisition_status=None):
+def stored_case(request_status=None):
     case = new_case_file()
-    if requisition_status:
-        case.requisitions.append(
-            cf.Requisition(
+    if request_status:
+        case.requests.append(
+            cf.Request(
                 id="R1",
                 document="Partition deed",
                 reason="Title",
-                affects=["PA-TC-0001"],
-                status=requisition_status,
-                doc_id="DOC_009" if requisition_status == "fulfilled" else None,
+                needed_for=["PA-TC-0001"],
+                status=request_status,
+                doc_id="DOC_009" if request_status == "received" else None,
             )
         )
     return case.model_dump(mode="json"), 3
@@ -63,7 +63,7 @@ def test_start_can_request_a_fresh_run():
     queue.assert_called_once_with(args=["C1"], kwargs={"kind": "full", "fresh": True})
 
 
-def test_incremental_run_is_queued_only_for_arrived_requisition_documents():
+def test_incremental_run_is_queued_only_for_arrived_request_documents():
     with (
         patch.object(service.repo, "get_case_file", return_value=stored_case("open")),
         patch.object(service, "start") as start,
@@ -71,14 +71,14 @@ def test_incremental_run_is_queued_only_for_arrived_requisition_documents():
         assert not service.after_documents_processed("C1")
     start.assert_not_called()
     with (
-        patch.object(service.repo, "get_case_file", return_value=stored_case("fulfilled")),
+        patch.object(service.repo, "get_case_file", return_value=stored_case("received")),
         patch.object(service, "start") as start,
     ):
         assert service.after_documents_processed("C1")
     start.assert_called_once_with("C1", kind="incremental")
 
 
-def test_attach_marks_the_requisition_fulfilled():
+def test_attach_marks_the_request_received():
     saved = {}
     with (
         patch.object(service, "is_running", return_value=False),
@@ -92,20 +92,20 @@ def test_attach_marks_the_requisition_fulfilled():
         ),
     ):
         service.attach_requisition_document("C1", "R1", "DOC_009", "manual_upload")
-    requisition = saved["case"].requisition("R1")
-    assert (requisition.status, requisition.doc_id, requisition.source) == (
-        "fulfilled",
+    request = saved["case"].request("R1")
+    assert (request.status, request.doc_id, request.source) == (
+        "received",
         "DOC_009",
         "manual_upload",
     )
     assert saved["v"] == 3
 
 
-def test_attach_refuses_a_closed_requisition():
+def test_attach_refuses_a_settled_request():
     with (
         patch.object(service, "is_running", return_value=False),
         patch.object(
-            service.DbStore, "load_case_file", return_value=(cf.load(stored_case("resolved")[0]), 3)
+            service.DbStore, "load_case_file", return_value=(cf.load(stored_case("settled")[0]), 3)
         ),
         pytest.raises(service.RequisitionError),
     ):
@@ -124,6 +124,8 @@ def test_state_hides_examiner_report_bodies():
         state = service.get_state("C1")
     entry = state["case_file"]["documents"]["EC"]
     assert "report" not in entry and entry["examined_summary"] == "EC 2000-2024."
+    first = state["case_file"]["transfers"][0]
+    assert first["result"] is None and first["before_root"] is False
 
 
 # -- pipeline hook ------------------------------------------------------------------
@@ -198,13 +200,13 @@ def test_chain_rebuild_resets_the_case_file_but_keeps_unchanged_examinations():
         entry = case.documents[doc_id]
         entry.examined, entry.text_hash = True, cf.text_hash(TEXTS[doc_id])
         entry.report = cf.ExaminerReport(doc_id=doc_id, summary="saved")
-    case.leads.append(cf.Lead(id="L1", text="old lead", source="x"))
+    case.set_aside.append(cf.SetAside(doc_id="EC", fact="F1", reason="old"))
     store.save_case_file(case, version)
 
     store._phase_a = {**phase_a_result(), "phase_a_hash": "hash-2"}  # chain rebuilt
     store.texts["D2010"] = TEXTS["D2010"] + "\n(rescanned)"
     reset, _, _ = runner.prepare_case_file(store, "CASE1")
-    assert reset.phase_a_hash == "hash-2" and reset.leads == []
+    assert reset.phase_a_hash == "hash-2" and reset.set_aside == []
     assert reset.documents["EC"].examined  # unchanged text: report kept
     assert not reset.documents["D2010"].examined  # changed text: examined again
 
@@ -226,28 +228,36 @@ def test_a_fresh_run_examines_every_document_again():
 # -- report rules ---------------------------------------------------------------------
 
 
+def verified(case):
+    for transfer in case.transfers:
+        transfer.property = cf.Property(type="agricultural_land")
+        transfer.summary = "ok"
+    for name in cf.SECTIONS:
+        setattr(case.property_today, name, cf.Section(note="In order."))
+    return case
+
+
 def test_opinion_rules_follow_the_case_file():
-    case = new_case_file()
-    verdict = cf.LinkVerdict(
-        verdict="verified",
-        summary="ok",
-    )
-    for link in case.chain:
-        link.verdict = verdict
+    case = verified(new_case_file())
     assert report_module.opinion_problems(case, "CLEAR") == []
-    case.issues.append(cf.Issue(id="I1", severity="medium", title="Tax arrears", detail="x"))
+    case.property_today.tax_and_approvals.concerns = [
+        cf.Concern(severity="medium", text="Tax arrears.")
+    ]
     assert "cannot be CLEAR" in report_module.opinion_problems(case, "CLEAR")[0]
     assert report_module.opinion_problems(case, "CLEAR_SUBJECT_TO") == []
-    case.chain[2].continues_previous = False
+    case.transfers[2].connects = cf.Connection(ok=False, note="No deed from Chandrashekar.")
     assert "must be NOT_CLEAR" in report_module.opinion_problems(case, "CLEAR_SUBJECT_TO")[0]
 
 
 def test_changes_between_report_versions():
     before = {
         "opinion": "NOT_CLEAR",
-        "links": {"A": {"name": "the sale of 2010", "verdict": None}},
-        "issues": {},
-        "requisitions": {"R1": {"document": "Partition deed of 2005", "status": "open"}},
+        "links": {"A": {"name": "the sale of 2010", "verdict": "unverified_missing_document"}},
+        "issues": {"I1": "Mortgage not released"},
+        "requisitions": {
+            "R1": {"document": "Partition deed of 2005", "status": "open"},
+            "R2": {"document": "Khata extract", "status": "open"},
+        },
     }
     after = {
         "opinion": "CLEAR_SUBJECT_TO",
@@ -255,43 +265,32 @@ def test_changes_between_report_versions():
             "A": {"name": "the sale of 2010", "verdict": "verified"},
             "B": {"name": "the sale of 2012", "verdict": "verified"},
         },
-        "issues": {"I1": "Mortgage not released"},
-        "requisitions": {"R1": {"document": "Partition deed of 2005", "status": "resolved"}},
+        "concerns": ["Mortgage not released", "Tax arrears."],
+        "requisitions": {"R1": {"document": "Partition deed of 2005", "status": "settled"}},
     }
     lines = report_module.changes(before, after)
     assert lines == [
         "The opinion changed from not clear to clear subject to conditions.",
-        "The sale of 2010: now verified (before: not yet judged).",
+        "The sale of 2010: now verified (before: waiting for documents).",
         "The sale of 2012 was added to the title chain (verified).",
         "Received and accepted: Partition deed of 2005.",
-        "New issue: Mortgage not released.",
+        "No longer needed: Khata extract.",
+        "New concern: Tax arrears.",
     ]
-    assert "R1" not in " ".join(lines) and "I1" not in " ".join(lines)
+    assert "R1" not in " ".join(lines)
     assert report_module.changes({}, after) == []
 
 
-def test_issues_section_adds_defects_and_breaks_no_issue_covers():
-    case = new_case_file()
-    defective = cf.LinkVerdict(
-        verdict="defective",
-        summary="Sellers' title not shown.",
-    )
-    case.chain[2].verdict = defective  # PA-TC-0003, 2018 sale
-    case.chain[1].continues_previous = False  # break before PA-TC-0002
-    case.chain[1].break_note = "No deed from Basavaraj."
-    case.issues.append(
-        cf.Issue(id="I1", severity="medium", title="Mortgage not released", detail="Canara Bank.")
-    )
-    items = report_module.case_issues(case)
-    assert [item.title for item in items] == [
-        "Sale of 2018 is defective",
-        "Break in the title chain before the sale of 2010",
-        "Mortgage not released",
+def test_findings_are_each_transfers_breaks_and_concerns_then_the_property_today():
+    case = verified(new_case_file())
+    case.transfers[2].concerns = [cf.Concern(severity="high", text="Sellers' title not shown.")]
+    case.transfers[1].connects = cf.Connection(ok=False, note="No deed from Anand Rao's buyer.")
+    case.property_today.encumbrances.concerns = [
+        cf.Concern(severity="medium", text="Canara Bank mortgage not released.")
     ]
-    case.issues.append(
-        cf.Issue(
-            id="I2", severity="high", title="Bad 2018 sale", detail="x", link_ids=["PA-TC-0003"]
-        )
-    )
-    titles = [item.title for item in report_module.case_issues(case)]
-    assert "Sale of 2018 is defective" not in titles  # covered by the recorded issue
+    items = report_module.case_issues(case)
+    assert [(item.title, item.severity) for item in items] == [
+        ("Break in the title chain before the sale of 2010", "high"),
+        ("Sale of 2018", "high"),
+        ("Encumbrances", "medium"),
+    ]

@@ -1,4 +1,4 @@
-"""The one-page report: short opinion, findings including what checked out."""
+"""The one-page report: short opinion, findings built from the records, what checked out."""
 
 from backend.schemas.due_diligence import DueDiligenceReport, WrittenReport
 from backend.services.verification import case_file as cf
@@ -7,11 +7,11 @@ from backend.tests.verification_fixtures import new_case_file
 
 
 def verified(case):
-    for link in case.chain:
-        link.verdict = cf.LinkVerdict(
-            verdict="verified",
-            summary="ok",
-        )
+    for transfer in case.transfers:
+        transfer.property = cf.Property(type="agricultural_land")
+        transfer.summary = "ok"
+    for name in cf.SECTIONS:
+        setattr(case.property_today, name, cf.Section(note="In order."))
     return case
 
 
@@ -25,33 +25,41 @@ def test_unbroken_verified_chain_is_a_clear_finding():
     assert findings[0].severity == "clear" and "from 1998 through 3 transfers" in findings[0].text
 
 
-def test_no_clear_chain_finding_with_a_break_or_an_unjudged_transfer():
+def test_no_clear_chain_finding_with_a_break_a_missing_document_or_an_unverified_transfer():
     case = verified(new_case_file())
-    case.chain[1].verdict = None
+    case.transfers[1].clear_record()
     assert not [f for f in case_issues(case) if f.severity == "clear"]
     case = verified(new_case_file())
-    case.chain[2].continues_previous, case.chain[2].break_note = False, "No deed."
+    case.transfers[2].documents = [
+        cf.ProofDocument(name="Sale deed of 2018", proves="The sale.", status="missing")
+    ]
+    assert not [f for f in case_issues(case) if f.severity == "clear"]
+    case = verified(new_case_file())
+    case.transfers[2].connects = cf.Connection(ok=False, note="No deed.")
     titles = [f.title for f in case_issues(case)]
     assert "Chain of title is unbroken" not in titles
-    assert any(title.startswith("Break in the title chain") for title in titles)
+    assert "Break in the title chain before the sale of 2018" in titles
 
 
 def test_problems_come_before_clear_findings():
     case = verified(new_case_file())
-    case.issues.append(cf.Issue(id="I1", severity="medium", title="Patta in old name", detail="x"))
-    assert [f.severity for f in case_issues(case)] == ["medium", "clear"]
+    case.transfers[0].concerns = [cf.Concern(severity="low", text="Stamp receipt faint.")]
+    assert [f.severity for f in case_issues(case)] == ["low", "clear"]
 
 
-def test_writer_gets_verdicts_issues_and_needs_in_words_only():
+def test_writer_gets_results_concerns_and_needs_in_words_only():
     case = verified(new_case_file())
-    case.chain[1].verdict.summary = "Registered sale, vendor title shown."
-    case.issues.append(cf.Issue(id="I1", severity="medium", title="Patta in old name", detail="x"))
-    case.requisitions.append(
-        cf.Requisition(id="R1", document="Release deed", reason="Mortgage.", affects=["PA-TC-0002"])
+    case.transfers[1].summary = "Registered sale, vendor title shown."
+    case.transfers[1].concerns = [cf.Concern(severity="medium", text="Patta in old name.")]
+    case.property_today.encumbrances.concerns = [
+        cf.Concern(severity="high", text="Mortgage not released.")
+    ]
+    case.requests.append(
+        cf.Request(id="R1", document="Release deed", reason="Mortgage.", needed_for=["PA-TC-0002"])
     )
     text = report_input(case)
-    assert "Registered sale, vendor title shown." in text
-    assert "[medium] Patta in old name" in text
+    assert "The sale of 2010: verified with concerns. Registered sale, vendor title shown." in text
+    assert "[medium] Patta in old name." in text and "[high] Mortgage not released." in text
     assert "Release deed: Mortgage." in text
     assert "PA-TC-" not in text and "citations" not in text
     assert len(text) < 2000
@@ -76,9 +84,7 @@ def test_older_saved_reports_still_load():
                 "blocks": [
                     {
                         "type": "findings",
-                        "items": [
-                            {"title": "Bank charge", "text": "x", "severity": "high"}
-                        ],
+                        "items": [{"title": "Bank charge", "text": "x", "severity": "high"}],
                     }
                 ],
             },
@@ -92,19 +98,3 @@ def test_older_saved_reports_still_load():
     assert [(f.title, f.severity) for f in report.findings] == [("Bank charge", "high")]
     assert report.changes == ["The sale of 2019: now defective."]
     assert set(report.model_dump()) == {"version", "opinion", "reasons", "findings", "changes"}
-
-
-def test_a_summary_issue_does_not_hide_a_break():
-    case = verified(new_case_file())
-    case.chain[2].continues_previous, case.chain[2].break_note = False, "No deed."
-    case.issues.append(
-        cf.Issue(
-            id="I1",
-            severity="high",
-            title="Title chain remains unverified",
-            detail="x",
-            link_ids=[link.link_id for link in case.chain] + ["PA-TC-0001"],
-        )
-    )
-    titles = [f.title for f in case_issues(case)]
-    assert any(title.startswith("Break in the title chain") for title in titles)

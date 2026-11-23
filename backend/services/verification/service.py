@@ -3,7 +3,7 @@
 * ``start(case_id, kind)``: queue a run (full, or incremental after uploads).
 * ``get_state(case_id)``: the Case File summary, the latest run and the latest report.
 * ``list_events(case_id, after)``: the live feed.
-* ``attach_requisition_document``: link an obtained document to its requisition.
+* ``attach_requisition_document``: link an uploaded document to its request.
 * ``owns_chain`` / ``after_documents_processed``: hooks for the document pipeline.
 """
 
@@ -29,7 +29,7 @@ class VerificationBusyError(RuntimeError):
 
 
 class RequisitionError(ValueError):
-    """The requisition does not exist or cannot take a document now."""
+    """The request does not exist or cannot take a document now."""
 
 
 def start(case_id: str, kind: str = "full", fresh: bool = False) -> dict:
@@ -89,21 +89,21 @@ def list_events(case_id: str, after: int = 0) -> list[dict]:
 
 
 def get_open_requisition(case_id: str, requisition_id: str) -> dict:
-    """The requisition as a dict, if it exists and is open for a document."""
+    """The document request as a dict, if it exists and is open for a document."""
     stored = repo.get_case_file(case_id)
     case = cf.load(stored[0]) if stored else None
-    requisition = case.requisition(requisition_id) if case else None
-    if requisition is None:
-        raise RequisitionError(f"No requisition {requisition_id}.")
-    if requisition.status != "open":
-        raise RequisitionError(f"Requisition {requisition_id} is {requisition.status}.")
-    return requisition.model_dump()
+    request = case.request(requisition_id) if case else None
+    if request is None:
+        raise RequisitionError(f"No document request {requisition_id}.")
+    if request.status != "open":
+        raise RequisitionError(f"Document request {requisition_id} is {request.status}.")
+    return request.model_dump()
 
 
 def attach_requisition_document(
     case_id: str, requisition_id: str, doc_id: str, source: str
 ) -> None:
-    """Record that a document arrived for a requisition (verified after processing)."""
+    """Record that a document arrived for a request (verified after processing)."""
     if is_running(case_id):
         raise VerificationBusyError("Verification is running; upload when it finishes.")
     store = DbStore()
@@ -111,10 +111,10 @@ def attach_requisition_document(
     if loaded is None:
         raise RequisitionError("This case has no verification yet.")
     case, version = loaded
-    requisition = case.requisition(requisition_id)
-    if requisition is None or requisition.status != "open":
-        raise RequisitionError(f"Requisition {requisition_id} is not open.")
-    requisition.status, requisition.doc_id, requisition.source = "fulfilled", doc_id, source
+    request = case.request(requisition_id)
+    if request is None or request.status != "open":
+        raise RequisitionError(f"Document request {requisition_id} is not open.")
+    request.status, request.doc_id, request.source = "received", doc_id, source
     store.save_case_file(case, version)
 
 
@@ -132,7 +132,7 @@ def owns_chain(case_id: str) -> bool:
 
 
 def after_documents_processed(case_id: str) -> bool:
-    """Queue an incremental run when documents arrived for requisitions.
+    """Queue an incremental run when documents arrived for requests.
 
     Returns True when a run was queued.
     """
@@ -140,7 +140,7 @@ def after_documents_processed(case_id: str) -> bool:
     if not stored:
         return False
     case = cf.load(stored[0])
-    if not any(item.status == "fulfilled" for item in case.requisitions):
+    if not any(item.status == "received" for item in case.requests):
         return False
     try:
         start(case_id, kind="incremental")
@@ -164,8 +164,16 @@ def _run_view(run: dict | None) -> dict | None:
 
 
 def _case_view(case: cf.CaseFile) -> dict:
-    """The Case File without examiner report bodies (the dashboard needs summaries only)."""
-    data = case.model_dump(mode="json", exclude={"counters", "report_basis"})
+    """The Case File for the dashboard: each transfer with its worked-out result and
+    whether it is before the root, each section with whether it is in order, and
+    documents without examiner report bodies."""
+    data = case.model_dump(mode="json", exclude={"counters", "report_basis", "set_aside"})
+    for transfer, view in zip(case.transfers, data["transfers"], strict=True):
+        view["result"] = cf.transfer_result(transfer)
+        view["before_root"] = case.before_root(transfer)
+    for name in cf.SECTIONS:
+        if data["property_today"][name] is not None:
+            data["property_today"][name]["ok"] = cf.section_ok(case.section(name))
     for entry in data["documents"].values():
         report = entry.pop("report", None)
         entry["examined_summary"] = report["summary"] if report else None

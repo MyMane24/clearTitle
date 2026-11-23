@@ -1,6 +1,6 @@
 // The case-level findings: what a buyer must know, most serious first, then what checked out.
-import type { DueDiligenceReport, VerificationCaseFile, VerificationLink } from '../../api/backend';
-import { humanizeType, yearOf } from './labels';
+import type { DueDiligenceReport, SectionName, VerificationCaseFile } from '../../api/backend';
+import { SECTION_LABEL, transferName } from './labels';
 
 export interface CaseIssue {
   title: string;
@@ -8,38 +8,30 @@ export interface CaseIssue {
   severity: 'high' | 'medium' | 'low' | 'clear';
 }
 
-function transferName(link: VerificationLink): string {
-  const year = yearOf(link.transaction.executed_date || link.transaction.registration_date);
-  return `${humanizeType(link.transaction.transaction_type)}${year ? ` of ${year}` : ''}`;
-}
-
 const ORDER = { high: 0, medium: 1, low: 2, clear: 3 };
 
-/** Findings from the report when it has them, else derived from the Case File the same way
- * the backend builds them: recorded issues plus uncovered defects and breaks. */
+/** Findings from the report when it has them, else built from the Case File the same way
+ * the backend builds them: each transfer's break and concerns, then the property today. */
 export function caseIssues(report: DueDiligenceReport | null, caseFile: VerificationCaseFile | null): CaseIssue[] {
   if (report?.findings?.length) return report.findings;
   if (!caseFile) return [];
-  const issues: CaseIssue[] = caseFile.issues.map(issue => ({
-    title: issue.title, text: issue.detail, severity: issue.severity,
-  }));
-  // A summary issue naming most of the chain does not hide a break or defect.
-  const covered = new Set(caseFile.issues.filter(issue => issue.link_ids.length <= 3).flatMap(issue => issue.link_ids));
-  caseFile.chain.forEach((link, index) => {
-    if (covered.has(link.link_id)) return;
-    if (link.verdict?.verdict === 'defective') {
-      issues.push({ title: `${transferName(link)} is defective`, text: link.verdict.summary, severity: 'high' });
-    }
-    if (index > 0 && !link.continues_previous) {
+  const issues: CaseIssue[] = [];
+  for (const transfer of caseFile.transfers.filter(item => !item.before_root)) {
+    const name = transferName(transfer);
+    if (transfer.connects && !transfer.connects.ok) {
+      const missing = transfer.documents.some(doc => doc.status === 'missing');
       issues.push({
-        title: `Break in the title chain before the ${transferName(link).toLowerCase()}`,
-        text: link.break_note || 'No document shows how ownership passed.',
-        severity: 'high',
+        title: `Break in the title chain before the ${name.toLowerCase()}`,
+        text: transfer.connects.note,
+        severity: missing ? 'medium' : 'high',
       });
     }
-  });
-  for (const check of caseFile.clear_checks || []) {
-    issues.push({ title: check.title, text: check.detail, severity: 'clear' });
+    for (const concern of transfer.concerns) issues.push({ title: name, text: concern.text, severity: concern.severity });
+  }
+  for (const [name, section] of Object.entries(caseFile.property_today || {})) {
+    for (const concern of section?.concerns || []) {
+      issues.push({ title: SECTION_LABEL[name as SectionName], text: concern.text, severity: concern.severity });
+    }
   }
   return issues.sort((a, b) => ORDER[a.severity] - ORDER[b.severity]);
 }

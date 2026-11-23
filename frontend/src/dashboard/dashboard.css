@@ -1958,6 +1958,8 @@
   .ctd-root .cr-proof li b{ font-weight: 600; color: var(--cr-ink); }
   .ctd-root .cr-proof-found{ color: var(--cr-good); }
   .ctd-root .cr-proof-missing{ color: #d97706; }
+  .ctd-root .cr-concerns{ list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .ctd-root .cr-concerns li{ display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 10px; align-items: baseline; font-size: 13.5px; line-height: 1.55; }
 
   /* Uploaded documents */
   .ctd-root .cr-docs{ list-style: none; }
@@ -1967,6 +1969,9 @@
   .ctd-root .cr-doc-name:hover{ color: var(--cr-brand); }
   .ctd-root .cr-doc-name svg{ flex-shrink: 0; color: var(--cr-faint); }
   .ctd-root .cr-doc-type{ font-size: 13px; color: var(--cr-soft); }
+  .ctd-root .cr-today li{ grid-template-columns: 170px minmax(0, 1fr) 130px; }
+  .ctd-root .cr-today .cr-doc-name{ cursor: default; font-weight: 600; }
+  .ctd-root .cr-today .cr-doc-name:hover{ color: var(--cr-ink); }
   .ctd-root .cr-docs .cr-status{ justify-self: end; }
 
   /* Empty state and notices */
@@ -1990,7 +1995,7 @@
   .ctd-root .cr-page .vf-feed-icon{ flex-shrink: 0; width: 22px; height: 22px; display: grid; place-items: center; color: var(--cr-faint); }
   .ctd-root .cr-page .vf-feed-item svg{ margin: 0; color: inherit; }
   .ctd-root .cr-page .vf-feed-text{ padding-top: 1px; min-width: 0; }
-  .ctd-root .cr-page .vf-feed-verdict .vf-feed-icon, .ctd-root .cr-page .vf-feed-report .vf-feed-icon, .ctd-root .cr-page .vf-feed-clear .vf-feed-icon{ color: var(--cr-good); }
+  .ctd-root .cr-page .vf-feed-verdict .vf-feed-icon, .ctd-root .cr-page .vf-feed-report .vf-feed-icon{ color: var(--cr-good); }
   .ctd-root .cr-page .vf-feed-issue .vf-feed-icon{ color: var(--cr-bad); }
   .ctd-root .cr-page .vf-feed-requisition .vf-feed-icon, .ctd-root .cr-page .vf-feed-lead .vf-feed-icon, .ctd-root .cr-page .vf-feed-chain .vf-feed-icon{ color: #c2410c; }
   .ctd-root .cr-page .vf-feed-issue{ color: var(--cr-text); }

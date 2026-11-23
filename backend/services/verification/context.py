@@ -28,8 +28,13 @@ from pydantic_ai.messages import (
 )
 
 from backend.config import VERIFY_COMPACT_AT_CHARS
-from backend.services.verification.case_file import CaseFile
-from backend.services.verification.gates import GateContext, closure_problems
+from backend.services.verification.case_file import (
+    SECTIONS,
+    CaseFile,
+    section_ok,
+    transfer_result,
+)
+from backend.services.verification.gates import GateContext, closure_problems, unused_unexpected
 
 CLEARED = (
     "[Older result cleared to save context. What you recorded is in view_case_file; a saved "
@@ -46,32 +51,46 @@ def render_case_file(case: CaseFile, ctx: GateContext | None = None, lean: bool 
     lines = [
         f"CASE FILE (case {case.case_id})",
         "",
-        f"CHAIN ({len(case.chain)} links, earliest first; verify from the root, oldest first)",
+        f"TRANSFERS ({len(case.transfers)}, earliest first; verify from the root, oldest first)",
     ]
     start = case.window_start()
-    for index, link in enumerate(case.chain):
-        transaction = link.transaction
+    for index, transfer in enumerate(case.transfers):
+        transaction = transfer.transaction
         date = transaction.executed_date or transaction.registration_date or "undated"
-        verdict = "NO VERDICT"
+        state = "NOT VERIFIED"
         if index < start:
-            verdict = "before the 30-year window: not verified"
-        elif link.verdict:
-            verdict = f"{link.verdict.verdict} ({link.verdict.property_type or 'type not set'})"
-        origin = " [added during verification]" if link.origin == "verification" else ""
-        origin += " [ROOT]" if index == start else ""
+            state = "before the root: not verified"
+        elif transfer.recorded:
+            state = transfer_result(transfer) or state
+        tags = " [added during verification]" if transfer.origin == "verification" else ""
+        tags += " [ROOT]" if index == start else ""
         lines.append(
-            f"- {link.link_id}{origin} | {transaction.transaction_type} | {date} | "
+            f"- {transfer.id}{tags} | {transaction.transaction_type} | {date} | "
             f"{transaction.transaction_number or 'no number'} | "
             f"{', '.join(transaction.transferors) or '?'} -> {', '.join(transaction.transferees)} | "
-            f"{transaction.evidence_status} | sources: "
-            f"{', '.join(ref.doc_id for ref in transaction.source_refs)} | {verdict}"
+            f"sources: {', '.join(ref.doc_id for ref in transaction.source_refs)} | {state}"
         )
-        if not link.continues_previous and index > start:
-            lines.append(f"    BREAK: {link.break_note or 'not yet recorded'}")
+        if transfer.connects and not transfer.connects.ok:
+            lines.append(f"    BREAK: {transfer.connects.note}")
+        lines += [
+            f"    missing: {doc.name} ({doc.request_id})"
+            for doc in transfer.documents
+            if doc.status == "missing"
+        ]
+        lines += [f"    concern [{c.severity}]: {c.text}"[:200] for c in transfer.concerns]
+    lines += ["", "PROPERTY TODAY"]
+    for name in SECTIONS:
+        section = case.section(name)
+        if section is None:
+            lines.append(f"- {name}: NOT RECORDED")
+            continue
+        lines.append(f"- {name}: {'in order' if section_ok(section) else 'see concerns'}")
+        lines += [f"    concern [{c.severity}]: {c.text}"[:200] for c in section.concerns]
+    unused = {(doc_id, number) for doc_id, number, _ in unused_unexpected(case)}
     lines += [
         "",
         "DOCUMENTS (each examiner report's recitals and unexpected findings, with the fact "
-        "number to cite, e.g. F3)",
+        "number to cite, e.g. F3; FOLLOW UP marks unexpected findings not yet cited or set aside)",
     ]
     for entry in case.documents.values():
         state = "examined" if entry.examined else "NOT EXAMINED"
@@ -82,24 +101,21 @@ def render_case_file(case: CaseFile, ctx: GateContext | None = None, lean: bool 
             f"{(entry.report.summary if entry.report else entry.summary) or ''}"[:300]
         )
         if entry.report and not lean:
-            number = {id(fact): n for n, fact in enumerate(entry.report.facts(), start=1)}
+            report = entry.report
             lines += [
-                f"    recital F{number[id(fact)]} p.{fact.page}: {fact.text}"[:190]
-                for fact in entry.report.recitals
+                f"    recital F{report.number_of(fact)} p.{fact.page}: {fact.text}"[:190]
+                for fact in report.recitals
             ]
-            lines += [
-                f"    unexpected F{number[id(fact)]} p.{fact.page}: {fact.text}"[:190]
-                for fact in entry.report.unexpected
-            ]
-    lines += _section("LEADS", [f"{lead.id} [{lead.status}] {lead.text}" for lead in case.leads])
+            for fact in report.unexpected:
+                number = f"F{report.number_of(fact)}"
+                mark = " FOLLOW UP" if (entry.doc_id, number) in unused else ""
+                lines.append(f"    unexpected{mark} {number} p.{fact.page}: {fact.text}"[:200])
     lines += _section(
-        "ISSUES", [f"{issue.id} [{issue.severity}] {issue.title}" for issue in case.issues]
-    )
-    lines += _section(
-        "REQUISITIONS",
+        "REQUESTS TO THE BUYER (filed by the application from missing documents)",
         [
-            f"{item.id} [{item.status}] {item.document} (affects {', '.join(item.affects)})"
-            for item in case.requisitions
+            f"{item.id} [{item.status}] {item.document} (for {', '.join(item.needed_for) or '-'})"
+            + (f" -> arrived as {item.doc_id}" if item.status == "received" else "")
+            for item in case.requests
         ],
     )
     if ctx is not None:

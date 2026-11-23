@@ -8,7 +8,7 @@ const WAIT_FOR_START_MS = 2 * 60 * 1000;
 /** True while the page should keep polling: a run is going, or one is about to start. */
 export function shouldPoll(state: VerificationState | null, startRequestedAt: number | null, now: number): boolean {
   if (state?.run?.status === 'running') return true;
-  if (state?.case_file?.requisitions.some(item => item.status === 'fulfilled')) return true;
+  if (state?.case_file?.requests?.some(item => item.status === 'received')) return true;
   return startRequestedAt !== null && now - startRequestedAt < WAIT_FOR_START_MS;
 }
 

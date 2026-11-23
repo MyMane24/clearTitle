@@ -4,12 +4,18 @@ Tools write it, gates read it, the report is written from it and the dashboard
 shows it. Message history is only a log; everything the agent has established
 lives here, so a run can be resumed or continued from this object alone.
 
+Shape: one complete record per transfer (what proves it, how it connects, what
+is wrong with it), the property as it stands today, and the documents. Results
+and document requests are worked out by code from those records, never chosen
+by the model, so they always agree with the evidence.
+
 To change its shape, add the field with a default, bump ``SCHEMA_VERSION`` and
 add a step to ``migrate``. Older case files then still load.
 """
 
 from __future__ import annotations
 
+import builtins
 import hashlib
 import re
 from datetime import date
@@ -19,17 +25,17 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from backend.schemas.chain import DocumentedTransaction
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 5
 
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
-LinkVerdictKind = Literal[
-    "verified", "verified_with_concerns", "unverified_missing_document", "defective"
-]
 Severity = Literal["high", "medium", "low"]
+TransferResult = Literal["verified", "verified_with_concerns", "documents_missing", "defective"]
 PropertyType = Literal[
     "agricultural_land", "converted_plot", "layout_site", "house", "flat", "commercial", "other",
 ]  # fmt: skip
+SectionName = Literal["encumbrances", "revenue_records", "tax_and_approvals"]
+SECTIONS: tuple[SectionName, ...] = ("encumbrances", "revenue_records", "tax_and_approvals")
 WINDOW_YEARS = 30  # how far back title is verified
 PartyCapacity = Literal[
     "self", "gpa_holder", "guardian_of_minor", "legal_heir", "partner", "director",
@@ -50,7 +56,8 @@ class Citation(_Model):
     doc_id: Text
     page: int = Field(ge=1)
     quote: Text = Field(
-        description="The fact's wording from its examiner report, or exact words from the page."
+        description="The fact's number from its examiner report (e.g. 'F3'), or exact words "
+        "from the page."
     )
 
 
@@ -100,15 +107,16 @@ class ExaminerReport(_Model):
     )
 
     def facts(self) -> list[Fact | Party]:
-        """Every cited item in the report."""
+        """Every cited item in the report, in the order its fact numbers (F1, F2 ...) follow."""
         return [
             *self.instrument, *self.parties, *self.schedule, *self.consideration,
             *self.recitals, *self.encumbrances, *self.restrictions, *self.answers,
             *self.unexpected,
         ]  # fmt: skip
 
-
-# -- Case state ---------------------------------------------------------------
+    def number_of(self, fact: Fact | Party) -> int:
+        """The fact's number as the Lead sees it (F1 is 1)."""
+        return next(i for i, item in enumerate(self.facts(), start=1) if item is fact)
 
 
 class DocumentEntry(_Model):
@@ -124,80 +132,113 @@ class DocumentEntry(_Model):
     )
 
 
-class NeededDocument(_Model):
-    """A document that legally proves part of one transfer, as the Lead judged it."""
+# -- What the Lead records -----------------------------------------------------
 
-    document: Text = Field(description="e.g. 'registered sale deed of 2010', 'NA order'.")
-    proves: Text = Field(description="One line: what it proves for this transfer.")
+
+class ProofDocument(_Model):
+    """One document that legally proves part of a transfer (or of the property today)."""
+
+    name: Text = Field(description="One document, e.g. 'registered sale deed of 2010'.")
+    proves: Text = Field(description="One line: what it proves here.")
     status: Literal["found", "missing"]
     citations: list[Citation] = Field(
-        default_factory=list, description="found: the passages that show it proves the transfer."
+        default_factory=list, description="found: the passages that show it proves this."
     )
-    requisition_id: str | None = Field(
-        default=None, description="missing: the requisition that asks for it."
+    request_id: str | None = Field(
+        default=None,
+        description="missing: an existing request to reuse when another record already asks "
+        "for the same document. Left out, the application files a request.",
     )
 
 
-class LinkVerdict(_Model):
-    verdict: LinkVerdictKind
-    summary: Text
-    property_type: PropertyType | None = None
-    extent: str | None = None
-    needed_documents: list[NeededDocument] = Field(default_factory=list)
+class Concern(_Model):
+    """A problem in a transfer or in the property today, as the Lead judged it."""
 
-
-class WorkingLink(_Model):
-    """One link of the chain being verified."""
-
-    link_id: str
-    origin: Literal["phase_a", "verification"] = "phase_a"
-    continues_previous: bool
-    break_note: str | None = Field(
-        default=None, description="Why no recorded transfer connects this link to the previous."
+    severity: Severity = Field(
+        description="high: the documents show title is not valid; medium: title is clear only "
+        "once it is put right; low: an observation."
     )
-    transaction: DocumentedTransaction
-    verdict: LinkVerdict | None = None
-
-
-class Lead(_Model):
-    """Something discovered that must be followed up before the case can close."""
-
-    id: str
-    text: Text
-    source: Text
-    status: Literal["open", "resolved"] = "open"
-    outcome: Literal["evidence", "requisition", "not_material"] | None = None
-    resolution: str | None = None
-
-
-class Issue(_Model):
-    id: str
-    severity: Severity
-    title: Text
-    detail: Text
-    link_ids: list[str] = Field(default_factory=list)
+    text: Text = Field(description="One or two short sentences a buyer understands.")
     citations: list[Citation] = Field(default_factory=list)
 
 
-class ClearCheck(_Model):
-    """A positive finding the buyer should see ("Owner name matches across documents")."""
+class Connection(_Model):
+    """How this transfer connects to the one before it."""
 
-    id: str
-    title: Text
-    detail: Text
+    ok: bool = Field(description="true: the transferors are the previous transfer's acquirers.")
+    note: str = Field(default="", description="false: who is missing between which owners.")
+
+
+class Property(_Model):
+    """The property as this transfer's instrument describes it."""
+
+    survey: str | None = Field(default=None, description="Survey, hissa, site or khata number.")
+    extent: str | None = None
+    type: PropertyType
+
+
+class AddedBecause(_Model):
+    """Why the Lead inserted a transfer the Phase A chain did not have."""
+
+    note: Text
     citations: list[Citation] = Field(min_length=1)
 
 
-class Requisition(_Model):
-    """A document that is needed. It records what is needed, never how it is obtained."""
+class Transfer(_Model):
+    """One transfer of the chain and, once the Lead has verified it, its full record."""
+
+    id: str
+    origin: Literal["phase_a", "verification"] = "phase_a"
+    transaction: DocumentedTransaction
+    added_because: AddedBecause | None = None
+    # The record, set by record_transfer; ``summary`` is None until then.
+    property: Property | None = None
+    connects: Connection | None = None
+    documents: list[ProofDocument] = Field(default_factory=list)
+    concerns: list[Concern] = Field(default_factory=list)
+    summary: str | None = None
+
+    @builtins.property  # the field "property" shadows the builtin here
+    def recorded(self) -> bool:
+        return self.summary is not None
+
+    def clear_record(self) -> None:
+        self.property, self.connects, self.summary = None, None, None
+        self.documents, self.concerns = [], []
+
+
+class Section(_Model):
+    """One part of the property as it stands today."""
+
+    note: Text
+    documents: list[ProofDocument] = Field(default_factory=list)
+    concerns: list[Concern] = Field(default_factory=list)
+
+
+class PropertyToday(_Model):
+    encumbrances: Section | None = None
+    revenue_records: Section | None = None
+    tax_and_approvals: Section | None = None
+
+
+class Request(_Model):
+    """A document asked of the buyer. Filed and closed by the application, never the Lead."""
 
     id: str
     document: Text
     reason: Text
-    affects: list[str] = Field(min_length=1, description="Link, lead or issue ids.")
-    status: Literal["open", "fulfilled", "resolved", "withdrawn"] = "open"
+    needed_for: list[str] = Field(default_factory=list, description="Transfer ids or sections.")
+    status: Literal["open", "received", "settled"] = "open"
     doc_id: str | None = None
     source: str | None = None
+
+
+class SetAside(_Model):
+    """An unexpected examiner finding the Lead judged irrelevant to title."""
+
+    doc_id: str
+    fact: str = Field(description="Its number in the examiner report, e.g. 'F7'.")
+    reason: Text
 
 
 class CaseFile(_Model):
@@ -205,73 +246,103 @@ class CaseFile(_Model):
     case_id: str
     version: int = 0
     phase_a_hash: str | None = None
-    chain: list[WorkingLink] = Field(default_factory=list)
+    transfers: list[Transfer] = Field(default_factory=list)
+    property_today: PropertyToday = Field(default_factory=PropertyToday)
+    requests: list[Request] = Field(default_factory=list)
+    set_aside: list[SetAside] = Field(default_factory=list)
     documents: dict[str, DocumentEntry] = Field(default_factory=dict)
-    leads: list[Lead] = Field(default_factory=list)
-    issues: list[Issue] = Field(default_factory=list)
-    clear_checks: list[ClearCheck] = Field(default_factory=list)
-    requisitions: list[Requisition] = Field(default_factory=list)
     counters: dict[str, int] = Field(default_factory=dict)
     report_basis: dict[str, Any] | None = Field(
         default=None,
-        description="Verdicts, issues and requests when the last report was written; the "
-        "next report lists what changed since then.",
+        description="Results and requests when the last report was written; the next report "
+        "lists what changed since then.",
     )
 
     def next_id(self, prefix: str) -> str:
-        """A new id such as ``L3``; never reused within this case file."""
+        """A new id such as ``R3``; never reused within this case file."""
         self.counters[prefix] = self.counters.get(prefix, 0) + 1
         return f"{prefix}{self.counters[prefix]}"
 
-    def link(self, link_id: str) -> WorkingLink | None:
-        return next((link for link in self.chain if link.link_id == link_id), None)
+    def transfer(self, transfer_id: str) -> Transfer | None:
+        return next((item for item in self.transfers if item.id == transfer_id), None)
 
-    def lead(self, lead_id: str) -> Lead | None:
-        return next((lead for lead in self.leads if lead.id == lead_id), None)
+    def request(self, request_id: str) -> Request | None:
+        return next((item for item in self.requests if item.id == request_id), None)
 
-    def requisition(self, requisition_id: str) -> Requisition | None:
-        return next((item for item in self.requisitions if item.id == requisition_id), None)
+    def section(self, name: str) -> Section | None:
+        return getattr(self.property_today, name)
+
+    def records(self) -> list[tuple[str, list[ProofDocument]]]:
+        """Every recorded set of documents, keyed by transfer id or section name."""
+        records = [(t.id, t.documents) for t in self.transfers if t.recorded]
+        records += [
+            (name, section.documents) for name in SECTIONS if (section := self.section(name))
+        ]
+        return records
 
     def window_start(self, this_year: int | None = None) -> int:
-        """Index of the root link: the latest transfer dated at or before 30 years ago.
+        """Index of the root: the latest transfer dated at or before 30 years ago.
 
-        Title is verified from the root to the current owner. When no link is that
-        old, the root is the earliest link. Undated links never become the root.
+        Title is verified from the root to the current owner. When no transfer is
+        that old, the root is the earliest. Undated transfers never become the root.
         """
         cutoff = (this_year or date.today().year) - WINDOW_YEARS
         start = 0
-        for index, link in enumerate(self.chain):
-            year = link_year(link)
+        for index, transfer in enumerate(self.transfers):
+            year = transfer_year(transfer)
             if year is not None and year <= cutoff:
                 start = index
         return start
 
-    def window(self, this_year: int | None = None) -> list[WorkingLink]:
-        """The links to verify, root first."""
-        return self.chain[self.window_start(this_year) :]
+    def window(self, this_year: int | None = None) -> list[Transfer]:
+        """The transfers to verify, root first."""
+        return self.transfers[self.window_start(this_year) :]
 
-    def known_ids(self) -> set[str]:
-        """Every id a requisition or report may refer to."""
-        return {
-            *(link.link_id for link in self.chain),
-            *(lead.id for lead in self.leads),
-            *(issue.id for issue in self.issues),
-            *(check.id for check in self.clear_checks),
-            *(item.id for item in self.requisitions),
-        }
+    def before_root(self, transfer: Transfer) -> bool:
+        return self.transfers.index(transfer) < self.window_start()
+
+
+# -- Worked out by code ---------------------------------------------------------
+
+
+def transfer_result(transfer: Transfer) -> TransferResult | None:
+    """A recorded transfer's result, from its documents, concerns and connection.
+
+    The legal judgment (what proves the transfer, what is wrong and how badly) is
+    the Lead's; this only turns it into one word, the same way every time.
+    """
+    if not transfer.recorded:
+        return None
+    missing = any(doc.status == "missing" for doc in transfer.documents)
+    broken = transfer.connects is not None and not transfer.connects.ok
+    if any(c.severity == "high" for c in transfer.concerns) or (broken and not missing):
+        return "defective"
+    if missing:
+        return "documents_missing"
+    if transfer.concerns:
+        return "verified_with_concerns"
+    return "verified"
+
+
+def section_ok(section: Section | None) -> bool | None:
+    """True when a recorded section has no concern and no missing document."""
+    if section is None:
+        return None
+    return not section.concerns and all(doc.status == "found" for doc in section.documents)
 
 
 # -- Construction and migration ----------------------------------------------
 
 
-def link_year(link: WorkingLink) -> int | None:
-    """The year a transfer was executed (or registered), if its date names one."""
-    transaction = link.transaction
-    match = re.search(
-        r"\b(1[89]\d{2}|20\d{2})\b",
-        transaction.executed_date or transaction.registration_date or "",
-    )
+def _year(text: str | None) -> int | None:
+    match = re.search(r"\b(1[89]\d{2}|20\d{2})\b", text or "")
     return int(match.group(1)) if match else None
+
+
+def transfer_year(transfer: Transfer) -> int | None:
+    """The year a transfer was executed (or registered), if its date names one."""
+    transaction = transfer.transaction
+    return _year(transaction.executed_date or transaction.registration_date)
 
 
 def text_hash(text: str) -> str:
@@ -288,10 +359,9 @@ def from_phase_a(case_id: str, agent_result: dict, documents: list[dict]) -> Cas
         documents: The case's documents, as returned by ``agent_repo.get_agent_documents``.
             Only fully processed (``structured``) documents are included.
     """
-    chain = [
-        WorkingLink(
-            link_id=str(link.get("tx_id") or f"PA-{index}"),
-            continues_previous=bool(link.get("continues_previous")),
+    transfers = [
+        Transfer(
+            id=str(link.get("tx_id") or f"PA-{index}"),
             transaction=DocumentedTransaction.model_validate(link["documented_transaction"]),
         )
         for index, link in enumerate(agent_result.get("title_chain") or [], start=1)
@@ -299,18 +369,113 @@ def from_phase_a(case_id: str, agent_result: dict, documents: list[dict]) -> Cas
     return CaseFile(
         case_id=case_id,
         phase_a_hash=agent_result.get("phase_a_hash"),
-        chain=chain,
+        transfers=transfers,
         documents={
-            document["doc_id"]: DocumentEntry(
-                doc_id=document["doc_id"],
-                filename=str(document.get("filename") or ""),
-                document_type=str(document.get("document_type") or ""),
-                summary=document.get("summary"),
-            )
+            document["doc_id"]: document_entry(document)
             for document in documents
             if document.get("status") == "structured"
         },
     )
+
+
+def document_entry(document: dict) -> DocumentEntry:
+    return DocumentEntry(
+        doc_id=document["doc_id"],
+        filename=str(document.get("filename") or ""),
+        document_type=str(document.get("document_type") or ""),
+        summary=document.get("summary"),
+    )
+
+
+def _root_index(transactions: list[dict]) -> int:
+    """``CaseFile.window_start`` for stored transactions (used while migrating)."""
+    cutoff = date.today().year - WINDOW_YEARS
+    start = 0
+    for index, transaction in enumerate(transactions):
+        year = _year(transaction.get("executed_date") or transaction.get("registration_date"))
+        if year is not None and year <= cutoff:
+            start = index
+    return start
+
+
+def _to_v5(data: dict) -> dict:
+    """Schema 4 to 5: links with verdicts, issues, leads and requisitions become one
+    record per transfer plus application-filed requests.
+
+    Each verdict's needed documents, summary and property become the record; issues
+    naming one to three transfers become their concerns; a break becomes
+    ``connects.ok = false``. Issues naming no transfer, summary issues naming more
+    than three (the old report ignored those too) and leads are dropped: the next
+    run records the property today and follows up unexpected findings again.
+    """
+    issues = [issue for issue in data.get("issues") or [] if len(issue.get("link_ids") or []) <= 3]
+    links = data.get("chain") or []
+    root = _root_index([link["transaction"] for link in links])
+    transfers = []
+    for index, link in enumerate(links):
+        verdict = link.get("verdict") or None
+        transfer: dict = {
+            "id": link["link_id"],
+            "origin": link.get("origin", "phase_a"),
+            "transaction": link["transaction"],
+        }
+        if verdict:
+            concerns = [
+                {"severity": issue["severity"], "text": f"{issue['title']}: {issue['detail']}"}
+                for issue in issues
+                if link["link_id"] in (issue.get("link_ids") or [])
+            ]
+            kind = verdict.get("verdict")
+            if kind == "defective" and not any(c["severity"] == "high" for c in concerns):
+                concerns.append({"severity": "high", "text": verdict["summary"]})
+            if kind == "verified_with_concerns" and not concerns:
+                concerns.append({"severity": "medium", "text": verdict["summary"]})
+            transfer.update(
+                property={
+                    "type": verdict.get("property_type") or "other",
+                    "extent": verdict.get("extent"),
+                },
+                connects=None
+                if index <= root  # the root is verified on its own instrument
+                else {
+                    "ok": bool(link.get("continues_previous", True)),
+                    "note": link.get("break_note") or "",
+                },
+                documents=[
+                    {
+                        "name": doc["document"],
+                        "proves": doc["proves"],
+                        "status": doc["status"],
+                        "citations": doc.get("citations") or [],
+                        "request_id": doc.get("requisition_id"),
+                    }
+                    for doc in verdict.get("needed_documents") or []
+                ],
+                concerns=concerns,
+                summary=verdict["summary"],
+            )
+        transfers.append(transfer)
+    ids = {transfer["id"] for transfer in transfers}
+    status = {"open": "open", "fulfilled": "received", "resolved": "settled"}
+    requests = [
+        {
+            "id": item["id"],
+            "document": item["document"],
+            "reason": item["reason"],
+            "needed_for": [ref for ref in item.get("affects") or [] if ref in ids],
+            "status": status[item["status"]],
+            "doc_id": item.get("doc_id"),
+            "source": item.get("source"),
+        }
+        for item in data.get("requisitions") or []
+        if item.get("status") in status
+    ]
+    kept = {
+        key: value
+        for key, value in data.items()
+        if key not in ("chain", "issues", "leads", "requisitions")
+    }
+    return {**kept, "transfers": transfers, "requests": requests, "schema_version": 5}
 
 
 def migrate(data: dict) -> dict:
@@ -320,12 +485,14 @@ def migrate(data: dict) -> dict:
         raise ValueError(f"case file schema {version} is newer than this code ({SCHEMA_VERSION})")
     if version == 1:  # 2026-11-21: drop fields nothing read
         data = {
-            key: value
-            for key, value in data.items()
-            if key not in ("tasks", "property_identity")
+            key: value for key, value in data.items() if key not in ("tasks", "property_identity")
         }
         data["chain"] = [
-            {key: value for key, value in link.items() if key not in ("amendments", "related_events")}
+            {
+                key: value
+                for key, value in link.items()
+                if key not in ("amendments", "related_events")
+            }
             for link in data.get("chain") or []
         ]
         data["schema_version"] = version = 2
@@ -334,6 +501,12 @@ def migrate(data: dict) -> dict:
             if isinstance(link.get("verdict"), dict):
                 link["verdict"] = {k: v for k, v in link["verdict"].items() if k != "checks"}
         data["schema_version"] = version = 3
+    if version == 3:  # 2026-11-23: no clear checks; the report finds what checked out
+        data.pop("clear_checks", None)
+        data["schema_version"] = version = 4
+    if version == 4:  # 2026-11-23: one complete record per transfer
+        data = _to_v5(data)
+        version = 5
     return data
 
 

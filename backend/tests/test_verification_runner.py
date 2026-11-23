@@ -1,10 +1,11 @@
 """Whole verification runs with scripted models: the PLAN.md worked example, end to end.
 
-Full run: a partition found in the EC and a recital is added to the chain, a
-missing deed becomes a requisition without stopping the run, a minor's share
-becomes a high issue, the Lead cannot close while a lead is open, and the
-report's opinion must agree with the Case File. Then an incremental run
-examines only the uploaded document and writes report v2 with its changes.
+Full run: a partition recited in the 2010 deed is added to the chain, each
+transfer is recorded in one call, a missing deed becomes a request without
+stopping the run, a minor's share is a high concern that makes its transfer
+defective, the Lead cannot close early, and the report's opinion must agree with
+the Case File. Then an incremental run examines only the uploaded document,
+settles its request and writes report v2 with its changes.
 """
 
 import asyncio
@@ -14,6 +15,7 @@ from pydantic_ai import ModelResponse, ToolCallPart, models
 from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import FunctionModel
 
+from backend.services.verification import case_file as cf
 from backend.services.verification import runner
 from backend.services.verification.pages import split_pages
 from backend.services.verification.store import MemoryStore
@@ -68,40 +70,45 @@ def cite(doc_id, page, quote):
     return {"doc_id": doc_id, "page": page, "quote": quote}
 
 
-def found(doc_id, page, quote):
+def found(doc_id, page, quote, name="Registered instrument of this transfer"):
     return {
-        "document": "Registered instrument of this transfer",
+        "name": name,
         "proves": "The transfer itself.",
         "status": "found",
         "citations": [cite(doc_id, page, quote)],
     }
 
 
-def missing(document, requisition_id):
-    return {
-        "document": document,
-        "proves": "The transfer itself.",
-        "status": "missing",
-        "requisition_id": requisition_id,
+def missing(name, request_id=None):
+    item = {"name": name, "proves": "The transfer itself.", "status": "missing"}
+    return {**item, "request_id": request_id} if request_id else item
+
+
+LAND = {"survey": "Sy.No.45", "extent": "2 acres 10 guntas", "type": "agricultural_land"}
+
+
+def transfer(transfer_id, summary, documents, concerns=(), connects=True):
+    args = {
+        "transfer_id": transfer_id,
+        "property": LAND,
+        "documents": documents,
+        "summary": summary,
+        "concerns": list(concerns),
     }
+    if connects is not None:
+        args["connects"] = {"ok": connects}
+    return ("record_transfer", args)
 
 
-def verdict(link_id, kind, summary, needed):
+def today(section, note, documents=()):
     return (
-        "record_link_verdict",
-        {
-            "link_id": link_id,
-            "verdict": kind,
-            "summary": summary,
-            "property_type": "agricultural_land",
-            "extent": "2 acres 10 guntas",
-            "needed_documents": needed,
-        },
+        "record_property_today",
+        {"section": section, "note": note, "documents": list(documents)},
     )
 
 
-PARTITION_LINK = {
-    "after_link_id": "PA-TC-0001",
+PARTITION = {
+    "after_transfer_id": "PA-TC-0001",
     "transfer": {
         "transaction_type": "Partition",
         "executed_date": None,
@@ -109,10 +116,14 @@ PARTITION_LINK = {
         "transferees": ["Basavaraj"],
         "summary_points": ["Schedule B allotted to Basavaraj (recital in the 2010 deed)."],
         "evidence_status": "recital_reported",
-        "continues_previous": True,
     },
     "reason": "The 2010 deed recites the 2005 partition, which the chain lacked.",
     "citations": [cite("D2010", 2, "under the partition of 2005")],
+}
+MINOR = {
+    "severity": "high",
+    "text": "Bhimesh, a minor, joined the 2010 sale through his guardian without court permission.",
+    "citations": [cite("D2010", 1, "Bhimesh (minor")],
 }
 
 FULL_RUN_STEPS = [
@@ -121,74 +132,41 @@ FULL_RUN_STEPS = [
         ("examine_document", {"doc_id": doc, "focus_questions": ["Parties and recitals?"]})
         for doc in ("EC", "D1998", "D2010", "D2018")
     ],
-    [("open_lead", {"text": "2005 partition among Basavaraj and siblings", "source": "EC p.2"})],
-    [("result", {"summary": "Trying to close early."})],  # refused: lead open, no verdicts
-    [("insert_link", PARTITION_LINK)],
+    [("result", {"summary": "Trying to close early."})],  # refused: nothing verified yet
+    [("insert_transfer", PARTITION)],
+    # One transfer at a time, oldest first, each in one call.
     [
-        (
-            "add_requisition",
-            {
-                "document": "Partition deed of 2005",
-                "reason": "Shows Basavaraj was allotted the target parcel.",
-                "affects": ["VL-1", "L1"],
-            },
-        )
-    ],
-    [
-        (
-            "resolve_lead",
-            {
-                "lead_id": "L1",
-                "outcome": "requisition",
-                "resolution": "Added to the chain; deed requested.",
-                "requisition_id": "R1",
-            },
-        ),
-        (
-            "record_issue",
-            {
-                "severity": "high",
-                "title": "Minor's share sold without court permission",
-                "detail": "Bhimesh, a minor, joined the 2010 sale through his guardian.",
-                "link_ids": ["PA-TC-0002"],
-                "citations": [cite("D2010", 1, "Bhimesh (minor")],
-            },
-        ),
-    ],
-    # One transfer at a time, oldest first.
-    [
-        verdict(
+        transfer(
             "PA-TC-0001",
-            "verified",
             "Registered sale by Anand Rao.",
             [found("D1998", 1, "Purchaser: Basavaraj")],
+            connects=None,
         )
     ],
+    [transfer("VL-1", "Known only from a recital.", [missing("Partition deed of 2005")])],
     [
-        verdict(
-            "VL-1",
-            "unverified_missing_document",
-            "Known only from a recital.",
-            [missing("Partition deed of 2005", "R1")],
-        )
-    ],
-    [
-        verdict(
+        transfer(
             "PA-TC-0002",
-            "defective",
-            "Minor's share sold without court permission.",
+            "Registered sale, but a minor's share was sold without permission.",
             [found("D2010", 1, "Bhimesh (minor")],
+            [MINOR],
         )
     ],
     [
-        verdict(
-            "PA-TC-0003",
-            "verified",
-            "Registered sale to Deepa.",
-            [found("D2018", 1, "Vendor: Chandrashekar")],
+        transfer(
+            "PA-TC-0003", "Registered sale to Deepa.", [found("D2018", 1, "Vendor: Chandrashekar")]
         )
     ],
-    [("result", {"summary": "Chain verified with one defect and one requisition."})],
+    [
+        today(
+            "encumbrances",
+            "The EC to date shows no open charge after 2012.",
+            [found("EC", 1, "Encumbrance Certificate", "Encumbrance certificate")],
+        ),
+        today("revenue_records", "No RTC was uploaded.", [missing("Current RTC extract")]),
+        today("tax_and_approvals", "Agricultural land; no approvals needed."),
+    ],
+    [("result", {"summary": "Chain verified with one defect and two documents requested."})],
 ]
 
 
@@ -215,19 +193,19 @@ def test_full_run_closes_the_chain_and_writes_report_v1():
     assert sorted(seen) == ["D1998", "D2010", "D2018", "EC"]
 
     case = runner.prepare_case_file(store, "CASE1")[0]
-    assert [link.link_id for link in case.chain] == [
-        "PA-TC-0001",
-        "VL-1",
-        "PA-TC-0002",
-        "PA-TC-0003",
+    assert [t.id for t in case.transfers] == ["PA-TC-0001", "VL-1", "PA-TC-0002", "PA-TC-0003"]
+    results = [cf.transfer_result(t) for t in case.transfers]
+    assert results == ["verified", "documents_missing", "defective", "verified"]
+    assert [(r.id, r.document, r.status) for r in case.requests] == [
+        ("R1", "Partition deed of 2005", "open"),  # noted; the run did not stop
+        ("R2", "Current RTC extract", "open"),
     ]
-    assert case.requisition("R1").status == "open"  # noted, run did not stop
-    assert case.lead("L1").status == "resolved"
 
     report = store.reports[-1]
     assert report.version == 1 and report.opinion == "NOT_CLEAR"
     assert report.reasons == ["Minor's share sold without permission."]
-    assert report.findings[0].severity == "high"  # the minor's-share issue, most serious first
+    assert report.findings[0].severity == "high"  # the minor's share, most serious first
+    assert report.findings[0].title == "Sale of 2010"
     assert report.changes == []  # nothing to compare with in version 1
 
     lead_messages, report_messages = messages
@@ -243,11 +221,10 @@ def test_full_run_closes_the_chain_and_writes_report_v1():
 
     refused = store.events.texts("rejected")
     assert len(refused) == 1 and refused[0].startswith("Step refused (closing)")
-    assert "lead" in refused[0].lower()
     # Refusals are diagnostics (gate wording, ids included); the buyer's feed is everything else.
     feed = [text for kind, text, _ in store.events.events if kind != "rejected"]
-    assert any("Found something to follow up" in line for line in feed)
     assert any("Added a transfer to the chain: the partition." in line for line in feed)
+    assert "Document needed: Partition deed of 2005" in feed
     assert any("Report v1: NOT CLEAR" in line for line in feed)
     assert not any(INTERNAL_ID.search(line) for line in feed)
     assert store.runs[outcome["run_id"]]["status"] == "done"
@@ -256,8 +233,8 @@ def test_full_run_closes_the_chain_and_writes_report_v1():
 def test_incremental_run_examines_only_the_uploaded_document():
     store, _, _, _ = full_run()
     case, version, _ = runner.prepare_case_file(store, "CASE1")
-    requisition = case.requisition("R1")
-    requisition.status, requisition.doc_id = "fulfilled", "PD2005"
+    request = case.request("R1")
+    request.status, request.doc_id = "received", "PD2005"
     store.save_case_file(case, version)
     store._documents.append(
         {
@@ -272,25 +249,11 @@ def test_incremental_run_examines_only_the_uploaded_document():
     lead = scripted_model(
         [("examine_document", {"doc_id": "PD2005", "focus_questions": ["Who got Schedule B?"]})],
         [
-            (
-                "review_requisition",
-                {"requisition_id": "R1", "settled": True, "note": "Schedule B to Basavaraj."},
-            ),
-            (
-                "correct_link",
-                {
-                    "link_id": "VL-1",
-                    "changes": {"evidence_status": "corroborated"},
-                    "reason": "The partition deed itself is now on file.",
-                    "citations": [cite("PD2005", 1, "Schedule B allotted to Basavaraj")],
-                },
-            ),
-            verdict(
+            transfer(
                 "VL-1",
-                "verified",
                 "Registered partition allotting Schedule B to Basavaraj.",
-                [found("PD2005", 1, "Schedule B allotted")],
-            ),
+                [found("PD2005", 1, "Partition deed 2005 among", "Partition deed of 2005")],
+            )
         ],
         [("result", {"summary": "Partition verified."})],
     )
@@ -302,14 +265,12 @@ def test_incremental_run_examines_only_the_uploaded_document():
     assert seen == ["PD2005"]  # nothing else re-examined
     v2 = store.reports[-1]
     assert v2.version == 2
-    assert (
-        "The partition: now verified (before: cannot be verified until a document is provided)."
-        in v2.changes
-    )
+    assert "The partition: now verified (before: waiting for documents)." in v2.changes
     assert "Received and accepted: Partition deed of 2005." in v2.changes
     assert not any(INTERNAL_ID.search(line) for line in v2.changes)
     case = runner.prepare_case_file(store, "CASE1")[0]
-    assert case.link("PA-TC-0002").verdict.verdict == "defective"  # kept from v1
+    assert case.request("R1").status == "settled"
+    assert cf.transfer_result(case.transfer("PA-TC-0002")) == "defective"  # kept from v1
 
 
 def test_crashed_run_resumes_from_the_case_file():

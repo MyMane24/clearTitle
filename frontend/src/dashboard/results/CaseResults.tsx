@@ -3,10 +3,10 @@ import { useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle, CheckCircle2, FileText, GitBranch, MoreHorizontal, ScrollText, ShieldCheck, Upload,
 } from 'lucide-react';
-import type { CaseResults as CaseResultsData, VerificationEvent, VerificationState } from '../../api/backend';
+import type { CaseResults as CaseResultsData, SectionName, VerificationEvent, VerificationState } from '../../api/backend';
 import { LiveFeed } from '../verification/LiveFeed';
 import { ChainTimeline, timelineLinks } from './ChainTimeline';
-import { humanizeType, refLabeller } from './labels';
+import { SECTION_LABEL, humanizeType, refLabeller } from './labels';
 import { caseIssues } from './issues';
 import { FindingsList, Opinion, Section, opinionLabel, opinionTone } from './ReportView';
 import { useVerification } from './useVerification';
@@ -163,7 +163,8 @@ export function CaseResultsView(props: CaseResultsViewProps) {
   );
 }
 
-/** How ownership passed: property identity, the chain timeline and the uploaded documents. */
+/** How ownership passed: property identity, the chain timeline, the property today and the
+ * uploaded documents. */
 function ChainPage({ results, state, onOpenPdf }: CaseResultsViewProps) {
   const caseFile = state?.case_file || null;
   const report = state?.report || null;
@@ -184,8 +185,10 @@ function ChainPage({ results, state, onOpenPdf }: CaseResultsViewProps) {
         title="Title chain"
         note={`Earliest transfer first. Open a transfer to see its details${caseFile ? ' and verdict' : ''}.`}
       >
-        <ChainTimeline links={timelineLinks(caseFile?.chain, results.agent?.title_chain)} label={label} />
+        <ChainTimeline links={timelineLinks(caseFile?.transfers, results.agent?.title_chain)} label={label} />
       </Section>
+
+      {caseFile && <PropertyToday caseFile={caseFile} label={label} />}
 
       <Section id="cr-docs-title" title="Documents" aside={`${results.documents.length} uploaded`}>
         <ul className="cr-docs">
@@ -214,6 +217,28 @@ function ChainPage({ results, state, onOpenPdf }: CaseResultsViewProps) {
   );
 }
 
+/** The property as it stands today: encumbrances, revenue records, tax and approvals. */
+function PropertyToday({ caseFile, label }: { caseFile: NonNullable<VerificationState['case_file']>; label: (text: string) => string }) {
+  const sections = Object.entries(caseFile.property_today || {}) as [SectionName, NonNullable<VerificationState['case_file']>['property_today'][SectionName]][];
+  return (
+    <Section id="cr-today-title" title="The property today" note="Checked after the last transfer.">
+      <ul className="cr-docs cr-today">
+        {sections.map(([name, section]) => {
+          const state = !section ? 'Not checked yet' : section.ok ? 'In order' : 'See findings';
+          const tone = !section ? 'neutral' : section.ok ? 'good' : 'warn';
+          return (
+            <li key={name}>
+              <span className="cr-doc-name">{SECTION_LABEL[name]}</span>
+              <span className="cr-doc-type">{section ? label(section.note) : ''}</span>
+              <span className={`cr-status cr-tone-${tone}`}>{state}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </Section>
+  );
+}
+
 /** Is the title clear: opinion, documents needed, the report and the agent's steps. */
 function ReportPage({ state, error, uploadingId, start, upload, primary }: CaseResultsViewProps & { primary: string | null }) {
   const caseFile = state?.case_file || null;
@@ -222,11 +247,9 @@ function ReportPage({ state, error, uploadingId, start, upload, primary }: CaseR
   const unfinished = Boolean(state?.run && ['incomplete', 'error'].includes(state.run.status));
   // The provider's own message, trimmed: it is the only explanation of a failed run.
   const runError = (state?.run?.error || '').split('\n')[0].slice(0, 200);
-  const requisitions = caseFile?.requisitions || [];
-  const pending = requisitions.filter(item => item.status === 'open' || item.status === 'fulfilled');
-  const links = new Set((caseFile?.chain || []).map(link => link.link_id));
-  const transferOf = (affects: string[]) => affects.find(ref => links.has(ref));
-  const settled = requisitions.filter(item => item.status === 'resolved').length;
+  const requests = caseFile?.requests || [];
+  const pending = requests.filter(item => item.status === 'open' || item.status === 'received');
+  const settled = requests.filter(item => item.status === 'settled').length;
 
   return (
     <>
@@ -277,7 +300,7 @@ function ReportPage({ state, error, uploadingId, start, upload, primary }: CaseR
                 <div className="cr-needed-main">
                   <b>{label(item.document)}</b>
                   <span>{label(item.reason)}</span>
-                  {transferOf(item.affects) && <span className="cr-needed-for">For: {label(transferOf(item.affects)!)}</span>}
+                  {item.needed_for.length > 0 && <span className="cr-needed-for">For: {item.needed_for.map(label).join(', ')}</span>}
                 </div>
                 <span className={`cr-status cr-tone-${item.status === 'open' ? 'warn' : 'good'}`}>
                   {item.status === 'open' ? 'Open' : 'Received'}

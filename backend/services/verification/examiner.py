@@ -17,7 +17,12 @@ from pydantic_ai.toolsets import FunctionToolset
 
 from backend.logger import get_logger
 from backend.prompts.loader import load_prompt
-from backend.services.verification.case_file import DocumentEntry, ExaminerReport, text_hash
+from backend.services.verification.case_file import (
+    DocumentEntry,
+    ExaminerReport,
+    text_hash,
+    transfer_result,
+)
 from backend.services.verification.deps import VerifyDeps
 from backend.services.verification.pages import locate_quote, split_pages
 from backend.services.verification.tools import transfer_name
@@ -83,10 +88,9 @@ def _full_text(pages: dict[int, str]) -> str:
 
 def _chain_background(deps: VerifyDeps) -> str:
     return "\n".join(
-        f"- {link.link_id}: {link.transaction.transaction_type} "
-        f"{link.transaction.executed_date or ''} "
-        f"{', '.join(link.transaction.transferors)} -> {', '.join(link.transaction.transferees)}"
-        for link in deps.case.chain
+        f"- {t.id}: {t.transaction.transaction_type} {t.transaction.executed_date or ''} "
+        f"{', '.join(t.transaction.transferors)} -> {', '.join(t.transaction.transferees)}"
+        for t in deps.case.transfers
     )
 
 
@@ -190,10 +194,9 @@ async def examine_document(
         f"{len(report.unexpected)} unexpected findings",
         doc_id,
     )
-    reopened = reopen_verdicts(deps, doc_id)
+    reopened = reopen_records(deps, doc_id)
     note = (
-        f"\n\nNEEDS A NEW VERDICT now that {doc_id} is examined: {', '.join(reopened)}. "
-        "Also review any open requisition this document settles (review_requisition)."
+        f"\n\nVERIFY AGAIN now that {doc_id} is examined: {', '.join(reopened)}."
         if reopened
         else ""
     )
@@ -205,21 +208,22 @@ def entry_name(deps: VerifyDeps, doc_id: str) -> str:
     return entry.filename if entry and entry.filename else "a document"
 
 
-def reopen_verdicts(deps: VerifyDeps, doc_id: str) -> list[str]:
-    """Clear verdicts that were recorded before one of their own sources was examined.
+def reopen_records(deps: VerifyDeps, doc_id: str) -> list[str]:
+    """Clear records written before one of the transfer's own sources was examined.
 
-    A verdict written while a link's document was unreadable is stale once the
-    document is examined; clearing it makes the closure gate demand a new one.
+    A record written while a transfer's document was unread is stale once it is
+    examined; clearing it makes the closure gate demand a new one. Verified
+    records stay.
     """
     reopened = []
-    for link in deps.case.chain:
-        cites_doc = any(ref.doc_id == doc_id for ref in link.transaction.source_refs)
-        if cites_doc and link.verdict and link.verdict.verdict != "verified":
-            link.verdict = None
-            reopened.append(link.link_id)
+    for transfer in deps.case.transfers:
+        cites_doc = any(ref.doc_id == doc_id for ref in transfer.transaction.source_refs)
+        if cites_doc and transfer.recorded and transfer_result(transfer) != "verified":
+            transfer.clear_record()
+            reopened.append(transfer.id)
             deps.emit(
                 "chain",
-                f"Re-checking {transfer_name(link)}: {entry_name(deps, doc_id)} has now been read",
-                link.link_id,
+                f"Re-checking {transfer_name(transfer)}: {entry_name(deps, doc_id)} has now been read",
+                transfer.id,
             )
     return reopened

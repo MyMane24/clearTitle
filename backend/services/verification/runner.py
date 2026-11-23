@@ -112,7 +112,7 @@ def _carry_over_examinations(store: Store, old: cf.CaseFile, new: cf.CaseFile) -
 
 
 def sync_documents(case: cf.CaseFile, documents: list[dict]) -> list[str]:
-    """Add newly processed documents and settle requisitions whose upload failed.
+    """Add newly processed documents and reopen requests whose upload failed.
 
     Returns notes describing what changed.
     """
@@ -123,15 +123,10 @@ def sync_documents(case: cf.CaseFile, documents: list[dict]) -> list[str]:
     structured = {doc["doc_id"]: doc for doc in documents if doc.get("status") == "structured"}
     for doc_id, doc in structured.items():
         if doc_id not in case.documents:
-            case.documents[doc_id] = cf.DocumentEntry(
-                doc_id=doc_id,
-                filename=str(doc.get("filename") or ""),
-                document_type=str(doc.get("document_type") or ""),
-                summary=doc.get("summary"),
-            )
+            case.documents[doc_id] = cf.document_entry(doc)
             notes.append(f"New document {doc_id} ({doc.get('document_type')}).")
-    for item in case.requisitions:
-        if item.status == "fulfilled" and item.doc_id not in structured:
+    for item in case.requests:
+        if item.status == "received" and item.doc_id not in structured:
             notes.append(f"The document uploaded for {item.id} could not be processed.")
             item.status, item.doc_id = "open", None
     return notes
@@ -140,7 +135,7 @@ def sync_documents(case: cf.CaseFile, documents: list[dict]) -> list[str]:
 def task_prompt(
     case: cf.CaseFile, deps: VerifyDeps, kind: str, notes: list[str], fresh: bool = False
 ) -> str:
-    arrived = [item for item in case.requisitions if item.status == "fulfilled"]
+    arrived = [item for item in case.requests if item.status == "received"]
     if fresh:
         lines = [
             "Verify the title chain of this case from the beginning. Examine every document "
@@ -148,10 +143,15 @@ def task_prompt(
         ]
     elif kind == "incremental" and arrived:
         lines = [
-            "New documents have arrived for these requisitions. Examine each new document, "
-            "decide with review_requisition whether it settles the requisition, update every "
-            "link, lead and issue it affects, then close. Do not re-examine unchanged documents.",
-            *(f"- {item.id}: {item.document} -> document {item.doc_id}" for item in arrived),
+            "The buyer uploaded documents for these requests. Examine each new document, then "
+            "record again every transfer (or part of the property today) the request is for: "
+            "mark the document found if it proves what was needed, or keep it missing if it "
+            "does not. Then close. Do not re-examine unchanged documents.",
+            *(
+                f"- {item.id}: {item.document} -> document {item.doc_id} "
+                f"(for {', '.join(item.needed_for)})"
+                for item in arrived
+            ),
         ]
     else:
         lines = [

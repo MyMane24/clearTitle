@@ -5,8 +5,8 @@ Load when an owner died and the property passed to heirs, by will or by intestat
 > Draft. To be confirmed and extended by the product owner's lawyer instructions.
 
 ## How it is proved
-- Inheritance without a will is a transfer by law. **It needs no registered deed.** Add it to the chain as a "Succession" link from the deceased to the heirs.
-- A death certificate and a family or surviving-members certificate are documents that report the succession. Insert the Succession link; never mark a break for it. If the heirship document is unclear or does not name every seller, judge that in the succession's verdict (concern or missing document) and request the one document that settles it.
+- Inheritance without a will is a transfer by law. **It needs no registered deed.** Add it to the chain as a "Succession" transfer from the deceased to the heirs.
+- A death certificate and a family or surviving-members certificate are documents that report the succession. Insert the succession with insert_transfer; never record a break for it. If the heirship document is unclear or does not name every seller, record that in the succession's own record: a concern, or the one missing document that settles it.
 - **Intestate succession** is proved by:
   - the death certificate (who died, and when);
   - who the legal heirs are: a family tree, surviving family members certificate, legal heir certificate or succession certificate;

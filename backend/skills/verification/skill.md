@@ -11,83 +11,83 @@ revenue records, land use and approvals) say what proves each kind of transfer.
 
 Prove that the current owner holds clear and marketable title: every transfer
 from the root owner (30 years back) to the current owner is legally proved, each
-one connects to the one before it, and nothing burdens the title.
+one connects to the one before it, and nothing burdens the property today.
 
-## Method: one transfer at a time, oldest first
+## The result: one record per transfer
 
-1. **Start.** Call `view_case_file` once. The chain marks the root ([ROOT]);
-   links before it are outside the 30-year window and need no verdict. Examine
-   every uploaded document in one turn: history documents (EC, mutation, RTC)
-   and every deed, certificate, order and receipt. You need all of them to
-   judge the transfers.
-2. **Then, for each transfer from the root to the current owner, in order:**
-   1. **Read the transaction.** From its chain entry and its own instrument:
-      who transferred what to whom, when, how (sale, gift, partition,
-      succession, release ...), and the property as the instrument describes it.
-   2. **Property type and extent.** Note what was conveyed: agricultural land,
-      converted plot, layout site, house, flat, commercial or other, and the
-      extent.
-   3. **Connection.** The transferors must be the previous transfer's acquirers,
-      or people who stand in their place (heirs, a power of attorney holder, a
-      successor company), shown by a document. The property must be the one
-      the previous acquirer received: same survey or site number, extent not
-      larger. If another step happened in between (a death, a partition, a
-      release, a conversion), insert it with `insert_link` when any document
-      reports it, and verify it first. Mark a break only when no document
-      reports how ownership passed.
-      **The root transfer** is verified on its own instrument only: its
-      sellers' earlier title is outside the 30-year search, so never request
-      documents older than the root.
-   4. **Property type changed?** If the previous transfer conveyed agricultural
-      land and this one conveys a site, house or flat, the land was converted,
-      laid out or built on in between, even if no deed says so. Work out which
-      steps happened and which documents prove each one (see
-      `land_use_approvals`).
-   5. **Decide which documents legally prove this transfer:** its own
-      registered instrument, plus what the topic playbooks require for this kind
-      of transfer and for any change of property type. For each one:
-      - **uploaded:** reopen its examiner report (free) and confirm it really
-        proves this transfer: the right parties, the right property and extent,
-        the right date, registered or issued by the right authority. A document
-        that does not match is a concern, not proof;
-      - **not uploaded:** request it with `add_requisition`, one document per
-        request, naming this transfer.
-   6. **Verdict.** Record it with `record_link_verdict`: the property type and
-      extent, every needed document as found (with citations) or missing (with
-      its requisition), and a one- or two-sentence summary that names any concern
-      or defect. Then move to the next transfer.
-3. **After the last transfer: the whole property today.**
-   - **Encumbrances:** every mortgage or charge has a matching release; the EC
-     reaches the present day; attachments and pending cases are issues.
-   - **Revenue records:** the RTC, mutation and khata follow the last transfer
-     and name the current owner.
-   - **Taxes and approvals:** property tax paid; the building, if any, has its
-     approvals.
-4. **Findings.** Record every problem a buyer must know about with
-   `record_issue`, once each, in plain words, and what checked out with
-   `record_clear_check` (owner name and survey number agree, EC reaches the
-   present day, taxes paid). Keep each one to a short title and one or two
-   short sentences.
-5. **Close** when the "Still to do" line says nothing is left.
+For each transfer you record what proves it, how it connects to the transfer
+before, and what is wrong with it. The application turns that into the result
+(verified, verified with concerns, waiting for documents, defective), the
+requests to the buyer and the findings. Example:
 
-## Continued runs
+```
+2008 sale, Ramesh to Suresh, Sy. 45/2, 2 acres, agricultural land
+connects:  no: the 1995 buyer was Ramappa, not Ramesh
+documents: found   registered sale deed of 2008 (cited)
+           missing legal-heir certificate of Ramappa: shows Ramesh is his heir
+           missing death certificate of Ramappa: shows he died before 2008
+concerns:  none beyond the missing documents
+summary:   Registered sale, but nothing yet shows how Ramesh got the land from Ramappa.
+-> waiting for documents; two requests to the buyer
+```
 
-When the Case File already has requests, first review the open ones: withdraw
-every duplicate (keep one), every request for a document that is already
-uploaded, and every request for title older than the root.
+## Method
 
-## Incremental runs
+1. **Read.** Call `view_case_file` once. The chain marks the root ([ROOT]);
+   transfers before it are outside the 30-year search and need no record.
+   Examine every uploaded document in one turn: history documents (EC,
+   mutation, RTC) and every deed, certificate, order and receipt.
+2. **Fix the chain.** Compare every recital and history entry with the
+   transfers. If a document reports a step the chain lacks (a death, a
+   partition, a release, a conversion), insert it with `insert_transfer`
+   before verifying anything after it. Remove duplicates and entries for
+   another property with `remove_transfer`.
+3. **Verify each transfer, from the root to the current owner, in order:**
+   1. **Read the transaction** from its own instrument: who transferred what
+      to whom, when, how (sale, gift, partition, succession, release ...).
+   2. **Property:** survey or site number, extent, and type (agricultural
+      land, converted plot, layout site, house, flat, commercial, other).
+   3. **Connection:** the transferors must be the previous transfer's
+      acquirers, shown by a document, and the property the one they received
+      (same survey or site number, extent not larger). When someone stands in
+      their place (heirs, a successor company), that step is a transfer of
+      its own: insert it. Record `connects` false only when no document shows
+      how ownership passed. **The root** is verified on its own instrument
+      only: never request documents older than the root.
+   4. **Property type changed?** If the previous transfer conveyed
+      agricultural land and this one conveys a site, house or flat, the land
+      was converted, laid out or built on in between. Work out which documents
+      prove each step (see `land_use_approvals`) and list them.
+   5. **Documents:** list every document that legally proves this transfer:
+      its own registered instrument, plus what the topic playbooks require.
+      An uploaded document is found only after you confirm it proves this
+      transfer (right parties, property, extent, date, registration); cite
+      it. One that is not uploaded is missing.
+   6. **Concerns:** every problem, once, with its severity.
+   7. **Record** it all in one `record_transfer` call, then move on.
+4. **The property today** (`record_property_today`, after the last transfer):
+   - **encumbrances:** every mortgage or charge has a matching release; the
+     EC reaches the present day; attachments and pending cases are concerns.
+   - **revenue_records:** the RTC, mutation and khata follow the last
+     transfer and name the current owner.
+   - **tax_and_approvals:** property tax paid; conversion, layout and
+     building approvals where the property needs them.
+5. **Unexpected findings:** cite each one in a record, or set it aside with
+   a reason it does not affect title.
+6. **Close** when the "Still to do" line says nothing is left.
 
-When documents arrive for requisitions, examine each new document, decide with
-`review_requisition` whether it settles the requisition, then re-record the
-verdict of every transfer it affects. Do not re-examine documents that did not
-change.
+## When documents arrive
+
+Examine each new document, then record again every transfer (or part of the
+property today) its request is for: found if it proves what was needed,
+still missing if it does not. Do not re-examine documents that did not change.
 
 ## Safeguards
 
-- Thirty years is a target, not a reason to invent links. What the documents do
-  not show is a requisition or a limitation.
+- Thirty years is a target, not a reason to invent transfers. What the
+  documents do not show is a missing document or a concern.
 - A clear history entry is not proof of a transfer's validity; the instrument
   and the revenue records are.
-- Never treat a nil or short encumbrance certificate as proof of no encumbrance.
-- Never request a document that is already uploaded: examine it instead.
+- Never treat a nil or short encumbrance certificate as proof of no
+  encumbrance.
+- Never list as missing a document that is already uploaded: examine it.

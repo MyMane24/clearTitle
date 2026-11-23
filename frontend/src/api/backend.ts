@@ -134,19 +134,10 @@ export interface VerificationRun {
   finished_at?: string | null;
 }
 
-export interface VerificationLead { id: string; text: string; source: string; status: "open" | "resolved"; outcome?: string | null; resolution?: string | null }
-export interface VerificationIssue { id: string; severity: "high" | "medium" | "low"; title: string; detail: string; link_ids: string[] }
-export interface VerificationRequisition {
-  id: string;
-  document: string;
-  reason: string;
-  affects: string[];
-  status: "open" | "fulfilled" | "resolved" | "withdrawn";
-  doc_id?: string | null;
-}
 export interface ChainTransaction {
   transaction_type: string;
   transaction_number?: string | null;
+  survey_number?: string | null;
   executed_date?: string | null;
   registration_date?: string | null;
   transferors: string[];
@@ -156,27 +147,45 @@ export interface ChainTransaction {
   source_refs?: { doc_id: string; filename: string }[];
 }
 
-export interface VerificationLink {
-  link_id: string;
-  origin: "phase_a" | "verification";
-  continues_previous: boolean;
-  break_note?: string | null;
-  transaction: ChainTransaction;
-  verdict?: {
-    verdict: string;
-    summary: string;
-    property_type?: string | null;
-    extent?: string | null;
-    needed_documents?: VerificationNeededDocument[];
-  } | null;
-}
-export interface VerificationNeededDocument {
-  document: string;
+export type TransferResult = "verified" | "verified_with_concerns" | "documents_missing" | "defective";
+export type Severity = "high" | "medium" | "low";
+
+/** A document that proves part of a transfer (or of the property today). */
+export interface ProofDocument {
+  name: string;
   proves: string;
   status: "found" | "missing";
-  requisition_id?: string | null;
+  request_id?: string | null;
 }
-export interface VerificationClearCheck { id: string; title: string; detail: string }
+export interface Concern { severity: Severity; text: string }
+
+/** One transfer and, once verified, its whole record. ``result`` is worked out by the backend. */
+export interface VerificationTransfer {
+  id: string;
+  origin: "phase_a" | "verification";
+  transaction: ChainTransaction;
+  added_because?: { note: string } | null;
+  property?: { survey?: string | null; extent?: string | null; type: string } | null;
+  connects?: { ok: boolean; note: string } | null;
+  documents: ProofDocument[];
+  concerns: Concern[];
+  summary?: string | null;
+  result: TransferResult | null;
+  before_root: boolean;
+}
+
+export type SectionName = "encumbrances" | "revenue_records" | "tax_and_approvals";
+export interface PropertySection { note: string; documents: ProofDocument[]; concerns: Concern[]; ok: boolean }
+
+/** A document asked of the buyer; filed and closed by the backend. */
+export interface VerificationRequest {
+  id: string;
+  document: string;
+  reason: string;
+  needed_for: string[];
+  status: "open" | "received" | "settled";
+  doc_id?: string | null;
+}
 export interface VerificationDocument {
   doc_id: string;
   filename: string;
@@ -187,12 +196,10 @@ export interface VerificationDocument {
 }
 
 export interface VerificationCaseFile {
-  chain: VerificationLink[];
+  transfers: VerificationTransfer[];
+  property_today: Record<SectionName, PropertySection | null>;
+  requests: VerificationRequest[];
   documents: Record<string, VerificationDocument>;
-  leads: VerificationLead[];
-  issues: VerificationIssue[];
-  clear_checks?: VerificationClearCheck[];
-  requisitions: VerificationRequisition[];
 }
 
 export interface ReportFinding {

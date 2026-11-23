@@ -1,14 +1,14 @@
 # Skill: Verify one transfer
 
-Load for every chain link: what to confirm for a sale, gift or other transfer instrument.
+Load for every transfer: what to confirm for a sale, gift or other transfer instrument.
 
 > Draft. To be confirmed and extended by the product owner's lawyer instructions.
 
 ## What to confirm
-Confirm each point from the documents; name any that fails or is doubtful in the verdict summary.
-- **Vendor's title:** the transferors acquired this property in the previous link (or a recital explains how), and held the whole interest they convey.
+Confirm each point from the documents. A point that fails or is doubtful is a concern in the transfer's record; a document still needed to confirm it is a missing document.
+- **Vendor's title:** the transferors acquired this property in the previous transfer (or a recital explains how), and held the whole interest they convey.
 - **Parties and capacity:** every co-owner joins; anyone signing for another holds a valid authority (see `gpa_and_capacity`); a minor's share needs court permission (see `minor_property`).
-- **Schedule and extent:** survey or site number, extent and boundaries match the previous link and the revenue records; any difference is explained.
+- **Schedule and extent:** survey or site number, extent and boundaries match the previous transfer and the revenue records; any difference is explained.
 - **Execution and registration:** executed and registered at the proper sub-registrar, with registration number and date.
 - **Stamp duty:** paid and endorsed.
 - **Consideration:** stated and its payment recited.

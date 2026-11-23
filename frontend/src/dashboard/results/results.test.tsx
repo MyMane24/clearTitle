@@ -29,21 +29,32 @@ const STATE: VerificationState = {
   case_id: 'C1',
   run: { id: 'r1', kind: 'full', status: 'done', started_at: '' },
   case_file: {
-    chain: [{
-      link_id: 'PA-TC-0001', origin: 'phase_a', continues_previous: false,
+    transfers: [{
+      id: 'PA-TC-0001', origin: 'phase_a',
       transaction: { transaction_type: 'Sale', executed_date: '06-12-2007', transferors: ['Manohar'], transferees: ['Dinanath'], source_refs: [{ doc_id: 'DOC_018', filename: 'SaleDeed 2007.pdf' }] },
-      verdict: { verdict: 'defective', summary: 'GPA authority not shown.' },
+      property: { type: 'agricultural_land', extent: '2 acres' },
+      documents: [
+        { name: 'Sale deed of 2007', proves: 'The sale itself.', status: 'found' },
+        { name: 'GPA to Girish', proves: 'Authority to sell.', status: 'missing', request_id: 'R1' },
+      ],
+      concerns: [{ severity: 'high', text: 'GPA authority not shown.' }],
+      summary: 'Registered sale by a GPA holder whose authority is not shown.',
+      result: 'defective',
+      before_root: false,
     }],
+    property_today: {
+      encumbrances: { note: 'The EC to date shows no charge.', documents: [], concerns: [], ok: true },
+      revenue_records: null,
+      tax_and_approvals: null,
+    },
+    requests: [
+      { id: 'R1', document: 'Registered GPA to Girish', reason: 'Authority to sell.', needed_for: ['PA-TC-0001'], status: 'open' },
+      { id: 'R2', document: 'Release deed', reason: 'Mortgage.', needed_for: [], status: 'settled' },
+    ],
     documents: {
       DOC_018: { doc_id: 'DOC_018', filename: 'SaleDeed 2007.pdf', document_type: 'SALE_DEED', examined: true },
       DOC_002: { doc_id: 'DOC_002', filename: 'EC 2010 to 2026.pdf', document_type: 'ENCUMBRANCE_CERTIFICATE', examined: true },
     },
-    leads: [],
-    issues: [],
-    requisitions: [
-      { id: 'R1', document: 'Registered GPA to Girish', reason: 'Authority to sell.', affects: ['PA-TC-0001'], status: 'open' },
-      { id: 'R2', document: 'Release deed', reason: 'Mortgage.', affects: ['PA-TC-0001'], status: 'resolved' },
-    ],
   },
   report: {
     version: 1,
@@ -74,18 +85,19 @@ test('report page is one page: opinion, findings and documents needed; no per-tr
   const html = render(STATE);
   order(html, ['Title not clear', 'id="cr-findings-title"', 'id="cr-needed-title"']);
   assert.match(html, /cr-chip cr-tone-bad">1 critical</);
-  assert.match(html, /cr-badge cr-tone-bad">Critical<\/span><h4>Sale of 2007 is defective/);
+  assert.match(html, /cr-badge cr-tone-bad">Critical<\/span><h4>Sale of 2007<\/h4>/);
   assert.doesNotMatch(html, /cr-limits-title|Limitations/);
   assert.doesNotMatch(html, /cr-timeline|cr-docs|Flow of title|Manohar sold to Dinanath|Scrutiny/);
-  // The defective 2007 sale appears as an issue even though no issue was recorded for it.
-  assert.match(html, /Sale of 2007 is defective/);
+  // Without saved findings, the page builds them from the transfer's concerns.
+  assert.match(html, /GPA authority not shown\./);
   assert.match(html, /<h1>CTS 1360B\/9<\/h1>/);  // no schedule in the report: Phase A identity
   assert.match(html, /cr-tab cr-tab-active"[^>]*>.*Verification report/s);
 });
 
-test('chain page: property identity, timeline and documents; no report', () => {
+test('chain page: property identity, timeline, property today and documents; no report', () => {
   const html = render(STATE, false, 'chain');
-  order(html, ['id="cr-identity-title"', 'id="cr-chain-title"', 'id="cr-docs-title"']);
+  order(html, ['id="cr-identity-title"', 'id="cr-chain-title"', 'id="cr-today-title"', 'id="cr-docs-title"']);
+  order(html, ['Encumbrances', 'In order', 'Revenue records', 'Not checked yet']);
   assert.doesNotMatch(html, /cr-issues-title|Documents needed/);
   assert.match(html, /Defective/);  // verdicts show on the timeline
 });
@@ -98,11 +110,11 @@ test('report page before verification explains it and offers to start', () => {
 
 test('each document needed names the transfer it is for, in words, not raw ids', () => {
   const html = render(STATE);
-  assert.match(html, /cr-needed-for">For: Sale 2007</);
+  assert.match(html, /cr-needed-for">For: Sale of 2007</);
   assert.doesNotMatch(html, /PA-TC-\d+|DOC_\d+/);
 });
 
-test('requisitions appear once, with upload only for open ones', () => {
+test('requests appear once, with upload only for open ones', () => {
   const html = render(STATE);
   assert.equal((html.match(/type="file"/g) || []).length, 1);
   assert.match(html, /1 already settled/);
@@ -167,10 +179,10 @@ test('while a run is in progress only this run\u2019s steps show, not the previo
   assert.doesNotMatch(html, /cr-issues-title|Title not clear|Documents needed/);
 });
 
-test('timeline uses verified links with coloured verdicts, else the draft chain', () => {
-  const verified = renderToStaticMarkup(<ChainTimeline links={timelineLinks(STATE.case_file!.chain, [])} />);
+test('timeline uses the transfer records with coloured results, else the draft chain', () => {
+  const verified = renderToStaticMarkup(<ChainTimeline links={timelineLinks(STATE.case_file!.transfers, [])} />);
   assert.match(verified, /cr-tone-bad">Defective/);
-  assert.match(verified, /GPA authority not shown/);
+  assert.match(verified, /cr-badge cr-tone-bad">Critical<\/span><span>GPA authority not shown/);
   const draft = renderToStaticMarkup(<ChainTimeline links={timelineLinks(undefined, RESULTS.agent.title_chain)} />);
   assert.match(draft, /Manohar → Dinanath/);
 });
@@ -190,8 +202,8 @@ test('labels and polling helpers', () => {
   assert.equal(humanizeType('PROPERTY_REGISTER_CARD'), 'Property register card');
   assert.equal(refLabeller(STATE.case_file)('DOC_002'), 'EC 2010 to 2026.pdf');
   assert.equal(refLabeller(null)('see PA-TC-0009 and DOC_099'), 'see a transfer and the document');
-  const nested = { ...STATE.case_file!, leads: [{ id: 'L1', text: 'Follow up on R1.', source: 'EC', status: 'open' as const }] };
-  assert.equal(refLabeller(nested)('L1'), 'Follow up on Registered GPA to Girish.');
+  assert.equal(refLabeller(STATE.case_file)('Follow up on R1.'), 'Follow up on Registered GPA to Girish.');
+  assert.equal(refLabeller(STATE.case_file)('encumbrances'), 'Encumbrances');
   const run = { id: 'r', kind: 'full' as const, started_at: '' };
   assert.equal(shouldPoll(null, null, 0), false);
   assert.equal(shouldPoll({ ...STATE, run: { ...run, status: 'running' } }, null, 0), true);
@@ -207,7 +219,7 @@ test('live feed reads in words, even for saved steps that mention ids', () => {
     { id: 3, run_id: 'r', kind: 'chain', text: 'Break before PA-TC-0001: R1 covers it', created_at: '' },
   ]} />);
   assert.match(html, /Reading SaleDeed 2007\.pdf pages 1-2/);
-  assert.match(html, /Break before Sale 2007: Registered GPA to Girish covers it/);
+  assert.match(html, /Break before Sale of 2007: Registered GPA to Girish covers it/);
   assert.doesNotMatch(html, /PA-TC-0001|DOC_018|>R1</);
 });
 
@@ -221,7 +233,7 @@ test('saved report text written with ids renders in words', () => {
     },
   };
   const html = render(state);
-  assert.match(html, /See Sale 2007 and SaleDeed 2007\.pdf; request Registered GPA to Girish/);
+  assert.match(html, /See Sale of 2007 and SaleDeed 2007\.pdf; request Registered GPA to Girish/);
   assert.doesNotMatch(html, /PA-TC-0001|DOC_018|\bI1\b|\bL1\b|\bR1\b/);
 });
 
@@ -247,39 +259,27 @@ test('after verification, a document left unread is shown as not examined', () =
   assert.match(html, /EC 2010 to 2026\.pdf.*?Not examined/s);
 });
 
-test('chain page shows what each transfer conveyed and the documents that prove it', () => {
-  const link = STATE.case_file!.chain[0];
-  const state: VerificationState = {
-    ...STATE,
-    case_file: {
-      ...STATE.case_file!,
-      chain: [{
-        ...link,
-        verdict: {
-          ...link.verdict!,
-          property_type: 'agricultural_land',
-          extent: '2 acres',
-          needed_documents: [
-            { document: 'Sale deed of 2007', proves: 'The sale itself.', status: 'found' },
-            { document: 'GPA to Girish', proves: 'Authority to sell.', status: 'missing', requisition_id: 'R1' },
-          ],
-        },
-      }],
-      clear_checks: [{ id: 'C1', title: 'Owner name matches', detail: 'Same name in deed and RTC.' }],
-    },
-  };
-  const html = render(state, false, 'chain');
+test('chain page shows what each transfer conveyed, the documents that prove it and its concerns', () => {
+  const html = render(STATE, false, 'chain');
   assert.match(html, /cr-type">Agricultural land</);
   assert.match(html, /Sale deed of 2007.*?Found.*?GPA to Girish.*?Needed/s);
+  assert.match(html, /Registered sale by a GPA holder whose authority is not shown\./);
 });
 
-test('the chain page shows the Phase A chain, with each transfer carrying its verdict', () => {
-  const inserted = { ...STATE.case_file!.chain[0], link_id: 'VL-1', origin: 'verification' as const };
-  const links = timelineLinks([inserted, ...STATE.case_file!.chain], RESULTS.agent.title_chain);
-  assert.deepEqual(links.map(link => link.id), ['PA-TC-0001']);  // the inserted link is not shown
-  const html = renderToStaticMarkup(<ChainTimeline links={links} />);
-  assert.match(html, /Manohar → Dinanath/);  // Phase A parties
-  assert.match(html, /cr-tone-bad">Defective/);  // the verdict from verification
+test('a transfer added during verification is shown with why it was added', () => {
+  const inserted = {
+    ...STATE.case_file!.transfers[0],
+    id: 'VL-1', origin: 'verification' as const, added_because: { note: 'The 2010 deed recites it.' },
+  };
+  const html = renderToStaticMarkup(<ChainTimeline links={timelineLinks([inserted], RESULTS.agent.title_chain)} />);
+  assert.match(html, /Added during verification/);
+  assert.match(html, /Why it was added: The 2010 deed recites it\./);
+});
+
+test('a break shows above the transfer it comes before', () => {
+  const broken = { ...STATE.case_file!.transfers[0], connects: { ok: false, note: 'No deed from Manohar.' } };
+  const html = renderToStaticMarkup(<ChainTimeline links={timelineLinks([broken], [])} />);
+  assert.match(html, /cr-break.*?Break in the chain: No deed from Manohar\./s);
 });
 
 test('after a run, the report page shows no agent steps', () => {

@@ -108,17 +108,18 @@ def test_repeated_failure_becomes_a_limitation():
     assert "cannot be examined" in examine(ctx)
 
 
-def test_examining_a_document_reopens_stale_verdicts_that_rest_on_it():
+def test_examining_a_document_reopens_stale_records_that_rest_on_it():
     model = scripted_model([("result", report())])
     ctx, _ = make_ctx(model)
     case = ctx.deps.case
-    stale = cf.LinkVerdict(
-        verdict="unverified_missing_document",
-        summary="Deed unreadable.",
-    )
-    case.link("PA-TC-0002").verdict = stale  # sources EC + D2010
-    case.link("PA-TC-0003").verdict = stale  # sources EC + D2018: untouched
+    for transfer_id in ("PA-TC-0002", "PA-TC-0003"):  # sources EC + D2010, EC + D2018
+        transfer = case.transfer(transfer_id)
+        transfer.property = cf.Property(type="agricultural_land")
+        transfer.documents = [
+            cf.ProofDocument(name="Sale deed", proves="The sale.", status="missing")
+        ]
+        transfer.summary = "Deed unreadable."
     text = examine(ctx)
-    assert case.link("PA-TC-0002").verdict is None
-    assert case.link("PA-TC-0003").verdict is not None
-    assert "NEEDS A NEW VERDICT" in text and "PA-TC-0002" in text
+    assert not case.transfer("PA-TC-0002").recorded
+    assert case.transfer("PA-TC-0003").recorded  # its own sources were not re-read
+    assert "VERIFY AGAIN" in text and "PA-TC-0002" in text

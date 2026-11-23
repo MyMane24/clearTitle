@@ -8,9 +8,9 @@ from backend.services.verification.events import ListSink, record_node
 
 def tool_round(index, size=20, args_size=10):
     call = ModelResponse(
-        parts=[ToolCallPart("record_issue", {"detail": "d" * args_size}, f"call-{index}")]
+        parts=[ToolCallPart("record_transfer", {"detail": "d" * args_size}, f"call-{index}")]
     )
-    result = ModelRequest(parts=[ToolReturnPart("record_issue", "r" * size, f"call-{index}")])
+    result = ModelRequest(parts=[ToolReturnPart("record_transfer", "r" * size, f"call-{index}")])
     return [call, result]
 
 
@@ -65,7 +65,10 @@ def test_lead_has_no_skill_loading_or_task_tools():
 
     names = {name for toolset in LEAD_TOOLSETS for name in toolset.tools}
     assert "load_skill" not in names and "update_tasks" not in names
-    assert {"examine_document", "add_requisition", "record_link_verdict"} <= names
+    assert names == {
+        "view_case_file", "record_transfer", "record_property_today", "insert_transfer",
+        "remove_transfer", "set_aside", "read_pages", "examine_document",
+    }  # fmt: skip
 
 
 class FakeCallToolsNode:
@@ -99,7 +102,7 @@ def test_snapshot_lists_each_documents_recitals_and_unexpected_findings():
     )
     text = context.render_case_file(case)
     assert "recital F1 p.2: Vendor got it by 2005 partition" in text
-    assert "unexpected F2 p.1: A minor co-vendor" in text
+    assert "unexpected FOLLOW UP F2 p.1: A minor co-vendor" in text
     assert "TASKS" not in text
 
 
@@ -113,7 +116,9 @@ def test_lean_snapshot_for_the_first_prompt_leaves_out_recitals():
     entry.report = cf.ExaminerReport(
         doc_id="D2010",
         summary="2010 sale deed.",
-        recitals=[cf.Fact(topic="title", text="Vendor got it by 2005 partition", page=2, quote="q")],
+        recitals=[
+            cf.Fact(topic="title", text="Vendor got it by 2005 partition", page=2, quote="q")
+        ],
     )
     assert "2005 partition" in context.render_case_file(case)
     lean = context.render_case_file(case, lean=True)
