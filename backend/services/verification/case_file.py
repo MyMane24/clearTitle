@@ -19,14 +19,13 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from backend.schemas.chain import DocumentedTransaction
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 LinkVerdictKind = Literal[
     "verified", "verified_with_concerns", "unverified_missing_document", "defective"
 ]
-CheckStatus = Literal["ok", "concern", "failed", "not_verifiable"]
 Severity = Literal["high", "medium", "low"]
 PropertyType = Literal[
     "agricultural_land", "converted_plot", "layout_site", "house", "flat", "commercial", "other",
@@ -125,13 +124,6 @@ class DocumentEntry(_Model):
     )
 
 
-class CheckResult(_Model):
-    check: Text = Field(description="e.g. vendor title, extent, registration, stamp duty.")
-    status: CheckStatus
-    note: Text
-    citations: list[Citation] = Field(default_factory=list)
-
-
 class NeededDocument(_Model):
     """A document that legally proves part of one transfer, as the Lead judged it."""
 
@@ -149,7 +141,6 @@ class NeededDocument(_Model):
 class LinkVerdict(_Model):
     verdict: LinkVerdictKind
     summary: Text
-    checks: list[CheckResult] = Field(min_length=1)
     property_type: PropertyType | None = None
     extent: str | None = None
     needed_documents: list[NeededDocument] = Field(default_factory=list)
@@ -338,6 +329,11 @@ def migrate(data: dict) -> dict:
             for link in data.get("chain") or []
         ]
         data["schema_version"] = version = 2
+    if version == 2:  # 2026-11-23: verdicts no longer carry a checks list
+        for link in data.get("chain") or []:
+            if isinstance(link.get("verdict"), dict):
+                link["verdict"] = {k: v for k, v in link["verdict"].items() if k != "checks"}
+        data["schema_version"] = version = 3
     return data
 
 

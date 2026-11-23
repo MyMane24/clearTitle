@@ -231,7 +231,6 @@ def test_opinion_rules_follow_the_case_file():
     verdict = cf.LinkVerdict(
         verdict="verified",
         summary="ok",
-        checks=[cf.CheckResult(check="title", status="ok", note="ok")],
     )
     for link in case.chain:
         link.verdict = verdict
@@ -276,7 +275,6 @@ def test_issues_section_adds_defects_and_breaks_no_issue_covers():
     defective = cf.LinkVerdict(
         verdict="defective",
         summary="Sellers' title not shown.",
-        checks=[cf.CheckResult(check="title", status="failed", note="x")],
     )
     case.chain[2].verdict = defective  # PA-TC-0003, 2018 sale
     case.chain[1].continues_previous = False  # break before PA-TC-0002

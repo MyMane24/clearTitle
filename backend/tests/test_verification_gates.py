@@ -18,7 +18,6 @@ def verdict(kind="verified"):
     return cf.LinkVerdict(
         verdict=kind,
         summary="Checked.",
-        checks=[cf.CheckResult(check="vendor title", status="ok", note="Fine.")],
     )
 
 

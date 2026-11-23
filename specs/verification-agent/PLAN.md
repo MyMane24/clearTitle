@@ -153,6 +153,7 @@ These refine the design below. Where they differ from a later section, these win
     - **Older reports** (saved with sections) are converted when read (`DueDiligenceReport._from_older_shape`), so v1–v4 still display.
     - **Writer input is a short text, not the Case File JSON:** each in-window transfer's verdict and summary, breaks, issues, open requests, unreadable documents and passed checks, in words without ids (`report.report_input`). On 8A14D132 it dropped from 85K to 6K characters.
     - **One property type per transfer:** `DocumentedTransaction.property_type` (Phase A's free-text label) is removed; the verdict's `property_type` (a fixed list) is the only one. Saved chains and Case Files that still carry it load unchanged; the field is dropped on read.
+    - **No `checks` list on a verdict** (product owner's decision, 2026-11-23). A verdict is its result, summary, property type, extent and `needed_documents`. The evidence rules run on the found documents' citations: each must be a real examiner fact, none may be an encumbrance certificate, and any verdict other than "document missing" needs at least one found document. A concern or defect is named in the summary (and becomes a finding). The playbooks keep the legal checklist as guidance. Case File schema 3 strips `checks` from stored verdicts.
     - **Case File schema 2** drops fields nothing read: `tasks`, `property_identity`, and each link's `amendments` and `related_events`. `migrate` removes them from stored version-1 files. The live feed still records every chain correction.
 
 ---

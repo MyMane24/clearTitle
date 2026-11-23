@@ -57,15 +57,13 @@ def judged(ctx, *link_ids):
     """Give earlier links a verdict, so a later one may be judged (oldest first)."""
     for link_id in link_ids:
         ctx.deps.case.link(link_id).verdict = cf.LinkVerdict(
-            verdict="verified",
-            summary="Earlier transfer.",
-            checks=[cf.CheckResult(check="vendor title", status="ok", note="ok")],
+            verdict="verified", summary="Earlier transfer."
         )
 
 
-def record(ctx, link_id, verdict, summary, checks, needed):
+def record(ctx, link_id, verdict, summary, needed):
     return tools.record_link_verdict(
-        ctx, link_id, verdict, summary, checks, "agricultural_land", "2 acres 10 guntas", needed
+        ctx, link_id, verdict, summary, "agricultural_land", "2 acres 10 guntas", needed
     )
 
 
@@ -74,79 +72,57 @@ SALE_1998 = found("D1998", 1, "Purchaser: Basavaraj")
 
 def test_verdict_is_recorded_with_valid_evidence():
     ctx, sink = make_ctx()
-    check = cf.CheckResult(
-        check="vendor title",
-        status="ok",
-        note="Vendor bought in 1998.",
-        citations=[cite("D1998", 1, "Purchaser: Basavaraj")],
-    )
-    record(ctx, "PA-TC-0001", "verified", "Clean sale.", [check], [SALE_1998])
+    record(ctx, "PA-TC-0001", "verified", "Clean sale.", [SALE_1998])
     verdict = ctx.deps.case.link("PA-TC-0001").verdict
     assert verdict.verdict == "verified" and verdict.property_type == "agricultural_land"
     assert verdict.needed_documents[0].status == "found"
     assert sink.texts("verdict")
 
 
-def test_ok_check_without_citation_is_refused():
+def test_found_document_without_citation_is_refused():
     ctx, _ = make_ctx()
-    check = cf.CheckResult(check="vendor title", status="ok", note="Looks fine.")
+    uncited = cf.NeededDocument(document="Sale deed of 1998", proves="The sale.", status="found")
     with pytest.raises(ModelRetry, match="cites nothing"):
-        record(ctx, "PA-TC-0001", "verified", "Clean.", [check], [SALE_1998])
+        record(ctx, "PA-TC-0001", "verified", "Clean.", [uncited])
     assert ctx.deps.case.link("PA-TC-0001").verdict is None
 
 
 def test_ec_cannot_prove_a_transfer():
     ctx, _ = make_ctx()
     judged(ctx, "PA-TC-0001")
-    check = cf.CheckResult(
-        check="registration",
-        status="ok",
-        note="EC shows it.",
-        citations=[cite("EC", 2, "Partition deed among Basavaraj")],
-    )
-    with pytest.raises(ModelRetry, match="encumbrance certificate"):
-        record(ctx, "PA-TC-0002", "verified", "x", [check], [SALE_1998])
     ec_as_document = found("EC", 2, "Partition deed among Basavaraj", "Encumbrance certificate")
-    good = cf.CheckResult(
-        check="vendor title", status="ok", note="ok", citations=SALE_1998.citations
-    )
     with pytest.raises(ModelRetry, match="encumbrance certificate"):
-        record(ctx, "PA-TC-0002", "verified", "x", [good], [ec_as_document])
+        record(ctx, "PA-TC-0002", "verified", "x", [ec_as_document])
 
 
-def test_verdict_must_match_its_checks():
+def test_a_defect_is_recorded_with_its_evidence():
     ctx, _ = make_ctx()
     judged(ctx, "PA-TC-0001")
-    check = cf.CheckResult(
-        check="court permission",
-        status="failed",
-        note="None for minor.",
-        citations=[cite("D2010", 1, "Bhimesh (minor")],
-    )
     deed = found("D2010", 1, "Bhimesh (minor")
-    with pytest.raises(ModelRetry, match="verified needs every check ok"):
-        record(ctx, "PA-TC-0002", "verified", "x", [check], [deed])
-    record(ctx, "PA-TC-0002", "defective", "Minor's share.", [check], [deed])
+    record(ctx, "PA-TC-0002", "defective", "A minor's share was sold without permission.", [deed])
+    assert ctx.deps.case.link("PA-TC-0002").verdict.verdict == "defective"
 
 
 def test_evidence_free_verdict_is_refused():
     ctx, _ = make_ctx()
     judged(ctx, "PA-TC-0001", "PA-TC-0002")
-    check = cf.CheckResult(check="vendor title", status="concern", note="Upstream gap.")
-    with pytest.raises(ModelRetry, match="must cite evidence"):
-        record(ctx, "PA-TC-0003", "verified_with_concerns", "x", [check], [SALE_1998])
+    tools.add_requisition(ctx, "Sale deed of 2018", "The sale itself.", ["PA-TC-0003"])
+    missing = cf.NeededDocument(
+        document="Sale deed of 2018", proves="The sale.", status="missing", requisition_id="R1"
+    )
+    with pytest.raises(ModelRetry, match="must rest on evidence"):
+        record(ctx, "PA-TC-0003", "verified_with_concerns", "x", [missing])
 
 
 def test_examined_deed_can_still_miss_a_supporting_document():
     ctx, _ = make_ctx()
     judged(ctx, "PA-TC-0001")
     tools.add_requisition(ctx, "Court permission for the minor", "Minor's share.", ["PA-TC-0001"])
-    missing = cf.CheckResult(check="court permission", status="not_verifiable", note="Not seen.")
     deed = found("D2010", 1, "Bhimesh (minor")
     permission = cf.NeededDocument(
         document="Court permission", proves="Minor's share.", status="missing", requisition_id="R1"
     )
-    record(ctx, "PA-TC-0002", "unverified_missing_document", "x", [missing], [deed, permission])
+    record(ctx, "PA-TC-0002", "unverified_missing_document", "x", [deed, permission])
     # The requisition is now linked to the transfer that needs it.
     assert "PA-TC-0002" in ctx.deps.case.requisition("R1").affects
 
@@ -166,45 +142,33 @@ def test_citing_the_examiners_wording_cites_the_verified_quote():
             )
         ],
     )
-    check = cf.CheckResult(
-        check="vendor title",
-        status="ok",
-        note="ok",
-        citations=[cite("D1998", 3, "Basavaraj bought the land from Anand Rao")],
-    )
-    record(ctx, "PA-TC-0001", "verified", "Clean sale.", [check], [SALE_1998])
-    saved = ctx.deps.case.link("PA-TC-0001").verdict.checks[0].citations[0]
+    deed = found("D1998", 3, "Basavaraj bought the land from Anand Rao")
+    record(ctx, "PA-TC-0001", "verified", "Clean sale.", [deed])
+    saved = ctx.deps.case.link("PA-TC-0001").verdict.needed_documents[0].citations[0]
     assert (saved.quote, saved.page) == ("Purchaser: Basavaraj", 1)
 
 
 def test_transfers_are_verified_oldest_first():
     ctx, _ = make_ctx()
-    check = cf.CheckResult(
-        check="vendor title", status="ok", note="ok", citations=SALE_1998.citations
-    )
     with pytest.raises(ModelRetry, match="earlier transfers first, oldest first: PA-TC-0001"):
-        record(ctx, "PA-TC-0002", "verified", "x", [check], [SALE_1998])
+        record(ctx, "PA-TC-0002", "verified", "x", [SALE_1998])
 
 
 def test_a_missing_needed_document_needs_its_requisition():
     ctx, _ = make_ctx()
-    missing = cf.CheckResult(check="instrument", status="not_verifiable", note="Not seen.")
     deed = cf.NeededDocument(document="Sale deed of 1998", proves="The sale.", status="missing")
     with pytest.raises(ModelRetry, match="add it with add_requisition first"):
-        record(ctx, "PA-TC-0001", "unverified_missing_document", "x", [missing], [deed])
+        record(ctx, "PA-TC-0001", "unverified_missing_document", "x", [deed])
     with pytest.raises(ModelRetry, match="List the documents"):
-        record(ctx, "PA-TC-0001", "unverified_missing_document", "x", [missing], [])
+        record(ctx, "PA-TC-0001", "unverified_missing_document", "x", [])
 
 
 def test_a_break_must_be_settled_before_judging_the_next_transfer():
     ctx, _ = make_ctx()
     judged(ctx, "PA-TC-0001")
     ctx.deps.case.link("PA-TC-0002").continues_previous = False
-    check = cf.CheckResult(
-        check="vendor title", status="ok", note="ok", citations=SALE_1998.citations
-    )
     with pytest.raises(ModelRetry, match="Settle how ownership reached"):
-        record(ctx, "PA-TC-0002", "verified", "x", [check], [SALE_1998])
+        record(ctx, "PA-TC-0002", "verified", "x", [SALE_1998])
 
 
 def test_links_older_than_thirty_years_are_outside_the_window():
@@ -485,16 +449,12 @@ def test_citing_a_fact_by_its_number_cites_its_verified_quote():
             cf.Party(name="Basavaraj", role="purchaser", page=1, quote="Purchaser: Basavaraj")
         ],
     )
-    check = cf.CheckResult(
-        check="vendor title", status="ok", note="ok", citations=[cite("D1998", 1, "F2")]
-    )
-    record(ctx, "PA-TC-0001", "verified", "Clean sale.", [check], [SALE_1998])
-    saved = ctx.deps.case.link("PA-TC-0001").verdict.checks[0].citations[0]
+    record(ctx, "PA-TC-0001", "verified", "Clean sale.", [found("D1998", 1, "F2")])
+    saved = ctx.deps.case.link("PA-TC-0001").verdict.needed_documents[0].citations[0]
     assert saved.quote == "Purchaser: Basavaraj"  # F1 instrument, F2 the party
-    bad = cf.CheckResult(check="x", status="ok", note="ok", citations=[cite("D1998", 1, "F9")])
     ctx.deps.case.link("PA-TC-0001").verdict = None
     with pytest.raises(ModelRetry, match="not in D1998"):
-        record(ctx, "PA-TC-0001", "verified", "Clean.", [bad], [SALE_1998])
+        record(ctx, "PA-TC-0001", "verified", "Clean.", [found("D1998", 1, "F9")])
 
 
 def test_view_case_file_is_short_when_nothing_changed():

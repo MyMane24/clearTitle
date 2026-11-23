@@ -68,15 +68,6 @@ def cite(doc_id, page, quote):
     return {"doc_id": doc_id, "page": page, "quote": quote}
 
 
-def check(name, status, citations=()):
-    return {
-        "check": name,
-        "status": status,
-        "note": f"{name}: {status}.",
-        "citations": list(citations),
-    }
-
-
 def found(doc_id, page, quote):
     return {
         "document": "Registered instrument of this transfer",
@@ -95,14 +86,13 @@ def missing(document, requisition_id):
     }
 
 
-def verdict(link_id, kind, summary, checks, needed):
+def verdict(link_id, kind, summary, needed):
     return (
         "record_link_verdict",
         {
             "link_id": link_id,
             "verdict": kind,
             "summary": summary,
-            "checks": checks,
             "property_type": "agricultural_land",
             "extent": "2 acres 10 guntas",
             "needed_documents": needed,
@@ -171,7 +161,6 @@ FULL_RUN_STEPS = [
             "PA-TC-0001",
             "verified",
             "Registered sale by Anand Rao.",
-            [check("vendor title", "ok", [cite("D1998", 1, "Purchaser: Basavaraj")])],
             [found("D1998", 1, "Purchaser: Basavaraj")],
         )
     ],
@@ -180,7 +169,6 @@ FULL_RUN_STEPS = [
             "VL-1",
             "unverified_missing_document",
             "Known only from a recital.",
-            [check("partition instrument", "not_verifiable")],
             [missing("Partition deed of 2005", "R1")],
         )
     ],
@@ -189,7 +177,6 @@ FULL_RUN_STEPS = [
             "PA-TC-0002",
             "defective",
             "Minor's share sold without court permission.",
-            [check("parties and capacity", "failed", [cite("D2010", 1, "Bhimesh (minor")])],
             [found("D2010", 1, "Bhimesh (minor")],
         )
     ],
@@ -198,7 +185,6 @@ FULL_RUN_STEPS = [
             "PA-TC-0003",
             "verified",
             "Registered sale to Deepa.",
-            [check("vendor title", "ok", [cite("D2018", 1, "Vendor: Chandrashekar")])],
             [found("D2018", 1, "Vendor: Chandrashekar")],
         )
     ],
@@ -303,7 +289,6 @@ def test_incremental_run_examines_only_the_uploaded_document():
                 "VL-1",
                 "verified",
                 "Registered partition allotting Schedule B to Basavaraj.",
-                [check("allotment", "ok", [cite("PD2005", 1, "Schedule B allotted")])],
                 [found("PD2005", 1, "Schedule B allotted")],
             ),
         ],

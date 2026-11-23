@@ -52,9 +52,10 @@ one connects to the one before it, and nothing burdens the title.
         that does not match is a concern, not proof;
       - **not uploaded:** request it with `add_requisition`, one document per
         request, naming this transfer.
-   6. **Verdict.** Record it with `record_link_verdict`: the checks, the property
-      type and extent, and every needed document as found (with citations) or
-      missing (with its requisition). Then move to the next transfer.
+   6. **Verdict.** Record it with `record_link_verdict`: the property type and
+      extent, every needed document as found (with citations) or missing (with
+      its requisition), and a one- or two-sentence summary that names any concern
+      or defect. Then move to the next transfer.
 3. **After the last transfer: the whole property today.**
    - **Encumbrances:** every mortgage or charge has a matching release; the EC
      reaches the present day; attachments and pending cases are issues.

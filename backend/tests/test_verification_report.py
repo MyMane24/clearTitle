@@ -11,7 +11,6 @@ def verified(case):
         link.verdict = cf.LinkVerdict(
             verdict="verified",
             summary="ok",
-            checks=[cf.CheckResult(check="vendor title", status="ok", note="ok")],
         )
     return case
 

@@ -48,7 +48,7 @@ def test_version_1_case_file_drops_the_unused_fields():
     for link in data["chain"]:
         link.update(amendments=["Corrected: x"], related_events=[])
     case = cf.load(data)
-    assert case.schema_version == 2
+    assert case.schema_version == cf.SCHEMA_VERSION
     assert case.model_dump(mode="json")["chain"][0].keys() >= {"link_id", "transaction"}
     assert "amendments" not in case.model_dump(mode="json")["chain"][0]
 
@@ -58,6 +58,20 @@ def test_saved_transactions_with_the_old_property_type_still_load():
     data["chain"][0]["transaction"]["property_type"] = "Residential plot"
     case = cf.load(data)
     assert "property_type" not in case.chain[0].transaction.model_dump()
+
+
+def test_saved_verdicts_with_checks_still_load():
+    data = new_case_file().model_dump(mode="json")
+    data["schema_version"] = 2
+    data["chain"][0]["verdict"] = {
+        "verdict": "verified",
+        "summary": "Clean sale.",
+        "checks": [{"check": "vendor title", "status": "ok", "note": "ok", "citations": []}],
+    }
+    case = cf.load(data)
+    assert case.schema_version == 3
+    assert case.chain[0].verdict.summary == "Clean sale."
+    assert "checks" not in case.chain[0].verdict.model_dump()
 
 
 def test_text_hash_changes_with_text():

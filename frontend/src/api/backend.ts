@@ -165,7 +165,6 @@ export interface VerificationLink {
   verdict?: {
     verdict: string;
     summary: string;
-    checks?: { check: string; status: string; note: string }[];
     property_type?: string | null;
     extent?: string | null;
     needed_documents?: VerificationNeededDocument[];

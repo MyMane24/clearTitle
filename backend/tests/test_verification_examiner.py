@@ -115,7 +115,6 @@ def test_examining_a_document_reopens_stale_verdicts_that_rest_on_it():
     stale = cf.LinkVerdict(
         verdict="unverified_missing_document",
         summary="Deed unreadable.",
-        checks=[cf.CheckResult(check="instrument", status="not_verifiable", note="x")],
     )
     case.link("PA-TC-0002").verdict = stale  # sources EC + D2010
     case.link("PA-TC-0003").verdict = stale  # sources EC + D2018: untouched

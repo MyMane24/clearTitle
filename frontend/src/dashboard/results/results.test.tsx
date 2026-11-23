@@ -32,7 +32,7 @@ const STATE: VerificationState = {
     chain: [{
       link_id: 'PA-TC-0001', origin: 'phase_a', continues_previous: false,
       transaction: { transaction_type: 'Sale', executed_date: '06-12-2007', transferors: ['Manohar'], transferees: ['Dinanath'], source_refs: [{ doc_id: 'DOC_018', filename: 'SaleDeed 2007.pdf' }] },
-      verdict: { verdict: 'defective', summary: 'GPA authority not shown.', checks: [{ check: 'capacity', status: 'failed', note: 'No GPA.' }] },
+      verdict: { verdict: 'defective', summary: 'GPA authority not shown.' },
     }],
     documents: {
       DOC_018: { doc_id: 'DOC_018', filename: 'SaleDeed 2007.pdf', document_type: 'SALE_DEED', examined: true },

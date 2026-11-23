@@ -18,7 +18,6 @@ from pydantic_ai.toolsets import FunctionToolset
 from backend.schemas.chain import DocumentedTransaction, SourceRef
 from backend.services.verification.case_file import (
     WINDOW_YEARS,
-    CheckResult,
     Citation,
     ClearCheck,
     Issue,
@@ -281,24 +280,23 @@ def record_link_verdict(
     link_id: str,
     verdict: LinkVerdictKind,
     summary: str,
-    checks: list[CheckResult],
     property_type: PropertyType,
     extent: str,
     needed_documents: list[NeededDocument],
 ) -> str:
     """Record the verification result for one transfer. Verify transfers oldest first.
 
-    Every check marked ok must cite the passage that proves it. An encumbrance
-    certificate cannot be cited as proof of a transfer.
+    Every document marked found must cite the passages that show it proves this
+    transfer. An encumbrance certificate cannot be cited as proof of a transfer.
 
     Args:
         link_id: The transfer verified.
-        verdict: verified (every check ok, no document missing), verified_with_concerns
-            (some concern, none failed), unverified_missing_document (a needed
-            document is missing), or defective (a check failed).
-        summary: One or two sentences for the report.
-        checks: The individual checks (vendor title, parties and capacity,
-            schedule and extent, execution, registration, stamp duty, consideration).
+        verdict: verified (every needed document found and in order),
+            verified_with_concerns (proven, with a concern the summary names),
+            unverified_missing_document (a needed document is missing), or defective
+            (the documents show the transfer is not valid; the summary says why).
+        summary: One or two sentences for the chain page and the report: the result
+            and, for a concern or defect, what is wrong.
         property_type: What this transfer conveyed, as its instrument describes it.
         extent: The extent conveyed, as the instrument states it.
         needed_documents: Every document that legally proves this transfer, as you
@@ -308,37 +306,21 @@ def record_link_verdict(
     deps = ctx.deps
     link = _link(deps, link_id)
     _require(_order_problems(deps, link))
-    statuses = {check.status for check in checks}
-    citations = [citation for check in checks for citation in check.citations]
     problems = _needed_document_problems(deps, link_id, verdict, needed_documents)
-    problems += [
-        f"Check {check.check!r} is ok but cites nothing. Cite the passage that proves it."
-        for check in checks
-        if check.status == "ok" and not check.citations
-    ]
-    if verdict == "verified" and statuses != {"ok"}:
-        problems.append("verified needs every check ok.")
-    if verdict == "defective" and "failed" not in statuses:
-        problems.append("defective needs at least one failed check.")
-    if verdict == "verified_with_concerns" and ("failed" in statuses or "concern" not in statuses):
-        problems.append("verified_with_concerns needs a concern and no failed check.")
-    if verdict != "unverified_missing_document" and not citations:
+    if verdict != "unverified_missing_document" and not any(
+        item.status == "found" for item in needed_documents
+    ):
         problems.append(
-            f"A {verdict} verdict must cite evidence. Reopen the saved examiner reports of "
-            "this link's documents with examine_document (free) and cite their passages."
+            f"A {verdict} verdict must rest on evidence: mark the documents you examined as "
+            "found and cite their passages. Reopen saved examiner reports with "
+            "examine_document (free)."
         )
-    problems += citation_problems(deps.gate_context, citations)
-    problems += link_evidence_problems(deps.gate_context, citations)
     problems += _plain("summary", summary)
-    for check in checks:
-        problems += _plain(f"Check {check.check!r} name", check.check)
-        problems += _plain(f"Check {check.check!r} note", check.note)
     problems += _plain("extent", extent)
     _require(problems)
     link.verdict = LinkVerdict(
         verdict=verdict,
         summary=summary,
-        checks=checks,
         property_type=property_type,
         extent=extent,
         needed_documents=needed_documents,

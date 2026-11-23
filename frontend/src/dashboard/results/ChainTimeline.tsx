@@ -50,8 +50,6 @@ type Label = (text: string) => string;
 
 const plain: Label = text => text;
 
-const CHECK_TONE: Record<string, string> = { ok: 'good', failed: 'bad', concern: 'warn' };
-
 /** The title chain as a vertical timeline, earliest first; each transfer opens for detail. */
 export function ChainTimeline({ links, label = plain }: { links: TimelineLink[]; label?: Label }) {
   if (!links.length) return <p className="cr-muted">The title chain is not available yet.</p>;
@@ -100,13 +98,6 @@ export function ChainTimeline({ links, label = plain }: { links: TimelineLink[];
                         <span><b>{label(doc.document)}</b> {label(doc.proves)}</span>
                         <span className={`cr-status cr-tone-${doc.status === 'found' ? 'good' : 'warn'}`}>{doc.status === 'found' ? 'Found' : 'Needed'}</span>
                       </li>
-                    ))}
-                  </ul>
-                )}
-                {link.verdict?.checks && link.verdict.checks.length > 0 && (
-                  <ul className="cr-checks">
-                    {link.verdict.checks.map((check, i) => (
-                      <li key={i}><span className={`cr-dot cr-tone-${CHECK_TONE[check.status] || 'neutral'}`} /> <b>{label(check.check)}</b> {label(check.note)}</li>
                     ))}
                   </ul>
                 )}
