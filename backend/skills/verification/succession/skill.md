@@ -19,7 +19,7 @@ Load when an owner died and the property passed to heirs, by will or by intestat
 - A minor heir's share is sold only with court permission (see `minor_property`).
 - Heirs are never inferred from similar names.
 
-## Requisitions (only what is missing)
+## Missing documents (list each one that is not uploaded)
 - Death certificate, if not uploaded.
 - A heirship document (family tree or legal heir certificate), if not uploaded.
 - The mutation in the heirs' names, if the revenue records do not show it.

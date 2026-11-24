@@ -80,7 +80,7 @@ CLEARTITLE_CHAIN_MODEL_CALL_BUDGET = max(
 )
 CLEARTITLE_AGENT_MAX_ATTEMPTS = max(1, int(os.getenv("CLEARTITLE_AGENT_MAX_ATTEMPTS", "5")))
 
-# -- Verification agent (specs/verification-agent/PLAN.md) ---------------------
+# -- Verification agent --------------------------------------------------------
 # Model per role; each defaults to CLEARTITLE_AGENT_MODEL on the same provider.
 VERIFY_LEAD_MODEL = os.getenv("VERIFY_LEAD_MODEL", "") or CLEARTITLE_AGENT_MODEL
 VERIFY_EXAMINER_MODEL = os.getenv("VERIFY_EXAMINER_MODEL", "") or CLEARTITLE_AGENT_MODEL

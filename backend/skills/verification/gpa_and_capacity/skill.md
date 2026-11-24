@@ -12,5 +12,5 @@ Load when a party signs through a power of attorney, or as a director, partner, 
 ## Red flags
 Sale by an attorney without the power of attorney; a power of attorney sale treated as a transfer of title; a principal who died before the sale.
 
-## Requisitions
+## Missing documents (list each one that is not uploaded)
 The power of attorney, board resolution, partnership or trust deed.

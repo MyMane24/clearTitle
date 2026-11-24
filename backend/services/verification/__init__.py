@@ -1,7 +1,4 @@
-"""The title verification agent (Phase B).
-
-Design reference: ``specs/verification-agent/PLAN.md``.
-"""
+"""The title verification agent (Phase B)."""
 
 import os
 

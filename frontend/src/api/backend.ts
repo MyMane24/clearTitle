@@ -119,7 +119,7 @@ export interface CaseResults {
   agent: AgentReport;
 }
 
-// -- Title verification (specs/verification-agent/PLAN.md) --------------------
+// -- Title verification --------------------------------------------------------
 
 export type VerificationRunStatus = "running" | "done" | "incomplete" | "error";
 export type ReportOpinion = "CLEAR" | "CLEAR_SUBJECT_TO" | "NOT_CLEAR";
@@ -202,18 +202,21 @@ export interface VerificationCaseFile {
   documents: Record<string, VerificationDocument>;
 }
 
-export interface ReportFinding {
-  title: string;
-  text: string;
-  severity: "high" | "medium" | "low" | "clear";
-}
-
-/** The report page: opinion with short reasons, finding cards, and what changed. */
+/** The advocate-style Report of Investigation of Title. Reports saved before 2026-11-24
+ * carry only the opinion and reasons; their other fields are empty. */
 export interface DueDiligenceReport {
   version: number;
   opinion: ReportOpinion;
   reasons: string[];
-  findings: ReportFinding[];
+  title_holders?: string[];
+  property_description?: string | null;
+  boundaries?: { east?: string | null; west?: string | null; north?: string | null; south?: string | null };
+  documents?: { doc_id: string; date: string; nature: string }[];
+  document_details?: { doc_id: string; text: string }[];
+  history?: string[];
+  certificate?: string | null;
+  documents_required?: { document: string; reason: string }[];
+  prepared_on?: string | null;
   changes: string[];
 }
 
@@ -368,6 +371,21 @@ export const API = {
 
   async getVerificationEvents(caseId: string, after: number): Promise<{ events: VerificationEvent[] }> {
     return request(`/api/verify/${caseId}/events?after=${after}`);
+  },
+
+  /** Downloads the latest report as a PDF file. */
+  async downloadReport(caseId: string): Promise<void> {
+    const headers = new Headers();
+    const token = getToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+    const r = await fetch(`/api/verify/${caseId}/report.pdf`, { headers });
+    if (!r.ok) throw new Error(await apiError(r, "Could not download the report"));
+    const url = URL.createObjectURL(await r.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `ClearTitle-report-${caseId}.pdf`;
+    link.click();
+    URL.revokeObjectURL(url);
   },
 
   async uploadForRequisition(caseId: string, requisitionId: string, file: File) {

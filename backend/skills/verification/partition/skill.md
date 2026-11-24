@@ -13,5 +13,5 @@ Load when a partition or family settlement allotted the target property, or when
 ## Red flags
 A coparcener left out; the target parcel allotted to someone else; an unregistered partition deed relied on as title.
 
-## Requisitions
+## Missing documents (list each one that is not uploaded)
 The partition deed, its schedule, and the mutation entry.

@@ -14,5 +14,5 @@ Load once per case to review mortgages, charges, attachments, leases and agreeme
 ## Red flags
 A mortgage without release; an attachment or pending case; an encumbrance certificate that does not cover the period or the property.
 
-## Requisitions
+## Missing documents (list each one that is not uploaded)
 Release deed or bank no-dues letter; encumbrance certificate for the missing period; court records.

@@ -47,7 +47,7 @@ class VerifyDeps:
     examiner_model: object | None = None
     sub_usage: RunUsage = field(default_factory=RunUsage)
     examination_failures: dict[str, int] = field(default_factory=dict)
-    last_view: str | None = None  # fingerprint of the Case File at the last view_case_file
+    last_view: str | None = None  # the snapshot the last view_case_file returned
 
     @property
     def gate_context(self) -> GateContext:

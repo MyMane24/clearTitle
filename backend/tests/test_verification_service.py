@@ -175,6 +175,24 @@ def test_events_route_passes_the_cursor():
     assert result["events"] == [{"id": 8}]
 
 
+def test_report_pdf_route_is_404_without_a_report_and_a_pdf_with_one():
+    with (
+        patch.object(routes, "_enforce_access"),
+        patch.object(service.repo, "get_latest_report", return_value=None),
+        pytest.raises(HTTPException) as raised,
+    ):
+        asyncio.run(routes.download_report("C1", None))
+    assert raised.value.status_code == 404
+    saved = {"report": {"version": 1, "opinion": "NOT_CLEAR", "reasons": ["A charge is open."]}}
+    with (
+        patch.object(routes, "_enforce_access"),
+        patch.object(service.repo, "get_latest_report", return_value=saved),
+    ):
+        response = asyncio.run(routes.download_report("C1", None))
+    assert response.media_type == "application/pdf" and response.body.startswith(b"%PDF")
+    assert "ClearTitle-report-C1.pdf" in response.headers["content-disposition"]
+
+
 def test_requisition_upload_rejects_unknown_requisition():
     class Upload:
         filename = "deed.pdf"
@@ -279,18 +297,3 @@ def test_changes_between_report_versions():
     ]
     assert "R1" not in " ".join(lines)
     assert report_module.changes({}, after) == []
-
-
-def test_findings_are_each_transfers_breaks_and_concerns_then_the_property_today():
-    case = verified(new_case_file())
-    case.transfers[2].concerns = [cf.Concern(severity="high", text="Sellers' title not shown.")]
-    case.transfers[1].connects = cf.Connection(ok=False, note="No deed from Anand Rao's buyer.")
-    case.property_today.encumbrances.concerns = [
-        cf.Concern(severity="medium", text="Canara Bank mortgage not released.")
-    ]
-    items = report_module.case_issues(case)
-    assert [(item.title, item.severity) for item in items] == [
-        ("Break in the title chain before the sale of 2010", "high"),
-        ("Sale of 2018", "high"),
-        ("Encumbrances", "medium"),
-    ]

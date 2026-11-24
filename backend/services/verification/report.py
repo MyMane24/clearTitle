@@ -1,28 +1,44 @@
-"""The report writer: turns a closed Case File into a due diligence report.
+"""The report writer: turns a closed Case File into an advocate-style title report.
 
-The model writes only the opinion and one or two reasons, from the Case File
-alone (no OCR text). The application builds the findings from the transfer
-records and the property today, checks the opinion against them, and lists what
+The model writes the report (particulars, documents scrutinised with a paragraph on
+each, history of title, certificate and opinion) from the Case File: the transfer
+records and each examined document's examiner facts, never OCR text. Gates check
+that it covers every examined document, invents no document number, names the
+present owners, carries no internal ids, and that the opinion agrees with the
+records. The application adds the documents still required, the date and what
 changed since the previous version.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from datetime import date
 
 from pydantic_ai import Agent, ModelRetry, RunContext, UsageLimits
 
 from backend.config import VERIFY_REPORT_CALL_BUDGET
+from backend.domain.chain_continuity import name_words
 from backend.prompts.loader import load_prompt
-from backend.schemas.due_diligence import DueDiligenceReport, Finding, Opinion, WrittenReport
+from backend.schemas.due_diligence import (
+    DueDiligenceReport,
+    Opinion,
+    RequiredDocument,
+    WrittenReport,
+)
 from backend.services.verification.case_file import (
     SECTIONS,
     CaseFile,
+    ExaminerReport,
     section_ok,
     transfer_result,
-    transfer_year,
 )
-from backend.services.verification.tools import RESULT_WORDS, SECTION_WORDS, transfer_name
+from backend.services.verification.tools import (
+    RESULT_WORDS,
+    SECTION_WORDS,
+    id_problems,
+    transfer_name,
+)
 
 
 @dataclass
@@ -37,10 +53,6 @@ report_agent = Agent(
     retries={"output": 4},
     name="report_writer",
 )
-
-
-def _missing(documents) -> bool:
-    return any(doc.status == "missing" for doc in documents)
 
 
 # -- Gates --------------------------------------------------------------------
@@ -82,7 +94,7 @@ REASONS_MAX, REASON_CHARS = 2, 140
 
 
 def length_problems(written: WrittenReport) -> list[str]:
-    """The buyer's page is one page: at most two short reasons."""
+    """At most two short reasons for the page header."""
     problems = []
     if len(written.reasons) > REASONS_MAX:
         problems.append(f"Give at most {REASONS_MAX} reasons, the most important first.")
@@ -94,9 +106,132 @@ def length_problems(written: WrittenReport) -> list[str]:
     return problems
 
 
+def coverage_problems(case: CaseFile, written: WrittenReport) -> list[str]:
+    """Every examined document is listed once, with one paragraph each, in the same order."""
+    listed = [row.doc_id for row in written.documents]
+    problems = [
+        f"{doc_id} is not a document of this case."
+        for doc_id in listed
+        if doc_id not in case.documents
+    ]
+    examined = [doc_id for doc_id, entry in case.documents.items() if entry.examined]
+    missing = [doc_id for doc_id in examined if doc_id not in listed]
+    if missing:
+        problems.append(
+            f"List every examined document in documents; missing: {', '.join(missing)}."
+        )
+    twice = sorted({doc_id for doc_id in listed if listed.count(doc_id) > 1})
+    if twice:
+        problems.append(f"List each document once; repeated: {', '.join(twice)}.")
+    if [detail.doc_id for detail in written.document_details] != listed:
+        problems.append(
+            "document_details must have one paragraph per listed document, in the same order "
+            "as documents."
+        )
+    return problems
+
+
+_NOT_ENGLISH = re.compile(r"[\u0c80-\u0cff]")  # Kannada script
+_SCAN_WORDS = re.compile(r"\b(?:OCR|garbled)\b", re.IGNORECASE)
+
+
+def _wording_problems(field: str, text: str) -> list[str]:
+    """The report is in English and never talks about the scanning."""
+    problems = []
+    if _NOT_ENGLISH.search(text):
+        snippet = "".join(_NOT_ENGLISH.findall(text))[:20]
+        problems.append(
+            f"{field} contains Kannada script ({snippet}). Write in English: give the English "
+            "form the documents use, or leave it out."
+        )
+    if _SCAN_WORDS.search(text):
+        problems.append(
+            f'{field} mentions OCR or garbled text. Say the part "is not legible" instead.'
+        )
+    return problems
+
+
+def text_problems(written: WrittenReport) -> list[str]:
+    """No internal ids, Kannada script or talk of OCR in any text the reader sees (ids
+    belong only in doc_id)."""
+    fields = {
+        "reasons": written.reasons,
+        "title_holders": written.title_holders,
+        "property_description": [written.property_description],
+        "boundaries": [v for v in written.boundaries.model_dump().values() if v],
+        "documents": [row.nature for row in written.documents],
+        "document_details": [detail.text for detail in written.document_details],
+        "history": written.history,
+        "certificate": [written.certificate],
+    }
+    return [
+        problem
+        for field, texts in fields.items()
+        for t in texts
+        for problem in [*id_problems(field, t), *_wording_problems(field, t)]
+    ][:6]
+
+
+def holder_problems(case: CaseFile, written: WrittenReport) -> list[str]:
+    """The title holders are the acquirers of the last transfer in the chain."""
+    if not case.transfers:
+        return []
+    owners = case.transfers[-1].transaction.transferees
+    if not name_words(owners) or name_words(owners) & name_words(written.title_holders):
+        return []
+    return [
+        f"title_holders must be the present owners from the last transfer: {', '.join(owners)}."
+    ]
+
+
+# Document, registration, order and survey numbers: parts joined by "-" or "/", with a digit.
+_NUMBER = re.compile(r"[A-Za-z0-9]+(?:[-/][A-Za-z0-9]+)+")
+_DATE = re.compile(r"\d{1,2}[-/]\d{1,2}[-/]\d{2,4}")
+
+
+def _squash(text: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", text.casefold())
+
+
+def _report_text(report: ExaminerReport) -> str:
+    return _squash(
+        " ".join([report.summary, *(f"{getattr(f, 'text', '')} {f.quote}" for f in report.facts())])
+    )
+
+
+def number_problems(case: CaseFile, written: WrittenReport) -> list[str]:
+    """Every document, registration, order or survey number written about a document must
+    appear in that document's examiner report: numbers are copied, never made up."""
+    problems = []
+    for detail in written.document_details:
+        entry = case.documents.get(detail.doc_id)
+        if entry is None or entry.report is None:
+            continue
+        known = _report_text(entry.report)
+        for token in _NUMBER.findall(detail.text):
+            if (
+                len(token) >= 5
+                and any(char.isdigit() for char in token)
+                and not _DATE.fullmatch(token)
+                and _squash(token) not in known
+            ):
+                problems.append(
+                    f"{token!r} in the paragraph on {detail.doc_id} is not in that document's "
+                    "facts. Copy numbers exactly as the facts give them, or leave them out."
+                )
+    return problems[:6]
+
+
 def report_problems(case: CaseFile, written: WrittenReport) -> list[str]:
     """Why the written report does not faithfully reflect the Case File, if it does not."""
-    return opinion_problems(case, written.opinion) + length_problems(written)
+    return [
+        *opinion_problems(case, written.opinion),
+        *length_problems(written),
+        *coverage_problems(case, written),
+        *text_problems(written),
+        *holder_problems(case, written),
+        *number_problems(case, written),
+    ]
 
 
 @report_agent.output_validator
@@ -107,62 +242,7 @@ def check_written_report(ctx: RunContext[ReportDeps], written: WrittenReport) ->
     return written
 
 
-# -- Findings and versioning ---------------------------------------------------
-
-
-_ORDER = {"high": 0, "medium": 1, "low": 2}
-
-
-def case_issues(case: CaseFile) -> list[Finding]:
-    """Every problem a buyer must know about, most serious first, then what checked out.
-
-    Each transfer's breaks and concerns, titled by the transfer, and each concern in
-    the property today, titled by its section.
-    """
-    findings = []
-    for transfer in case.window():
-        title = transfer_name(transfer).removeprefix("the ").capitalize()
-        if transfer.connects and not transfer.connects.ok:
-            findings.append(
-                Finding(
-                    title=f"Break in the title chain before the {title.lower()}",
-                    text=transfer.connects.note,
-                    severity="medium" if _missing(transfer.documents) else "high",
-                )
-            )
-        findings += [
-            Finding(title=title, text=concern.text, severity=concern.severity)
-            for concern in transfer.concerns
-        ]
-    for name in SECTIONS:
-        section = case.section(name)
-        findings += [
-            Finding(title=SECTION_WORDS[name], text=concern.text, severity=concern.severity)
-            for concern in (section.concerns if section else [])
-        ]
-    findings.sort(key=lambda finding: _ORDER.get(finding.severity or "low", 3))
-    return findings + clear_findings(case)
-
-
-def clear_findings(case: CaseFile) -> list[Finding]:
-    """What checked out: the unbroken chain, built from the records. Never claimed for a
-    chain with a break, a defect, a missing document or an unverified transfer."""
-    window = case.window()
-    proven = all(transfer_result(t) in ("verified", "verified_with_concerns") for t in window)
-    connected = all(t.connects is None or t.connects.ok for t in window)
-    if not (window and proven and connected):
-        return []
-    years = [year for t in window if (year := transfer_year(t))]
-    since = f" from {years[0]}" if years else ""
-    count = "one transfer" if len(window) == 1 else f"{len(window)} transfers"
-    return [
-        Finding(
-            title="Chain of title is unbroken",
-            text=f"Ownership traces{since} through {count} to the current owner; each "
-            "seller is the buyer in the transfer before.",
-            severity="clear",
-        )
-    ]
+# -- Versioning -----------------------------------------------------------------
 
 
 OPINION_WORDS = {
@@ -244,36 +324,70 @@ def changes(previous: dict, current: dict) -> list[str]:
     return lines
 
 
+def required_documents(case: CaseFile) -> list[RequiredDocument]:
+    """The annexure: every document still asked of the buyer."""
+    return [
+        RequiredDocument(document=item.document, reason=item.reason)
+        for item in case.requests
+        if item.status in ("open", "received")
+    ]
+
+
 def assemble(
     case: CaseFile, written: WrittenReport, version: int, previous: dict | None
 ) -> DueDiligenceReport:
-    """The saved report: the writer's opinion and reasons, the built findings and changes."""
+    """The saved report: what the writer wrote, plus the annexure, the date and the changes."""
     return DueDiligenceReport(
+        **written.model_dump(),
         version=version,
-        opinion=written.opinion,
-        reasons=written.reasons,
-        findings=case_issues(case),
+        documents_required=required_documents(case),
+        prepared_on=date.today(),
         changes=changes(previous or {}, basis(case, written.opinion)),
     )
 
 
-def report_input(case: CaseFile) -> str:
-    """What the writer needs for the opinion and its reasons, in words, without ids.
+_FACT_SECTIONS = (
+    "instrument", "parties", "schedule", "consideration", "recitals", "encumbrances",
+    "restrictions",
+)  # fmt: skip
 
-    Each transfer's result, summary, break and concerns; the property today; the
-    documents still needed and the unreadable documents. No citations or examiner
-    reports.
-    """
+
+def _document_facts(report: ExaminerReport) -> list[str]:
+    lines = [f"    summary: {report.summary}"]
+    for section in _FACT_SECTIONS:
+        for fact in getattr(report, section):
+            if hasattr(fact, "capacity"):
+                who = f"{fact.name} ({fact.role}, {fact.capacity}"
+                who += f", for {fact.represented_by})" if fact.represented_by else ")"
+                lines.append(f"    party: {who}")
+            else:
+                lines.append(f"    {section} - {fact.topic}: {fact.text}")
+    return lines
+
+
+def report_input(case: CaseFile) -> str:
+    """What the writer needs, as text: the transfers and their results, the property today,
+    the documents still needed, and each examined document's examiner facts (with its id,
+    for the doc_id fields only). No OCR text and no citations."""
     transfers = []
     for transfer in case.window():
+        t = transfer.transaction
         result = transfer_result(transfer)
         transfers.append(
-            f"- {transfer_name(transfer).capitalize()}: "
+            f"- {transfer_name(transfer).capitalize()} ({t.executed_date or t.registration_date or 'undated'}, "
+            f"no. {t.transaction_number or 'not stated'}): {', '.join(t.transferors) or '?'} -> "
+            f"{', '.join(t.transferees)}. "
             + (f"{RESULT_WORDS[result]}. {transfer.summary}" if result else "not verified")
         )
         if transfer.connects and not transfer.connects.ok:
             transfers.append(f"    break: {transfer.connects.note}")
         transfers += [f"    [{c.severity}] {c.text}" for c in transfer.concerns]
+    earlier = [
+        f"- {transfer_name(t).capitalize()}: {', '.join(t.transaction.transferors) or '?'} -> "
+        f"{', '.join(t.transaction.transferees)} (before the 30-year search)"
+        for t in case.transfers
+        if case.before_root(t)
+    ]
     today = []
     for name in SECTIONS:
         section = case.section(name)
@@ -282,31 +396,41 @@ def report_input(case: CaseFile) -> str:
             continue
         today.append(f"- {SECTION_WORDS[name]}: {section.note}")
         today += [f"    [{c.severity}] {c.text}" for c in section.concerns]
-    needed = [
-        f"- {item.document}: {item.reason}"
-        for item in case.requests
-        if item.status in ("open", "received")
-    ]
+    needed = [f"- {item.document}: {item.reason}" for item in required_documents(case)]
+    documents = []
+    for doc_id, entry in case.documents.items():
+        if entry.report is None:
+            continue
+        documents.append(f"[{doc_id}] {entry.document_type} | {entry.filename}")
+        documents += _document_facts(entry.report)
     unreadable = [
         f"- {entry.filename}: {entry.examination_error}"
         for entry in case.documents.values()
         if entry.examination_error
     ]
+    owners = case.transfers[-1].transaction.transferees if case.transfers else []
     return "\n".join(
         [
-            "Write the opinion and one or two reasons.",
+            "Write the Report of Investigation of Title from these results.",
+            f"Present owners (last transfer): {', '.join(owners) or 'not known'}",
             "",
-            "TRANSFERS (root to current owner)",
+            "EARLIER HISTORY",
+            *(earlier or ["- none"]),
+            "",
+            "TRANSFERS VERIFIED (root to present owner)",
             *(transfers or ["- none"]),
             "",
             "THE PROPERTY TODAY",
             *today,
             "",
-            "DOCUMENTS STILL NEEDED",
+            "DOCUMENTS STILL NEEDED (listed by the application in an annexure)",
             *(needed or ["- none"]),
             "",
             "DOCUMENTS THAT COULD NOT BE READ",
             *(unreadable or ["- none"]),
+            "",
+            "DOCUMENTS EXAMINED (id in brackets, then the examiner's facts)",
+            *documents,
         ]
     )
 

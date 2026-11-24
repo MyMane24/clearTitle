@@ -60,7 +60,15 @@ const STATE: VerificationState = {
     version: 1,
     opinion: 'NOT_CLEAR',
     reasons: ['The 2007 sale lacks GPA authority.'],
-    findings: [],
+    title_holders: ['Shri. Dinanath S/o. Purushottam Revankar'],
+    property_description: 'All that piece and parcel of land bearing R.S. No. 699-A/14, Angol Village.',
+    boundaries: { east: 'R.S. No. 700', south: '30 ft Road' },
+    documents: [{ doc_id: 'DOC_018', date: '06.12.2007', nature: 'Registered Sale Deed in respect of R.S. No. 699-A/14' }],
+    document_details: [{ doc_id: 'DOC_018', text: 'The document at Sl. No. 1 is the Registered Sale Deed dated 06-12-2007.' }],
+    history: ['Originally Smt. Parvati purchased the land.', 'Thereafter the land was sold to the Revankars.'],
+    certificate: 'The title cannot be certified as clear: the GPA authority is not shown.',
+    documents_required: [{ document: 'Registered GPA to Girish', reason: 'Authority to sell.' }],
+    prepared_on: '2026-11-24',
     changes: [],
   },
 };
@@ -81,15 +89,27 @@ function order(html: string, texts: string[]) {
   assert.deepEqual([...positions].sort((a, b) => a - b), positions);
 }
 
-test('report page is one page: opinion, findings and documents needed; no per-transfer detail', () => {
+test('report page: opinion, the advocate-style report, then documents needed; no findings list', () => {
   const html = render(STATE);
-  order(html, ['Title not clear', 'id="cr-findings-title"', 'id="cr-needed-title"']);
-  assert.match(html, /cr-chip cr-tone-bad">1 critical</);
-  assert.match(html, /cr-badge cr-tone-bad">Critical<\/span><h4>Sale of 2007<\/h4>/);
-  assert.doesNotMatch(html, /cr-limits-title|Limitations/);
-  assert.doesNotMatch(html, /cr-timeline|cr-docs|Flow of title|Manohar sold to Dinanath|Scrutiny/);
-  // Without saved findings, the page builds them from the transfer's concerns.
-  assert.match(html, /GPA authority not shown\./);
+  order(html, [
+    'Title not clear',
+    'Report of Investigation of Title in respect of Immovable Property',
+    'I. Particulars of the title holder',
+    'Shri. Dinanath S/o. Purushottam Revankar',
+    'II. Particulars of the documents scrutinised',
+    'Registered Sale Deed in respect of R.S. No. 699-A/14',
+    'III. Details of documents scrutinised',
+    'IV. History of title',
+    'Originally Smt. Parvati purchased the land.',
+    'V. Certificate',
+    'Annexure: documents still required',
+    'To be reviewed and signed by an advocate.',
+    'id="cr-needed-title"',
+  ]);
+  assert.match(html, /<b>East<\/b> : R\.S\. No\. 700/);
+  assert.match(html, /Download PDF/);
+  assert.doesNotMatch(html, /cr-findings-title|cr-chip|cr-card|Limitations/);
+  assert.doesNotMatch(html, /cr-timeline|cr-docs|Manohar sold to Dinanath/);
   assert.match(html, /<h1>CTS 1360B\/9<\/h1>/);  // no schedule in the report: Phase A identity
   assert.match(html, /cr-tab cr-tab-active"[^>]*>.*Verification report/s);
 });
@@ -120,18 +140,28 @@ test('requests appear once, with upload only for open ones', () => {
   assert.match(html, /1 already settled/);
 });
 
-test('the report page shows the opinion, its reasons and the report findings, nothing else', () => {
+test('the opinion shows its reasons and what changed above the report', () => {
   const state: VerificationState = {
     ...STATE,
-    report: {
-      ...STATE.report!,
-      findings: [{ title: 'Bank charge not released', text: 'Canara Bank, 2025.', severity: 'high' }],
-      changes: ['The sale of 2019: now defective.'],
-    },
+    report: { ...STATE.report!, version: 2, changes: ['The sale of 2019: now defective.'] },
   };
   const html = render(state);
-  order(html, ['Title not clear', 'The 2007 sale lacks GPA authority.', 'What changed since version 0', 'Bank charge not released']);
-  assert.doesNotMatch(html, /cr-lede/);  // no property summary line
+  order(html, ['Title not clear', 'The 2007 sale lacks GPA authority.', 'What changed since version 1', 'Report of Investigation of Title']);
+});
+
+test('a report saved in the old format says so instead of an empty report', () => {
+  const old: VerificationState = {
+    ...STATE,
+    report: { version: 4, opinion: 'NOT_CLEAR', reasons: ['A bank charge is open.'], changes: [] },
+  };
+  const html = render(old);
+  assert.match(html, /A bank charge is open\./);
+  assert.match(html, /written in an older format/);
+  assert.doesNotMatch(html, /II\. Particulars of the documents/);
+});
+
+test('no download button before there is a report', () => {
+  assert.doesNotMatch(render({ ...STATE, report: null }), /Download PDF/);
 });
 
 test('no clutter: no task list, no metric tiles, no structured data viewer', () => {
@@ -237,14 +267,10 @@ test('saved report text written with ids renders in words', () => {
   assert.doesNotMatch(html, /PA-TC-0001|DOC_018|\bI1\b|\bL1\b|\bR1\b/);
 });
 
-test('header names the property from the Phase A identity, and titles drop internal ids', async () => {
+test('header names the property from the Phase A identity', async () => {
   const { propertyLine } = await import('./CaseResults');
-  const { cleanTitle } = await import('./ReportView');
   assert.equal(propertyLine(RESULTS, STATE), 'CTS 1360B/9');
   assert.equal(propertyLine(RESULTS, null), 'CTS 1360B/9');
-  assert.equal(cleanTitle('PA-TC-0002 — Partition dated 09/06/2008'), 'Partition dated 09/06/2008');
-  assert.equal(cleanTitle('I2 — Extent inconsistent'), 'Extent inconsistent');
-  assert.equal(cleanTitle('Canara Bank deposit'), 'Canara Bank deposit');
 });
 
 test('after verification, a document left unread is shown as not examined', () => {

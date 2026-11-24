@@ -1,4 +1,4 @@
-"""Whole verification runs with scripted models: the PLAN.md worked example, end to end.
+"""Whole verification runs with scripted models: a worked example, end to end.
 
 Full run: a partition recited in the 2010 deed is added to the chain, each
 transfer is recorded in one call, a missing deed becomes a request without
@@ -170,8 +170,24 @@ FULL_RUN_STEPS = [
 ]
 
 
-def written_report(opinion):
-    return {"opinion": opinion, "reasons": ["Minor's share sold without permission."]}
+def written_report(opinion, documents=("EC", "D1998", "D2010", "D2018")):
+    """The writer's report: one row and one paragraph per examined document."""
+    return {
+        "opinion": opinion,
+        "reasons": ["Minor's share sold without permission."],
+        "title_holders": ["Smt. Deepa"],
+        "property_description": "All that piece and parcel of land bearing Sy. No. 45, Hosahalli.",
+        "documents": [
+            {"doc_id": doc, "date": "01.01.2010", "nature": "Registered document"}
+            for doc in documents
+        ],
+        "document_details": [
+            {"doc_id": doc, "text": f"The document at Sl. No. {n} is a registered document."}
+            for n, doc in enumerate(documents, start=1)
+        ],
+        "history": ["Originally Shri. Anand Rao owned the land.", "Thereafter it passed to Deepa."],
+        "certificate": "The title is not clear: a minor's share was sold without permission.",
+    }
 
 
 def full_run():
@@ -204,8 +220,10 @@ def test_full_run_closes_the_chain_and_writes_report_v1():
     report = store.reports[-1]
     assert report.version == 1 and report.opinion == "NOT_CLEAR"
     assert report.reasons == ["Minor's share sold without permission."]
-    assert report.findings[0].severity == "high"  # the minor's share, most serious first
-    assert report.findings[0].title == "Sale of 2010"
+    assert [d.document for d in report.documents_required] == [
+        "Partition deed of 2005",
+        "Current RTC extract",
+    ]
     assert report.changes == []  # nothing to compare with in version 1
 
     lead_messages, report_messages = messages
@@ -257,7 +275,8 @@ def test_incremental_run_examines_only_the_uploaded_document():
         ],
         [("result", {"summary": "Partition verified."})],
     )
-    report = scripted_model([("result", written_report("NOT_CLEAR"))])
+    every = ("EC", "D1998", "D2010", "D2018", "PD2005")
+    report = scripted_model([("result", written_report("NOT_CLEAR", every))])
     models_ = runner.Models(lead=lead, examiner=fake_examiner(seen), report=report)
     outcome = asyncio.run(runner.run("CASE1", store=store, models=models_, kind="incremental"))
 

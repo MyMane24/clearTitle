@@ -1,14 +1,13 @@
 import React from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  AlertTriangle, CheckCircle2, FileText, GitBranch, MoreHorizontal, ScrollText, ShieldCheck, Upload,
+  AlertTriangle, CheckCircle2, Download, FileText, GitBranch, MoreHorizontal, ScrollText, ShieldCheck, Upload,
 } from 'lucide-react';
-import type { CaseResults as CaseResultsData, SectionName, VerificationEvent, VerificationState } from '../../api/backend';
+import { API, type CaseResults as CaseResultsData, type SectionName, type VerificationEvent, type VerificationState } from '../../api/backend';
 import { LiveFeed } from '../verification/LiveFeed';
 import { ChainTimeline, timelineLinks } from './ChainTimeline';
 import { SECTION_LABEL, humanizeType, refLabeller } from './labels';
-import { caseIssues } from './issues';
-import { FindingsList, Opinion, Section, opinionLabel, opinionTone } from './ReportView';
+import { Opinion, Section, TitleReport, opinionLabel, opinionTone } from './ReportView';
 import { useVerification } from './useVerification';
 
 export type CasePage = 'chain' | 'report';
@@ -101,6 +100,19 @@ export function CaseResultsView(props: CaseResultsViewProps) {
   // While a run is going, the previous report is stale: show this run's steps only.
   const liveRunId = state?.run?.status === 'running' ? state.run.id : null;
   const liveEvents = liveRunId ? events.filter(event => event.run_id === liveRunId) : [];
+  const [downloading, setDownloading] = React.useState(false);
+  const [downloadError, setDownloadError] = React.useState<string | null>(null);
+  const download = async () => {
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      await API.downloadReport(props.caseId);
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : 'Could not download the report.');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <div className="cr-page">
@@ -119,6 +131,11 @@ export function CaseResultsView(props: CaseResultsViewProps) {
           </div>
         </div>
         <div className="cr-header-actions">
+          {report && !running && (
+            <button className="btn btn-secondary" type="button" disabled={downloading} onClick={download}>
+              <Download size={14} /> {downloading ? 'Preparing PDF…' : 'Download PDF'}
+            </button>
+          )}
           {primary && (
             <button className="btn btn-primary" type="button" onClick={() => start(false)}>
               <ShieldCheck size={14} /> {primary}
@@ -135,6 +152,7 @@ export function CaseResultsView(props: CaseResultsViewProps) {
           </details>
         </div>
       </header>
+      {downloadError && <p className="cr-alert"><AlertTriangle size={14} /> {downloadError}</p>}
 
       {running ? (
         <Section
@@ -283,7 +301,7 @@ function ReportPage({ state, error, uploadingId, start, upload, primary }: CaseR
       {report && (
         <>
           <Opinion report={report} label={label} />
-          <FindingsList issues={caseIssues(report, caseFile)} label={label} />
+          <TitleReport report={report} label={label} />
         </>
       )}
 

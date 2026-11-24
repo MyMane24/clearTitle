@@ -31,5 +31,5 @@ Compare what each transfer conveyed with what the next one conveys. The change t
 ## Red flags
 A site, house or flat sold out of agricultural land with no conversion; a site outside an approved layout; a building without a sanctioned plan or occupancy certificate; granted land sold without permission.
 
-## Requisitions (only what is missing)
+## Missing documents (list each one that is not uploaded)
 The conversion order, approved layout plan, sanctioned building plan, completion or occupancy certificate, joint development agreement, RERA registration, khata extract, tax receipt.

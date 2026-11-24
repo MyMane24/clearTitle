@@ -3,6 +3,7 @@
 * ``start(case_id, kind)``: queue a run (full, or incremental after uploads).
 * ``get_state(case_id)``: the Case File summary, the latest run and the latest report.
 * ``list_events(case_id, after)``: the live feed.
+* ``report_pdf(case_id)``: the latest report as a PDF.
 * ``attach_requisition_document``: link an uploaded document to its request.
 * ``owns_chain`` / ``after_documents_processed``: hooks for the document pipeline.
 """
@@ -72,6 +73,14 @@ def get_state(case_id: str) -> dict:
             else None
         ),
     }
+
+
+def report_pdf(case_id: str) -> bytes | None:
+    """The latest report as PDF bytes, or None when the case has no report yet."""
+    from backend.services.verification.report_pdf import render_pdf
+
+    report = repo.get_latest_report(case_id)
+    return render_pdf(DueDiligenceReport.model_validate(report["report"])) if report else None
 
 
 def list_events(case_id: str, after: int = 0) -> list[dict]:

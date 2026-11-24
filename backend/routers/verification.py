@@ -1,9 +1,9 @@
-"""Verification endpoints: start a run, follow its live feed, read the report,
-and upload a document for a requisition. HTTP only; logic is in the service."""
+"""Verification endpoints: start a run, follow its live feed, read the report (also as
+a PDF), and upload a requested document. HTTP only; logic is in the service."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 
 from backend.database.repositories.case_repo import get_case_owner
 from backend.logger import get_logger
@@ -45,6 +45,20 @@ async def get_verification(case_id: str, user: dict | None = Depends(get_optiona
     """The Case File summary, the latest run and the latest report."""
     _enforce_access(case_id, user)
     return service.get_state(case_id)
+
+
+@router.get("/verify/{case_id}/report.pdf")
+async def download_report(case_id: str, user: dict | None = Depends(get_optional_user)):
+    """The latest due diligence report as a PDF download."""
+    _enforce_access(case_id, user)
+    pdf = service.report_pdf(case_id)
+    if pdf is None:
+        raise HTTPException(status_code=404, detail="This case has no report yet.")
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="ClearTitle-report-{case_id}.pdf"'},
+    )
 
 
 @router.get("/verify/{case_id}/events")

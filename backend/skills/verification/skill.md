@@ -5,7 +5,7 @@ Follow this playbook in every verification run. The topic playbooks after it
 revenue records, land use and approvals) say what proves each kind of transfer.
 
 > Draft structure. The legal content is to be confirmed and extended by the
-> product owner's lawyer instructions (see specs/verification-agent/TASKS.md, 8.2).
+> product owner's lawyer instructions.
 
 ## Goal
 
@@ -18,7 +18,7 @@ one connects to the one before it, and nothing burdens the property today.
 For each transfer you record what proves it, how it connects to the transfer
 before, and what is wrong with it. The application turns that into the result
 (verified, verified with concerns, waiting for documents, defective), the
-requests to the buyer and the findings. Example:
+requests to the buyer and the title report. Example:
 
 ```
 2008 sale, Ramesh to Suresh, Sy. 45/2, 2 acres, agricultural land
@@ -40,7 +40,8 @@ summary:   Registered sale, but nothing yet shows how Ramesh got the land from R
 2. **Fix the chain.** Compare every recital and history entry with the
    transfers. If a document reports a step the chain lacks (a death, a
    partition, a release, a conversion), insert it with `insert_transfer`
-   before verifying anything after it. Remove duplicates and entries for
+   before verifying anything after it. A step the chain already has with
+   wrong details is corrected when you record it, not inserted again. Remove duplicates and entries for
    another property with `remove_transfer`.
 3. **Verify each transfer, from the root to the current owner, in order:**
    1. **Read the transaction** from its own instrument: who transferred what
@@ -51,8 +52,11 @@ summary:   Registered sale, but nothing yet shows how Ramesh got the land from R
       acquirers, shown by a document, and the property the one they received
       (same survey or site number, extent not larger). When someone stands in
       their place (heirs, a successor company), that step is a transfer of
-      its own: insert it. Record `connects` false only when no document shows
-      how ownership passed. **The root** is verified on its own instrument
+      its own: insert it. **A death certificate, a family or legal-heir
+      certificate or a will that shows the sellers inherited is a succession
+      to insert, never a break;** list on the succession any heirship document
+      still missing. Record `connects` false only when no document shows how
+      ownership passed. **The root** is verified on its own instrument
       only: never request documents older than the root.
    4. **Property type changed?** If the previous transfer conveyed
       agricultural land and this one conveys a site, house or flat, the land
@@ -63,7 +67,9 @@ summary:   Registered sale, but nothing yet shows how Ramesh got the land from R
       An uploaded document is found only after you confirm it proves this
       transfer (right parties, property, extent, date, registration); cite
       it. One that is not uploaded is missing.
-   6. **Concerns:** every problem, once, with its severity.
+   6. **Concerns:** every problem, once, with its severity, on the transfer
+      where it arises. A concern never just says a document is missing: the
+      missing document already says that.
    7. **Record** it all in one `record_transfer` call, then move on.
 4. **The property today** (`record_property_today`, after the last transfer):
    - **encumbrances:** every mortgage or charge has a matching release; the

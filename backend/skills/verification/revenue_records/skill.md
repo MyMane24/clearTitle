@@ -13,5 +13,5 @@ Load once per case to check that the RTC and mutation records follow the title.
 ## Red flags
 RTC still in a previous owner's name; extent mismatch; government or grant land entries.
 
-## Requisitions
+## Missing documents (list each one that is not uploaded)
 Mutation register extract, current RTC, survey sketch or hissa tippani.

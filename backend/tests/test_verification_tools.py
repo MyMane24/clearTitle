@@ -377,6 +377,17 @@ def test_an_inserted_transfer_says_why_and_reopens_the_next_one():
     assert any(text.startswith("Re-checking the sale of 2010") for text in sink.texts("chain"))
 
 
+def test_a_transfer_already_in_the_chain_is_not_inserted_again():
+    ctx, _ = make_ctx()
+    again = PARTITION.model_copy(
+        update={"transaction_type": "Sale (reported)", "transferors": ["Anand Rao"],
+                "transferees": ["Basavaraj"], "executed_date": "01-01-1998"}
+    )  # fmt: skip
+    with pytest.raises(ModelRetry, match="PA-TC-0001 already records a transfer"):
+        tools.insert_transfer(ctx, None, again, "x", [cite("D1998", 1, "Vendor: Anand Rao")])
+    assert len(ctx.deps.case.transfers) == 3
+
+
 def test_insert_needs_citations_from_examined_documents():
     ctx, _ = make_ctx(examined=False)
     with pytest.raises(ModelRetry, match="not been examined"):
@@ -449,17 +460,44 @@ def test_every_change_replies_with_what_is_still_to_do():
     assert "Still to do:" in reply and "next transfer to verify: PA-TC-0002 (then 1 more)" in reply
 
 
-def test_view_case_file_lists_what_is_left_and_is_short_when_nothing_changed():
+def test_view_case_file_shows_everything_once_then_only_what_changed():
     ctx, _ = make_ctx()
     text = tools.view_case_file(ctx)
     assert "PA-TC-0002" in text and "STILL TO DO BEFORE CLOSING" in text
     assert "is not verified yet" in text
     assert tools.view_case_file(ctx).startswith("Nothing changed since your last view_case_file")
     record(ctx, "PA-TC-0001")
-    assert "CASE FILE" in tools.view_case_file(ctx)
+    changed = tools.view_case_file(ctx)
+    assert changed.startswith("Changed since your last view")
+    assert "PA-TC-0001 [ROOT]" in changed and "verified" in changed
+    assert "PA-TC-0003" not in changed  # unchanged lines are left out
+    assert "CASE FILE" in tools.view_case_file(ctx, full=True)
 
 
 def test_read_pages():
     ctx, _ = make_ctx()
     text = tools.read_pages(ctx, "D2010", 2, 2)
     assert "--- Page 2 ---" in text and "partition of 2005" in text
+
+
+def test_a_problem_already_recorded_on_an_earlier_transfer_is_refused():
+    ctx, _ = make_ctx()
+    root = cf.Concern(
+        severity="high",
+        text="The 1990 deed names a different purchaser and no document links him to the seller.",
+    )
+    record(ctx, "PA-TC-0001", concerns=[root])
+    again = cf.Concern(
+        severity="high",
+        text="The 1990 deed names a different purchaser; no document links that purchaser to "
+        "the seller.",
+    )
+    with pytest.raises(ModelRetry, match="already recorded on PA-TC-0001"):
+        record(ctx, "PA-TC-0002", concerns=[again])
+    record(ctx, "PA-TC-0001", concerns=[root])  # recording the same transfer again is fine
+
+
+def test_tools_that_change_the_case_file_run_one_at_a_time():
+    for name in ("record_transfer", "record_property_today", "insert_transfer", "remove_transfer",
+                 "set_aside"):  # fmt: skip
+        assert tools.case_file_tools.tools[name].sequential, name

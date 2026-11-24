@@ -6,7 +6,7 @@ Load for every transfer: what to confirm for a sale, gift or other transfer inst
 
 ## What to confirm
 Confirm each point from the documents. A point that fails or is doubtful is a concern in the transfer's record; a document still needed to confirm it is a missing document.
-- **Vendor's title:** the transferors acquired this property in the previous transfer (or a recital explains how), and held the whole interest they convey.
+- **Vendor's title:** the transferors acquired this property in the previous transfer (or a recital explains how), and held the whole interest they convey. Decide who is who from all the documents together; a name garbled or spelt differently by OCR is not by itself a different person.
 - **Parties and capacity:** every co-owner joins; anyone signing for another holds a valid authority (see `gpa_and_capacity`); a minor's share needs court permission (see `minor_property`).
 - **Schedule and extent:** survey or site number, extent and boundaries match the previous transfer and the revenue records; any difference is explained.
 - **Execution and registration:** executed and registered at the proper sub-registrar, with registration number and date.
@@ -20,5 +20,5 @@ The transfer's own instrument proves it. A history entry or a later recital poin
 ## Red flags
 Missing co-owner; extent larger than the vendor held; unregistered or unstamped instrument; power of attorney sale without the power of attorney; vendor not the previous acquirer.
 
-## Requisitions
+## Missing documents (list each one that is not uploaded)
 The instrument itself when absent; the power of attorney, court permission or death certificate when the transfer depends on one.

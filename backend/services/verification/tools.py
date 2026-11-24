@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.toolsets import FunctionToolset
 
+from backend.domain.chain_continuity import name_words
 from backend.schemas.chain import DocumentedTransaction, SourceRef
 from backend.services.verification.case_file import (
     WINDOW_YEARS,
@@ -127,7 +128,7 @@ def transfer_name(transfer: Transfer) -> str:
     return f"the {kind}{year}"
 
 
-def _plain(field: str, text: str | None) -> list[str]:
+def id_problems(field: str, text: str | None) -> list[str]:
     """Refuse buyer-facing text that mentions internal ids."""
     ids = sorted(set(_INTERNAL_ID.findall(text or "")))
     if not ids:
@@ -191,7 +192,7 @@ def _document_problems(
     name an active request to reuse."""
     problems = []
     for doc in documents:
-        problems += _plain("document name", doc.name) + _plain("proves", doc.proves)
+        problems += id_problems("document name", doc.name) + id_problems("proves", doc.proves)
         problems += _short("document name", doc.name, NAME_MAX)
         problems += _short("proves", doc.proves, PROVES_MAX)
         if doc.status == "found":
@@ -219,12 +220,32 @@ def _document_problems(
     return problems
 
 
-def _concern_problems(deps: VerifyDeps, concerns: list[Concern]) -> list[str]:
+def _concern_problems(deps: VerifyDeps, concerns: list[Concern], key: str) -> list[str]:
+    """Concerns are short, cite real passages, and are not already recorded elsewhere."""
     problems = []
     for concern in concerns:
-        problems += _plain("concern", concern.text) + _short("concern", concern.text, CONCERN_MAX)
+        where = _recorded_elsewhere(deps.case, concern, key)
+        if where:
+            problems.append(
+                f"The concern {concern.text[:80]!r} is already recorded on {where}. Record a "
+                "problem once, where it arises: an earlier transfer's defect is not a concern of "
+                "a later one. If this is a different problem, say what is different here."
+            )
+        problems += id_problems("concern", concern.text) + _short(
+            "concern", concern.text, CONCERN_MAX
+        )
         problems += citation_problems(deps.gate_context, concern.citations)
     return problems
+
+
+def _recorded_elsewhere(case: CaseFile, concern: Concern, key: str) -> str | None:
+    """The transfer or section (other than ``key``) that already records this problem."""
+    records = [(t.id, t.concerns) for t in case.transfers if t.recorded]
+    records += [(name, s.concerns) for name in SECTION_WORDS if (s := case.section(name))]
+    for other, concerns in records:
+        if other != key and any(alike(concern.text, "", c.text, "") for c in concerns):
+            return other
+    return None
 
 
 def _matching_request(case: CaseFile, doc: ProofDocument) -> Request | None:
@@ -282,6 +303,22 @@ def _close_unneeded_requests(deps: VerifyDeps) -> None:
             deps.emit("requisition", f"Requested document accepted: {request.document}", request.id)
         else:
             deps.case.requests.remove(request)
+
+
+def _same_parties(case: CaseFile, transfer: NewTransfer) -> Transfer | None:
+    """A transfer already in the chain between the same people, if any."""
+    sellers, buyers = name_words(transfer.transferors), name_words(transfer.transferees)
+    if not sellers or not buyers:
+        return None
+    return next(
+        (
+            item
+            for item in case.transfers
+            if sellers & name_words(item.transaction.transferors)
+            and buyers & name_words(item.transaction.transferees)
+        ),
+        None,
+    )
 
 
 def _clear_next(deps: VerifyDeps, index: int, why: str) -> None:
@@ -344,22 +381,37 @@ case_file_tools = FunctionToolset[VerifyDeps](id="case_file", max_retries=_TOOL_
 
 
 @case_file_tools.tool
-def view_case_file(ctx: RunContext[VerifyDeps]) -> str:
-    """Show the current Case File: the transfers and their records, the property today,
-    the documents, the requests, and what is still to do before the case can close.
-    Call it once at the start; every change replies with what is still to do."""
+def view_case_file(ctx: RunContext[VerifyDeps], full: bool = False) -> str:
+    """Show the Case File: the transfers and their records, the property today, the
+    documents, the requests, and what is still to do before the case can close.
+
+    The first call shows everything; later calls show only the lines that changed since
+    your last view, plus what is still to do. You rarely need it: every change already
+    replies with what is still to do.
+
+    Args:
+        full: true to see the whole Case File again, e.g. after older results were cleared.
+    """
     deps = ctx.deps
-    fingerprint = deps.case.model_dump_json()
-    if fingerprint == deps.last_view:
+    text = render_case_file(deps.case, deps.gate_context)
+    previous, deps.last_view = deps.last_view, text
+    if full or previous is None:
+        return text
+    seen = set(previous.splitlines())
+    changed = [line for line in text.splitlines() if line.strip() and line not in seen]
+    if not changed:
         return (
             "Nothing changed since your last view_case_file. Act on it: verify the next "
             "transfer and record it with record_transfer." + _digest(deps)
         )
-    deps.last_view = fingerprint
-    return render_case_file(deps.case, deps.gate_context)
+    return (
+        "Changed since your last view (view_case_file(full=true) shows everything):\n"
+        + "\n".join(changed[:60])
+        + _digest(deps)
+    )
 
 
-@case_file_tools.tool
+@case_file_tools.tool(sequential=True)
 def record_transfer(
     ctx: RunContext[VerifyDeps],
     transfer_id: str,
@@ -411,9 +463,9 @@ def record_transfer(
     if not documents:
         problems.append("List the documents that legally prove this transfer.")
     problems += _document_problems(deps, documents, proves_a_transfer=True)
-    problems += _concern_problems(deps, concerns)
-    problems += _plain("summary", summary) + _short("summary", summary, SUMMARY_MAX)
-    problems += _plain("extent", property.extent)
+    problems += _concern_problems(deps, concerns, transfer_id)
+    problems += id_problems("summary", summary) + _short("summary", summary, SUMMARY_MAX)
+    problems += id_problems("extent", property.extent)
     if not is_root and connects is None:
         problems.append("Say whether this transfer connects to the previous one (connects).")
     if connects is not None and not is_root:
@@ -422,7 +474,7 @@ def record_transfer(
             problems += connection_problems(deps.gate_context, previous, checked)
         elif not connects.note.strip():
             problems.append("A break needs a note: who is missing between which owners.")
-        problems += _plain("connects.note", connects.note)
+        problems += id_problems("connects.note", connects.note)
     _require(problems)
 
     def apply() -> None:
@@ -448,7 +500,7 @@ def record_transfer(
     return f"Recorded {transfer_id}: {result}.{asked}" + _digest(deps)
 
 
-@case_file_tools.tool
+@case_file_tools.tool(sequential=True)
 def record_property_today(
     ctx: RunContext[VerifyDeps],
     section: SectionName,
@@ -472,8 +524,8 @@ def record_property_today(
     pending = [transfer.id for transfer in deps.case.window() if not transfer.recorded]
     problems = [f"Verify every transfer first: {', '.join(pending)}."] if pending else []
     problems += _document_problems(deps, documents, proves_a_transfer=False)
-    problems += _concern_problems(deps, concerns)
-    problems += _plain("note", note) + _short("note", note, SUMMARY_MAX)
+    problems += _concern_problems(deps, concerns, section)
+    problems += id_problems("note", note) + _short("note", note, SUMMARY_MAX)
     _require(problems)
     setattr(
         deps.case.property_today,
@@ -490,7 +542,7 @@ def record_property_today(
     return f"Recorded {section}." + _digest(deps)
 
 
-@case_file_tools.tool
+@case_file_tools.tool(sequential=True)
 def insert_transfer(
     ctx: RunContext[VerifyDeps],
     after_transfer_id: str | None,
@@ -510,7 +562,14 @@ def insert_transfer(
     deps = ctx.deps
     problems = ["Cite the passages that report the transfer."] if not citations else []
     problems += citation_problems(deps.gate_context, citations)
-    problems += _plain("reason", reason)
+    problems += id_problems("reason", reason)
+    same = _same_parties(deps.case, transfer)
+    if same is not None:
+        problems.append(
+            f"{same.id} already records a transfer from {', '.join(same.transaction.transferors)} "
+            f"to {', '.join(same.transaction.transferees)}. Do not add it again: record {same.id} "
+            "with record_transfer, putting wrong details (type, date, number) in correction."
+        )
     _require(problems)
     case = deps.case
     index = (
@@ -532,7 +591,7 @@ def insert_transfer(
     return f"Inserted {new.id}." + _digest(deps)
 
 
-@case_file_tools.tool
+@case_file_tools.tool(sequential=True)
 def remove_transfer(
     ctx: RunContext[VerifyDeps], transfer_id: str, reason: str, citations: list[Citation]
 ) -> str:
@@ -547,7 +606,7 @@ def remove_transfer(
     transfer = _transfer(deps, transfer_id)
     problems = ["Cite the passages that show it does not belong."] if not citations else []
     problems += citation_problems(deps.gate_context, citations)
-    problems += _plain("reason", reason)
+    problems += id_problems("reason", reason)
     _require(problems)
     index = deps.case.transfers.index(transfer)
     _change_chain(deps, lambda: deps.case.transfers.remove(transfer))
@@ -560,7 +619,7 @@ def remove_transfer(
     return f"Removed {transfer_id}." + _digest(deps)
 
 
-@case_file_tools.tool
+@case_file_tools.tool(sequential=True)
 def set_aside(ctx: RunContext[VerifyDeps], items: list[SetAsideItem]) -> str:
     """Set aside unexpected examiner findings that do not affect title, each with a reason.
     Every other unexpected finding must be cited in a transfer or the property today.
@@ -577,7 +636,7 @@ def set_aside(ctx: RunContext[VerifyDeps], items: list[SetAsideItem]) -> str:
             problems.append(
                 f"{item.doc_id} {number} is not an unexpected finding still to follow up."
             )
-        problems += _plain("reason", item.reason)
+        problems += id_problems("reason", item.reason)
     _require(problems)
     for item in items:
         deps.case.set_aside.append(
