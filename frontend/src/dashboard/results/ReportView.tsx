@@ -133,7 +133,7 @@ export function TitleReport({ report, label }: { report: DueDiligenceReport; lab
       ) : <p>None.</p>}
 
       <footer className="cr-report-sign">
-        <div><p>Prepared by ClearTitle</p>{prepared && <p>Date: {prepared}</p>}</div>
+        {prepared && <div><p>Date: {prepared}</p></div>}
         <div><p>To be reviewed and signed by an advocate.</p></div>
       </footer>
     </article>

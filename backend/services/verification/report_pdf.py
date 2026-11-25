@@ -172,7 +172,7 @@ def _documents(report: DueDiligenceReport) -> Table:
 
 def _signature(report: DueDiligenceReport) -> KeepTogether:
     prepared = report.prepared_on.strftime("%d/%m/%Y") if report.prepared_on else ""
-    left = [_p("Prepared by ClearTitle", "small"), _p(f"Date: {prepared}", "small")]
+    left = [_p(f"Date: {prepared}", "small")]
     right = [
         _p("To be reviewed and signed by an advocate.", "small"),
         Spacer(1, 26),

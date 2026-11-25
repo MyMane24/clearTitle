@@ -179,7 +179,7 @@ The report writer produces a **Report of Investigation of Title** in the form a 
 | IV. History of title | "Originally … Thereafter …", ending with the present owners and any subsisting charge |
 | V. Certificate | The opinion and the conditions it is subject to |
 | Annexure | Documents still required (from the open requests) |
-| Signature | "Prepared by ClearTitle", to be reviewed and signed by an advocate |
+| Signature | Date, to be reviewed and signed by an advocate |
 
 Gates on the writer's output check:
 - every examined document appears once, with one paragraph each;
