@@ -51,9 +51,35 @@ export interface CaseResultsViewProps extends CaseResultsProps {
 /** A one-line name for the property, from the Phase A property identity. */
 export function propertyLine(results: CaseResultsData, state: VerificationState | null): string {
   const label = refLabeller(state?.case_file);
-  const details = identityDetails(results);
-  const parts = details.slice(0, 3).map(detail => `${detail.label} ${label(detail.value)}`);
-  return parts.length ? parts.join(' · ') : `Case ${results.case.case_id}`;
+  const title = compactProperty(identityDetails(results));
+  return title ? label(title) : `Case ${results.case.case_id}`;
+}
+
+const PROPERTY_ID = /\b(Survey|Sy|CTS|Plot|Site|Flat|Khata|PID)\s*(?:No\.?|Number)?\s*([A-Za-z0-9][A-Za-z0-9/.\-]*)/i;
+const VILLAGE = /\b(?:situated at|at)\s+([^,;.]+?\bVillage)\b/i;
+const ID_NAME: Record<string, string> = {
+  survey: 'Survey No.', sy: 'Sy. No.', cts: 'CTS No.', plot: 'Plot No.',
+  site: 'Site No.', flat: 'Flat No.', khata: 'Khata No.', pid: 'PID No.',
+};
+const OWNER_LABEL = /\b(owner|holder|purchaser|possessor|transferee)\b/i;
+
+/** A short header title: the first survey, plot, site, flat, khata or CTS number in the
+ * identity, with the village when stated. The full identity is shown further down the page. */
+function compactProperty(details: { label: string; value: string }[]): string {
+  for (const detail of details) {
+    const match = detail.value.match(PROPERTY_ID);
+    if (!match) continue;
+    const name = ID_NAME[match[1].toLowerCase()] || `${match[1]} No.`;
+    const village = detail.value.match(VILLAGE)?.[1].trim();
+    return `${name} ${match[2]}${village ? ` · ${village}` : ''}`;
+  }
+  const short = details.find(detail => detail.value.length <= 60 && !OWNER_LABEL.test(detail.label));
+  if (short) return `${short.label} ${short.value}`;
+  const first = details[0];
+  if (!first) return '';
+  const cut = first.value.slice(0, 60);
+  const end = cut.lastIndexOf(' ');
+  return `${first.label} ${end > 0 ? cut.slice(0, end) : cut}…`;
 }
 
 function identityDetails(results: CaseResultsData): { label: string; value: string }[] {

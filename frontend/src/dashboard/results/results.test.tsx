@@ -273,6 +273,44 @@ test('header names the property from the Phase A identity', async () => {
   assert.equal(propertyLine(RESULTS, null), 'CTS 1360B/9');
 });
 
+test('header shortens a long property description to its identifier and village', async () => {
+  const { propertyLine } = await import('./CaseResults');
+  const long: CaseResults = {
+    ...RESULTS,
+    agent: {
+      ...RESULTS.agent,
+      property_identity: {
+        details: [
+          {
+            label: 'Property',
+            value: "All that land measuring 6070 square metres (1 Acre 20 Guntas), being Survey No. 45/2B (Old Survey No. 45/2, Block 'B'), situated at Honaga Village, Belagavi Taluk and District, Karnataka; bounded North by land of Sidagouda Patil.",
+          },
+          {
+            label: 'Current recorded owner',
+            value: 'Ravi Gangadhar Kulkarni, purchaser under the sale deed dated 22-01-2024; the 2024-25 RTC also names him as owner/possessor.',
+          },
+        ],
+      },
+    },
+  };
+  assert.equal(propertyLine(long, null), 'Survey No. 45/2B · Honaga Village');
+
+  const unnumbered: CaseResults = {
+    ...RESULTS,
+    agent: {
+      ...RESULTS.agent,
+      property_identity: {
+        details: [
+          { label: 'Property', value: 'A long description with no identifier that keeps going for well over sixty characters in total.' },
+          { label: 'Current recorded owner', value: 'Ravi Gangadhar Kulkarni' },
+        ],
+      },
+    },
+  };
+  assert.match(propertyLine(unnumbered, null), /^Property A long description/);
+  assert.ok(propertyLine(unnumbered, null).length <= 100);
+});
+
 test('after verification, a document left unread is shown as not examined', () => {
   const state: VerificationState = {
     ...STATE,
