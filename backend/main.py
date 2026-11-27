@@ -109,7 +109,3 @@ if SPA_DIST.exists():
         # index.html must revalidate on every load, or browsers keep serving a
         # stale bundle after each deploy.
         return FileResponse(SPA_DIST / "index.html", headers={"Cache-Control": "no-cache"})
-else:
-    @app.get("/", response_class=FileResponse)
-    async def serve_ui():
-        return FileResponse(FRONTEND / "index.html")

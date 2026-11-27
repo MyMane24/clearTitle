@@ -98,12 +98,9 @@ def test_completion_certificate_subtype_uses_issuer_header(monkeypatch, header, 
 
 
 def test_semantic_schema_lookup_matches_alias_when_present(monkeypatch):
-    monkeypatch.setattr(document_processor, "SCHEMA_MAP", {
-        "MEMORANDUM_OF_DEPOSIT": {"bank": None, "date": None},
-    })
-    canonical, schema = document_processor.retrieve_schema("MEMORANDUM_OF_DEPOSIT_OF_TITLE_DEEDS")
+    monkeypatch.setattr(document_processor, "DOCUMENT_TYPES", frozenset({"MEMORANDUM_OF_DEPOSIT"}))
+    canonical = document_processor.canonical_document_type("MEMORANDUM_OF_DEPOSIT_OF_TITLE_DEEDS")
     assert canonical == "MEMORANDUM_OF_DEPOSIT"
-    assert schema == {"bank": None, "date": None}
 
 
 def test_unrelated_document_requests_user_action(monkeypatch):

@@ -16,9 +16,6 @@ class ManualUploadSource:
     def __init__(self, files: list[UploadFile]):
         self._files = files
 
-    def can_fulfil(self, requisition: dict) -> bool:
-        return bool(self._files)
-
     async def obtain(self, case_id: str, requisition: dict, dest_dir: Path) -> list[ObtainedFile]:
         obtained = []
         for upload in self._files:

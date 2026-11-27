@@ -170,8 +170,7 @@ def get_case_status_payload(case_id: str) -> dict:
 
         # 2. Fetch documents
         cursor.execute(
-            "SELECT doc_id, filename, document_type, status, structured_data, file_paths, error, "
-            "page_count, input_tokens, output_tokens, latency_ms, cost_usd, model_used "
+            "SELECT doc_id, filename, document_type, status, file_paths, error "
             "FROM documents WHERE case_id = %s ORDER BY doc_index ASC",
             (case_id,)
         )
@@ -187,7 +186,6 @@ def get_case_status_payload(case_id: str) -> dict:
 
     # Reconstruct files list
     files = []
-    results = []
     errors = []
 
     for d in doc_rows:
@@ -207,38 +205,6 @@ def get_case_status_payload(case_id: str) -> dict:
             "document_type": d.get("document_type") or "",
             "error": d.get("error") or "",
         })
-
-        # results element (only if status is structured)
-        if d["status"] == "structured":
-            structured_data = {}
-            if d.get("structured_data"):
-                try:
-                    structured_data = json.loads(d["structured_data"])
-                except Exception:
-                    pass
-
-            doc_type = d.get("document_type") or ""
-            safe_type = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in doc_type.upper())
-            results.append({
-                "doc_id": d["doc_id"],
-                "filename": d["filename"],
-                "doc_type": doc_type,
-                "status": "complete",
-                "structured": structured_data,
-                "result_file": f"{d['doc_id']}_{safe_type}.json",
-                "total_pages": d["page_count"],
-                "chunks_used": 1,  # derived placeholder
-                "input_tokens": d["input_tokens"],
-                "output_tokens": d["output_tokens"],
-                "cost_usd": float(d["cost_usd"]),
-                "latency_ms": d["latency_ms"],
-                "model_used": d["model_used"],
-                "provider": (
-                    "gemini" if "gemini" in (d["model_used"] or "").lower()
-                    else "groq" if "groq" in (d["model_used"] or "").lower()
-                    else "openai" if d["model_used"] else ""
-                )
-            })
 
         # errors element (if failed or classification_failed)
         if d["status"] in ("failed", "classification_failed"):
@@ -262,17 +228,6 @@ def get_case_status_payload(case_id: str) -> dict:
     else:
         progress = 0
 
-    # 3. Fetch title chain status
-    title_chain_status = "pending"
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT status FROM title_chains WHERE case_id = %s", (case_id,))
-        tc_row = cursor.fetchone()
-        if tc_row:
-            title_chain_status = tc_row[0]
-    except Exception:
-        pass
-
     return {
         "case_id": case_id,
         "status": case_status,
@@ -281,9 +236,7 @@ def get_case_status_payload(case_id: str) -> dict:
         "failed_docs": case_row["failed_docs"],
         "verification_status": case_row.get("verification_status"),
         "verdict": case_row.get("verdict"),
-        "title_chain_status": title_chain_status,
         "files": files,
-        "results": results,
         "errors": errors,
         "progress": progress,
         "log": logs

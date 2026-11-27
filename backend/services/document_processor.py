@@ -17,7 +17,7 @@ from backend.config import (
     OPENAI_API_KEY,
     OPENAI_API_VERSION,
 )
-from backend.services.schemas import SCHEMA_MAP
+from backend.services.schemas import DOCUMENT_TYPES
 
 
 class DocumentProcessingError(RuntimeError):
@@ -99,11 +99,11 @@ def _completion_certificate_subtype(ocr_text: str) -> str | None:
     return None
 
 
-def retrieve_schema(document_type: str) -> tuple[str | None, dict | None]:
-    """Resolve model labels to a single local schema; return (canonical type, schema)."""
+def canonical_document_type(document_type: str) -> str | None:
+    """Resolve a model label to a canonical document type, or None."""
     requested = _normalize_doc_type(document_type)
-    if requested in SCHEMA_MAP:
-        return requested, SCHEMA_MAP[requested]
+    if requested in DOCUMENT_TYPES:
+        return requested
 
     # Matching uses normalized words and meaningful aliases, never raw equality alone.
     aliases = {
@@ -117,13 +117,13 @@ def retrieve_schema(document_type: str) -> tuple[str | None, dict | None]:
     }
     terms = {requested, aliases.get(requested, "")}
     requested_words = set(requested.replace("_", " ").split())
-    for canonical, schema in SCHEMA_MAP.items():
+    for canonical in sorted(DOCUMENT_TYPES):
         canonical_words = set(canonical.replace("_", " ").split())
         if canonical in terms or canonical_words <= requested_words:
-            return canonical, schema
+            return canonical
         if aliases.get(canonical) in terms:
-            return canonical, schema
-    return None, None
+            return canonical
+    return None
 
 
 def _json_call(client, *, system: str, user: str, max_tokens: int = 6000):
@@ -158,7 +158,6 @@ def classify_document(ocr_text: str) -> dict:
     if _is_e_swattu_form9(ocr_text):
         return {
             "document_type": "E_SWATTU",
-            "schema": SCHEMA_MAP["E_SWATTU"],
             "summary": None,
             "analytics": {
                 "input_tokens": 0,
@@ -209,11 +208,10 @@ def classify_document(ocr_text: str) -> dict:
         if not isinstance(message, str) or not message.strip():
             message = f"This appears to be a {doc_type.replace('_', ' ').lower()}, not a property document."
         raise UnsupportedDocumentError(doc_type, message.strip()[:500])
-    canonical, schema = retrieve_schema(doc_type)
+    canonical = canonical_document_type(doc_type)
     summary = result.get("summary")
     return {
         "document_type": canonical or doc_type,
-        "schema": schema,
         "summary": summary.strip() if isinstance(summary, str) and summary.strip() else None,
         "analytics": analytics,
     }
@@ -222,6 +220,6 @@ def classify_document(ocr_text: str) -> dict:
 __all__ = [
     "DocumentProcessingError",
     "UnsupportedDocumentError",
+    "canonical_document_type",
     "classify_document",
-    "retrieve_schema",
 ]

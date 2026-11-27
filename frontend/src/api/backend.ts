@@ -49,9 +49,7 @@ export interface StatusResponse {
   failed_docs?: number;
   verification_status?: string | null;
   verdict?: string | null;
-  title_chain_status?: string | null;
   log?: string[];
-  results?: any[];
   errors?: any[];
   needs_action?: any[];
   files?: { doc_id: string; original_name: string; status: string; document_type: string; error?: string }[];

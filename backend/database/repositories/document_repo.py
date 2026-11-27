@@ -16,17 +16,16 @@ from backend.database.connection import _get_conn
 from backend.shared.ec_ledger import normalize_ec_structured
 
 
-def init_document(*, case_id: str, doc_id: str, doc_index: int, filename: str, file_paths: dict | None = None, expected_type: str | None = None) -> None:
+def init_document(*, case_id: str, doc_id: str, doc_index: int, filename: str, file_paths: dict | None = None) -> None:
     with _get_conn() as conn:
         cursor = conn.cursor()
         file_paths_str = json.dumps(file_paths, ensure_ascii=False) if file_paths else None
         cursor.execute(
-            "INSERT INTO documents (case_id, doc_id, doc_index, filename, status, file_paths, expected_type) "
-            "VALUES (%s, %s, %s, %s, 'uploaded', %s, %s) "
+            "INSERT INTO documents (case_id, doc_id, doc_index, filename, status, file_paths) "
+            "VALUES (%s, %s, %s, %s, 'uploaded', %s) "
             "ON DUPLICATE KEY UPDATE filename=VALUES(filename), doc_index=VALUES(doc_index), "
-            "file_paths=COALESCE(VALUES(file_paths), file_paths), "
-            "expected_type=VALUES(expected_type)",
-            (case_id, doc_id, doc_index, filename, file_paths_str, expected_type),
+            "file_paths=COALESCE(VALUES(file_paths), file_paths)",
+            (case_id, doc_id, doc_index, filename, file_paths_str),
         )
         conn.commit()
 
@@ -37,7 +36,6 @@ def update_document_status(
     doc_id: str,
     status: str,
     document_type: str | None = None,
-    structured_data: dict | None = None,
     summary: str | None = None,
     merged_ocr_text: str | None = None,
     file_paths: dict | None = None,
@@ -54,8 +52,6 @@ def update_document_status(
         fields: dict[str, Any] = {"status": status}
         if document_type is not None:
             fields["document_type"] = document_type
-        if structured_data is not None:
-            fields["structured_data"] = json.dumps(structured_data, ensure_ascii=False)
         if summary is not None:
             fields["summary"] = summary
         if merged_ocr_text is not None:

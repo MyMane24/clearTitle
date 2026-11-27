@@ -61,17 +61,10 @@ from backend.services.orchestrator import (
 )
 from backend.services.results import classification_action_message
 from backend.shared.constants import (
-    ENCUMBRANCE_CERTIFICATE,
-    SALE_DEED,
     STATUS_FAILED,
     STATUS_PENDING_RETRY,
     STATUS_PROCESSING,
 )
-
-SLOT_EXPECTED_TYPE = {
-    "sale_deed": SALE_DEED,
-    "ec": ENCUMBRANCE_CERTIFICATE,
-}
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -194,7 +187,6 @@ async def upload_documents(
                 doc_index=int(s["doc_id"].split("_")[1]),
                 filename=s["original_name"],
                 file_paths={"raw": s["saved_path"]},
-                expected_type=SLOT_EXPECTED_TYPE.get(s["slot"]),
             )
     except Exception as e:
         append_log(case_id, f"⚠ DB init failed (non-fatal): {e}")

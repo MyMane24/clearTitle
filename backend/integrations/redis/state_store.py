@@ -188,37 +188,6 @@ def update_file_in_case(case_id: str, doc_id: str, saved_path: str, filename: st
         print(f"Failed to update Redis cache for case {case_id}: {e}")
 
 
-def get_doc_filename(case_id: str, doc_id: str) -> str | None:
-    try:
-        for f in get_case_files(case_id):
-            if f["doc_id"] == doc_id:
-                return f["original_name"]
-    except Exception:
-        pass
-
-    # Fallback to MySQL
-    try:
-        with _get_conn() as conn:
-            cursor = conn.cursor(dictionary=True)
-            cursor.execute("SELECT filename FROM documents WHERE case_id = %s AND doc_id = %s", (case_id, doc_id))
-            row = cursor.fetchone()
-            if row and row.get("filename"):
-                return row["filename"]
-    except Exception as e:
-        print(f"Fallback to MySQL failed for get_doc_filename: {e}")
-
-    return None
-
-
-def get_case_results(case_id: str) -> list[dict]:
-    """Results are always read from MySQL (no Redis cache for this key)."""
-    try:
-        return _mysql_case_payload(case_id).get("results", [])
-    except Exception as e:
-        print(f"MySQL fallback failed for get_case_results: {e}")
-        return []
-
-
 def get_case_errors(case_id: str) -> list[dict]:
     """Errors are always read from MySQL (no Redis cache for this key)."""
     try:
@@ -333,8 +302,6 @@ def get_case_job(case_id: str) -> dict:
     try:
         meta = get_case_meta(case_id)
         files = get_case_files(case_id)
-        results = get_case_results(case_id)
-        results.sort(key=lambda r: r.get("doc_id", ""))
         errors = get_case_errors(case_id)
         errors.sort(key=lambda e: e.get("doc_id", ""))
         log = get_case_log(case_id)
@@ -350,7 +317,6 @@ def get_case_job(case_id: str) -> dict:
             "case_id": case_id,
             "status": meta["status"],
             "files": files,
-            "results": results,
             "errors": errors,
             "progress": progress,
             "log": log,

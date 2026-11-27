@@ -1,5 +1,5 @@
-"""Shared extraction schemas keyed by document type."""
+"""Canonical document type labels."""
 
-from backend.services.schemas.static import SCHEMA_MAP
+from backend.services.schemas.static import DOCUMENT_TYPES
 
-__all__ = ["SCHEMA_MAP"]
+__all__ = ["DOCUMENT_TYPES"]

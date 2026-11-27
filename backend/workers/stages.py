@@ -1,7 +1,7 @@
 """Concrete pipeline stages (plan §4.3, §5.1).
 
 Each stage wraps the logic formerly in `backend.pipeline.tasks` verbatim behind
-`invoke(ctx, input_data)`. Celery/idempotency/tracing live in `workers/tasks.py`
+`invoke(ctx)`. Celery/idempotency/tracing live in `workers/tasks.py`
 via the `workers/stage_adapter.py` bridge.
 """
 
@@ -18,16 +18,13 @@ from backend.database.repositories.document_repo import (
 )
 from backend.integrations.ocr.ocr_merger import merge_chunked_outputs
 from backend.integrations.ocr.preprocessor import preprocess_pdf
-from backend.integrations.ocr.sarvam_client import ChunkResult
+from backend.integrations.ocr.sarvam_client import ChunkResult, run_sarvam_ocr
 from backend.integrations.redis.state_store import append_log
 from backend.integrations.storage.file_utils import get_case_dir, write_json
 from backend.logger import get_logger
 from backend.services.document_processor import (
     UnsupportedDocumentError,
     classify_document,
-)
-from backend.services.extract import (
-    run_ocr_with_retry as _run_ocr_with_retry,
 )
 from backend.shared.constants import (
     STATUS_CLASSIFICATION_FAILED,
@@ -81,7 +78,7 @@ class OcrInsufficientCredits(Exception):
 class PreprocessStage(ExtractionStage):
     name = "preprocess"
 
-    def invoke(self, ctx: StageContext, input_data: dict) -> dict:
+    def invoke(self, ctx: StageContext) -> dict:
         case_id = ctx.case_id
         doc_id = ctx.doc_id
         logger.info("Starting preprocessing for case %s, doc %s", case_id, doc_id)
@@ -123,7 +120,7 @@ class PreprocessStage(ExtractionStage):
 class OcrStage(ExtractionStage):
     name = "ocr"
 
-    def invoke(self, ctx: StageContext, input_data: dict) -> dict:
+    def invoke(self, ctx: StageContext) -> dict:
         case_id = ctx.case_id
         doc_id = ctx.doc_id
         logger.info("Starting OCR for case %s, doc %s", case_id, doc_id)
@@ -138,7 +135,7 @@ class OcrStage(ExtractionStage):
         (case_dir / "ocr_raw").mkdir(exist_ok=True)
 
         try:
-            ocr_results = _run_ocr_with_retry(pdf_path, case_dir / "ocr_raw" / doc_id)
+            ocr_results = run_sarvam_ocr(pdf_path, case_dir / "ocr_raw" / doc_id)
             write_json(
                 case_dir / "ocr_raw" / f"{doc_id}_chunks.json",
                 {"chunks": [asdict(chunk) for chunk in ocr_results]},
@@ -185,7 +182,7 @@ class OcrStage(ExtractionStage):
 class MergeStage(ExtractionStage):
     name = "merge"
 
-    def invoke(self, ctx: StageContext, input_data: dict) -> dict:
+    def invoke(self, ctx: StageContext) -> dict:
         case_id = ctx.case_id
         doc_id = ctx.doc_id
         logger.info("Merging OCR chunks for case %s, doc %s", case_id, doc_id)
@@ -248,7 +245,7 @@ class MergeStage(ExtractionStage):
 class ClassifyStage(ExtractionStage):
     name = "classify"
 
-    def invoke(self, ctx: StageContext, input_data: dict) -> dict:
+    def invoke(self, ctx: StageContext) -> dict:
         case_id = ctx.case_id
         doc_id = ctx.doc_id
         logger.info("Classifying document for case %s, doc %s", case_id, doc_id)
@@ -275,7 +272,7 @@ class ClassifyStage(ExtractionStage):
             logger.info("Document classified and extracted as %s for doc_id %s", doc_type, doc_id)
             _log(
                 case_id,
-                f"[{doc_id}] ✓ Classification complete → {doc_type}; matching schema lookup complete",
+                f"[{doc_id}] ✓ Classification complete → {doc_type}",
             )
         except UnsupportedDocumentError as e:
             message = str(e)
@@ -308,7 +305,7 @@ class PersistStage(ExtractionStage):
 
     name = "persist"
 
-    def invoke(self, ctx: StageContext, input_data: dict) -> dict:
+    def invoke(self, ctx: StageContext) -> dict:
         case_id = ctx.case_id
         doc_id = ctx.doc_id
         logger.info("Persisting document for case %s, doc %s", case_id, doc_id)
