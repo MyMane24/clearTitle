@@ -61,7 +61,7 @@ export function ChainTimeline({ links, label = plain }: { links: TimelineLink[];
               <summary>
                 <span className="cr-tl-dot" aria-hidden="true" />
                 <span className="cr-link-date">
-                  <b>{year || 'Undated'}</b>
+                  <b>{year}</b>
                   {date && date !== year && <small>{date}</small>}
                 </span>
                 <span className="cr-link-main">
