@@ -92,7 +92,7 @@ function order(html: string, texts: string[]) {
 test('report page: opinion, the advocate-style report, then documents needed; no findings list', () => {
   const html = render(STATE);
   order(html, [
-    'Title not clear',
+    'Not safe to proceed',
     'Report of Investigation of Title in respect of Immovable Property',
     'I. Particulars of the title holder',
     'Shri. Dinanath S/o. Purushottam Revankar',
@@ -146,7 +146,7 @@ test('the opinion shows its reasons and what changed above the report', () => {
     report: { ...STATE.report!, version: 2, changes: ['The sale of 2019: now defective.'] },
   };
   const html = render(state);
-  order(html, ['Title not clear', 'The 2007 sale lacks GPA authority.', 'What changed since version 1', 'Report of Investigation of Title']);
+  order(html, ['Not safe to proceed', 'The 2007 sale lacks GPA authority.', 'What changed since version 1', 'Report of Investigation of Title']);
 });
 
 test('a report saved in the old format says so instead of an empty report', () => {
@@ -206,7 +206,7 @@ test('while a run is in progress only this run\u2019s steps show, not the previo
   assert.match(html, /id="cr-live-title"/);
   assert.match(html, /Reading SaleDeed 2007\.pdf/);
   assert.doesNotMatch(html, /Old step from the last run/);
-  assert.doesNotMatch(html, /cr-issues-title|Title not clear|Documents needed/);
+  assert.doesNotMatch(html, /cr-issues-title|Not safe to proceed|Documents needed/);
 });
 
 test('timeline uses the transfer records with coloured results, else the draft chain', () => {

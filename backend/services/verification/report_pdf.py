@@ -38,7 +38,7 @@ COPY_TYPE = "Scanned copy"
 OPINION_WORDS = {
     "CLEAR": "Title clear",
     "CLEAR_SUBJECT_TO": "Title clear, subject to conditions",
-    "NOT_CLEAR": "Title not clear",
+    "NOT_CLEAR": "Not safe to proceed",
 }
 
 _BODY = ParagraphStyle("body", fontName="Times-Roman", fontSize=11.5, leading=17)

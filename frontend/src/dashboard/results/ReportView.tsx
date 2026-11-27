@@ -5,7 +5,7 @@ import type { DueDiligenceReport, ReportOpinion } from '../../api/backend';
 const OPINION: Record<ReportOpinion, { label: string; tone: string }> = {
   CLEAR: { label: 'Title clear', tone: 'good' },
   CLEAR_SUBJECT_TO: { label: 'Clear, subject to conditions', tone: 'warn' },
-  NOT_CLEAR: { label: 'Title not clear', tone: 'bad' },
+  NOT_CLEAR: { label: 'Not safe to proceed', tone: 'bad' },
 };
 
 export function opinionLabel(opinion: ReportOpinion): string {
