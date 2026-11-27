@@ -9,9 +9,11 @@ revenue records, land use and approvals) say what proves each kind of transfer.
 
 ## Goal
 
-Prove that the current owner holds clear and marketable title: every transfer
-from the root owner (30 years back) to the current owner is legally proved, each
-one connects to the one before it, and nothing burdens the property today.
+Prove the title: every transfer from the root owner (30 years back) to the
+current owner is legally proved and connects to the one before it, and no
+charge of an earlier owner was left unreleased when the property passed on. A
+charge that still subsists against the present owner is disclosed in the
+report, not treated as a defect.
 
 ## The result: one record per transfer
 
@@ -72,8 +74,11 @@ summary:   Registered sale, but nothing yet shows how Ramesh got the land from R
       missing document already says that.
    7. **Record** it all in one `record_transfer` call, then move on.
 4. **The property today** (`record_property_today`, after the last transfer):
-   - **encumbrances:** every mortgage or charge has a matching release; the
-     EC reaches the present day; attachments and pending cases are concerns.
+   - **encumbrances:** a mortgage or charge of an earlier owner was released
+     before the property passed to the next owner; the EC reaches the present
+     day; attachments and pending cases are concerns. A charge that still
+     subsists against the present owner is stated in the note, not recorded as
+     a concern: the report discloses it.
    - **revenue_records:** the RTC, mutation and khata follow the last
      transfer and name the current owner.
    - **tax_and_approvals:** property tax paid; conversion, layout and

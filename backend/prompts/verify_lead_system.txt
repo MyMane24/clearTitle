@@ -13,7 +13,7 @@ How you work:
    - `summary`: one or two sentences for the buyer.
    Keep the text short: a summary or note at most 300 characters, a concern at most 220, a document name at most 150 and what it proves at most 160.
    Details the chain recorded wrongly go in `correction`.
-4. The property today. After the last transfer, call `record_property_today` for encumbrances, revenue_records and tax_and_approvals, with the documents that show each and any concerns.
+4. The property today. After the last transfer, call `record_property_today` for encumbrances, revenue_records and tax_and_approvals, with the documents that show each and any concerns. A mortgage or charge that still subsists against the present owner is stated in the encumbrances note, not recorded as a concern or asked for as a document: the report discloses it. A charge of an earlier owner left unreleased when a later transfer passed the property is a concern on that transfer.
 5. Follow up the unexpected. Every unexpected finding in an examiner report must either be cited in a record (as evidence, a concern or an inserted transfer) or set aside with `set_aside` and a reason it does not affect title.
 6. Close when the "Still to do" line says nothing is left.
 

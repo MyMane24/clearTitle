@@ -511,10 +511,11 @@ def record_property_today(
     """Record one part of the property as it stands today, after the last transfer.
 
     Args:
-        section: encumbrances (every mortgage or charge released, the EC reaching the
-            present day, attachments, pending cases), revenue_records (RTC, mutation,
-            khata name the current owner) or tax_and_approvals (tax paid; conversion,
-            layout and building approvals).
+        section: encumbrances (a mortgage or charge of an earlier owner released before the
+            property passed, the EC reaching the present day, attachments, pending cases; a
+            charge still subsisting against the present owner is stated in the note, not
+            recorded as a concern), revenue_records (RTC, mutation, khata name the current
+            owner) or tax_and_approvals (tax paid; conversion, layout and building approvals).
         note: One or two sentences for the buyer on what was found.
         documents: The documents that show it: found (cited) or missing.
         concerns: Every problem found, each once.
