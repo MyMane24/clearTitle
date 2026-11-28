@@ -8,6 +8,7 @@ import {
   HealthStatus, StatusResponse, getToken, setToken,
 } from '../api/backend';
 import { CaseResults } from './results/CaseResults';
+import { documentErrorMessage, pipelineErrors } from './results/labels';
 import {
   AlertTriangle, Check, CheckCircle2, FileText, FileUp,
   LogIn, LogOut, Menu, Play, Plus, RefreshCw, Sparkles,
@@ -69,13 +70,6 @@ function docStageInfo(docStatus: string, error = ''): { label: string; pct: numb
     return { label: 'Insufficient OCR credits', pct: 0, state: 'failed' };
   }
   return map[docStatus] || { label: docStatus, pct: 0, state: 'waiting' };
-}
-
-function documentErrorMessage(error = ''): string {
-  if (error.toLowerCase().includes('insufficient credits')) {
-    return 'OCR stopped: Sarvam has insufficient credits. Add credits to the Sarvam account, then retry this document.';
-  }
-  return error;
 }
 
 function AiDots() {
@@ -695,7 +689,7 @@ const needsActionSource = statusData?.needs_action?.length ? statusData.needs_ac
 const needsAction = needsActionSource.filter(
   (item: any, index: number, items: any[]) => items.findIndex((candidate: any) => candidate.doc_id === item.doc_id) === index,
 );
-const visibleErrors = (statusData?.errors || []).filter((error: any) => error.step !== 'classify');
+const visibleErrors = pipelineErrors(statusData, results);
   const agent = results?.agent;
   const caseInfo = results?.case;
   // Paused without a chain: the agent is waiting for a history document.
@@ -955,7 +949,7 @@ const visibleErrors = (statusData?.errors || []).filter((error: any) => error.st
                         {visibleErrors.map((e: any, i: number) => (
                           <div className="error-item" key={i}>
                             <strong>{e.doc_id}</strong> — Step: {e.step}<br />
-                            <code style={{ fontSize: 11 }}>{e.error}</code>
+                            <code style={{ fontSize: 11 }}>{documentErrorMessage(e.error)}</code>
                           </div>
                         ))}
                       </div>

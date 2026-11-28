@@ -90,6 +90,7 @@ function status(results: CaseResultsData, state: VerificationState | null, runni
   if (running) return { label: 'Verifying…', tone: 'neutral' };
   if (state?.report) return { label: opinionLabel(state.report.opinion), tone: opinionTone(state.report.opinion) };
   if (state?.run && ['incomplete', 'error'].includes(state.run.status)) return { label: 'Verification not finished', tone: 'warn' };
+  if (String(results.case?.status || '').toLowerCase() === 'failed') return { label: 'Documents failed', tone: 'bad' };
   const chain = String(results.agent?.status || '').toLowerCase();
   if (chain === 'done') return { label: 'Not verified yet', tone: 'neutral' };
   if (chain === 'paused') return { label: 'Waiting for documents', tone: 'warn' };

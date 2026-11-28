@@ -1,5 +1,5 @@
 // Readable labels for ids, types and results shown on the results page.
-import type { SectionName, VerificationCaseFile, VerificationTransfer } from '../../api/backend';
+import type { CaseResults, SectionName, VerificationCaseFile, VerificationTransfer } from '../../api/backend';
 
 /** "SALE_DEED" -> "Sale deed". */
 export function humanizeType(type: string | null | undefined): string {
@@ -33,6 +33,34 @@ export function dayMonth(date: string | null | undefined): string {
 export function transferName(transfer: Pick<VerificationTransfer, 'transaction'>): string {
   const year = yearOf(transfer.transaction.executed_date || transfer.transaction.registration_date);
   return `${humanizeType(transfer.transaction.transaction_type)}${year ? ` of ${year}` : ''}`;
+}
+
+/** Failed pipeline documents for the action-required notice; a live status poll is fresher. */
+export function pipelineErrors(
+  statusData: { errors?: any[] } | null | undefined,
+  results: Pick<CaseResults, 'documents'> | null | undefined,
+): any[] {
+  const errors = statusData?.errors?.length
+    ? statusData.errors
+    : (results?.documents || [])
+      .filter((doc: any) => doc.status === 'failed')
+      .map((doc: any) => ({ doc_id: doc.doc_id, step: 'pipeline', error: doc.error }));
+  return errors.filter((error: any) => error.step !== 'classify');
+}
+
+/** A document pipeline error in words, naming the service whose key needs fixing. */
+export function documentErrorMessage(error = ''): string {
+  const text = error.toLowerCase();
+  if (text.includes('insufficient credits')) {
+    return 'OCR stopped: Sarvam has insufficient credits. Add credits to the Sarvam account, then retry this document.';
+  }
+  if (text.includes('sarvam')) return error;
+  if (text.includes('error code: 401') || text.includes('api key has expired')) {
+    return text.includes('expired')
+      ? 'OpenAI API key has expired. Replace OPENAI_API_KEY, restart the server, then retry this document.'
+      : 'OpenAI rejected the API key (401). Check OPENAI_API_KEY, restart the server, then retry this document.';
+  }
+  return error;
 }
 
 export type Tone = 'good' | 'warn' | 'bad' | 'neutral';

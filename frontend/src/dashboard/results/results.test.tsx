@@ -6,7 +6,7 @@ import type { CaseResults, VerificationState } from '../../api/backend';
 import { LiveFeed } from '../verification/LiveFeed';
 import { CaseResultsView } from './CaseResults';
 import { ChainTimeline, timelineLinks } from './ChainTimeline';
-import { humanizeType, dayMonth, refLabeller } from './labels';
+import { documentErrorMessage, humanizeType, dayMonth, pipelineErrors, refLabeller } from './labels';
 import { shouldPoll } from './useVerification';
 
 const RESULTS: CaseResults = {
@@ -73,10 +73,10 @@ const STATE: VerificationState = {
   },
 };
 
-function render(state: VerificationState | null, running = false, page: 'chain' | 'report' = 'report') {
+function render(state: VerificationState | null, running = false, page: 'chain' | 'report' = 'report', results: CaseResults = RESULTS) {
   return renderToStaticMarkup(
     <CaseResultsView
-      caseId="C1" results={RESULTS} chainBusy={false} onRebuildChain={() => {}} onOpenPdf={() => {}}
+      caseId="C1" results={results} chainBusy={false} onRebuildChain={() => {}} onOpenPdf={() => {}}
       state={state} events={[]} error={null} running={running} uploadingId={null} start={() => {}} upload={() => {}}
       page={page} onPageChange={() => {}}
     />,
@@ -120,6 +120,48 @@ test('chain page: property identity, timeline, property today and documents; no 
   order(html, ['Encumbrances', 'In order', 'Revenue records', 'Not checked yet']);
   assert.doesNotMatch(html, /cr-issues-title|Documents needed/);
   assert.match(html, /Defective/);  // verdicts show on the timeline
+});
+
+test('a case whose documents all failed says so instead of building the chain', () => {
+  const failed: CaseResults = {
+    ...RESULTS,
+    case: { ...RESULTS.case, status: 'failed', completed_docs: 0, failed_docs: 2 },
+    documents: [{ doc_id: 'DOC_001', filename: 'EC.pdf', document_type: '', status: 'failed', error: 'OpenAI: Error code: 401 - expired' }],
+    agent: { status: 'idle' },
+  };
+  const html = render(null, false, 'chain', failed);
+  assert.match(html, /Documents failed/);
+  assert.doesNotMatch(html, /Building title chain/);
+});
+
+test('a refreshed failed case keeps its pipeline error, but classify failures stay in needs-action', () => {
+  const failed = {
+    ...RESULTS,
+    documents: [
+      { doc_id: 'DOC_001', filename: 'EC.pdf', status: 'failed', error: 'OpenAI: Error code: 401 - expired' },
+      { doc_id: 'DOC_002', filename: 'Menu.pdf', status: 'classification_failed', error: 'not a property document' },
+    ],
+  };
+  assert.deepEqual(pipelineErrors(null, failed), [
+    { doc_id: 'DOC_001', step: 'pipeline', error: 'OpenAI: Error code: 401 - expired' },
+  ]);
+  assert.deepEqual(
+    pipelineErrors({ errors: [{ doc_id: 'DOC_003', step: 'pipeline', error: 'live' }] }, failed),
+    [{ doc_id: 'DOC_003', step: 'pipeline', error: 'live' }],
+  );
+  assert.deepEqual(pipelineErrors({ errors: [{ doc_id: 'DOC_002', step: 'classify', error: 'x' }] }, null), []);
+});
+
+test('a provider key failure is explained in words, not the raw SDK error', () => {
+  assert.equal(
+    documentErrorMessage('Error code: 401 - Your API key has expired. Create a new API key to continue.'),
+    'OpenAI API key has expired. Replace OPENAI_API_KEY, restart the server, then retry this document.',
+  );
+  assert.match(
+    documentErrorMessage('All Sarvam OCR chunks failed. Error code: 401'),
+    /Sarvam OCR chunks failed/,
+  );
+  assert.equal(documentErrorMessage('Disk full'), 'Disk full');
 });
 
 test('report page before verification explains it and offers to start', () => {
