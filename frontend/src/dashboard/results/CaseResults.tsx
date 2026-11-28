@@ -86,22 +86,15 @@ function identityDetails(results: CaseResultsData): { label: string; value: stri
   return (results.agent?.property_identity as { details?: { label: string; value: string }[] } | undefined)?.details || [];
 }
 
-function status(results: CaseResultsData, state: VerificationState | null, running: boolean): { code: string; label: string; tone: string } {
-  if (running) return { code: 'PENDING', label: 'Verifying…', tone: 'neutral' };
-  if (state?.report) {
-    const tone = opinionTone(state.report.opinion);
-    return {
-      code: tone === 'good' ? 'PASS' : tone === 'warn' ? 'WARNING' : 'FAIL',
-      label: opinionLabel(state.report.opinion),
-      tone,
-    };
-  }
-  if (state?.run && ['incomplete', 'error'].includes(state.run.status)) return { code: 'PENDING', label: 'Verification not finished', tone: 'warn' };
+function status(results: CaseResultsData, state: VerificationState | null, running: boolean): { label: string; tone: string } {
+  if (running) return { label: 'Verifying…', tone: 'neutral' };
+  if (state?.report) return { label: opinionLabel(state.report.opinion), tone: opinionTone(state.report.opinion) };
+  if (state?.run && ['incomplete', 'error'].includes(state.run.status)) return { label: 'Verification not finished', tone: 'warn' };
   const chain = String(results.agent?.status || '').toLowerCase();
-  if (chain === 'done') return { code: 'PENDING', label: 'Not verified yet', tone: 'neutral' };
-  if (chain === 'paused') return { code: 'PENDING', label: 'Waiting for documents', tone: 'warn' };
-  if (chain === 'error') return { code: 'FAIL', label: 'Title chain failed', tone: 'bad' };
-  return { code: 'PENDING', label: 'Building title chain…', tone: 'neutral' };
+  if (chain === 'done') return { label: 'Not verified yet', tone: 'neutral' };
+  if (chain === 'paused') return { label: 'Waiting for documents', tone: 'warn' };
+  if (chain === 'error') return { label: 'Title chain failed', tone: 'bad' };
+  return { label: 'Building title chain…', tone: 'neutral' };
 }
 
 /** The day a verification run finished, in report style; empty when unknown. */
@@ -115,7 +108,7 @@ function reportDate(state: VerificationState | null): string {
 }
 
 export function CaseResultsView(props: CaseResultsViewProps) {
-  const { results, state, events, running, chainBusy, start, onRebuildChain, page, onPageChange } = props;
+  const { results, state, events, error, running, chainBusy, start, onRebuildChain, page, onPageChange } = props;
   const caseFile = state?.case_file || null;
   const report = state?.report || null;
   const prepared = reportDate(state);
@@ -144,13 +137,9 @@ export function CaseResultsView(props: CaseResultsViewProps) {
     <div className="cr-page">
       <header className="cr-header">
         <div className="cr-header-text">
-          <span className="cr-kicker">Property title verification</span>
           <h1>{propertyLine(results, state)}</h1>
           <div className="cr-meta">
-            <span className={`cr-meta-item cr-verdict cr-tone-${badge.tone}`}>
-              <span className="cr-verdict-code">{badge.code}</span>
-              <span className="cr-verdict-label">{badge.label}</span>
-            </span>
+            <span className={`cr-meta-item cr-verdict cr-tone-${badge.tone}`}>{badge.label}</span>
             {report && !running && <span className="cr-meta-item">Report v{report.version}</span>}
             {prepared && !running && <span className="cr-meta-item">{prepared}</span>}
             <span className="cr-meta-item">Case {results.case.case_id}</span>
@@ -179,6 +168,7 @@ export function CaseResultsView(props: CaseResultsViewProps) {
         </div>
       </header>
       {downloadError && <p className="cr-alert"><AlertTriangle size={14} /> {downloadError}</p>}
+      {error && <p className="cr-alert"><AlertTriangle size={14} /> {error}</p>}
 
       {running ? (
         <Section
@@ -214,6 +204,7 @@ function ChainPage({ results, state, onOpenPdf }: CaseResultsViewProps) {
   const report = state?.report || null;
   const identity = identityDetails(results);
   const label = refLabeller(caseFile);
+  const links = timelineLinks(caseFile?.transfers, results.agent?.title_chain);
   return (
     <>
       {identity.length > 0 && (
@@ -227,35 +218,40 @@ function ChainPage({ results, state, onOpenPdf }: CaseResultsViewProps) {
       <Section
         id="cr-chain-title"
         title="Title chain"
-        note={`Earliest transfer first. Open a transfer to see its details${caseFile ? ' and verdict' : ''}.`}
+        aside={links.length ? `${links.length} ${links.length === 1 ? 'transfer' : 'transfers'}` : undefined}
+        note={links.length ? `Earliest transfer first. Open a transfer to see its details${caseFile ? ' and verdict' : ''}.` : undefined}
       >
-        <ChainTimeline links={timelineLinks(caseFile?.transfers, results.agent?.title_chain)} label={label} />
+        <ChainTimeline links={links} label={label} />
       </Section>
 
       {caseFile && <PropertyToday caseFile={caseFile} label={label} />}
 
-      <Section id="cr-docs-title" title="Documents" aside={`${results.documents.length} uploaded`}>
-        <ul className="cr-docs">
-          {results.documents.map((doc: any) => {
-            const examined = caseFile?.documents?.[doc.doc_id];
-            const docState = examined?.examined ? 'Examined' : examined?.examination_error ? 'Could not be read'
-              : doc.status === 'classification_failed' || doc.status === 'failed' ? 'Needs attention'
-              : doc.status !== 'structured' ? 'Processing'
-              : examined && report ? 'Not examined' : 'Ready';
-            const tone = docState === 'Examined' || docState === 'Ready' ? 'good'
-              : docState === 'Could not be read' ? 'bad'
-              : docState === 'Processing' ? 'neutral' : 'warn';
-            return (
-              <li key={doc.doc_id}>
-                <button type="button" className="cr-doc-name" onClick={() => onOpenPdf(String(doc.doc_id))} title="Open the original PDF">
-                  <FileText size={14} /> {doc.filename || 'Untitled document'}
-                </button>
-                <span className="cr-doc-type">{humanizeType(doc.document_type)}</span>
-                <span className={`cr-status cr-tone-${tone}`}>{docState}</span>
-              </li>
-            );
-          })}
-        </ul>
+      <Section id="cr-docs-title" title="Documents" aside={results.documents.length ? `${results.documents.length} uploaded` : undefined}>
+        {results.documents.length === 0 ? (
+          <p className="cr-muted">No documents uploaded.</p>
+        ) : (
+          <ul className="cr-docs">
+            {results.documents.map((doc: any) => {
+              const examined = caseFile?.documents?.[doc.doc_id];
+              const docState = examined?.examined ? 'Examined' : examined?.examination_error ? 'Could not be read'
+                : doc.status === 'classification_failed' || doc.status === 'failed' ? 'Needs attention'
+                : doc.status !== 'structured' ? 'Processing'
+                : examined && report ? 'Not examined' : 'Ready';
+              const tone = docState === 'Examined' || docState === 'Ready' ? 'good'
+                : docState === 'Could not be read' ? 'bad'
+                : docState === 'Processing' ? 'neutral' : 'warn';
+              return (
+                <li key={doc.doc_id}>
+                  <button type="button" className="cr-doc-name" onClick={() => onOpenPdf(String(doc.doc_id))} title={doc.filename || 'Untitled document'}>
+                    <FileText size={14} /> <span className="cr-doc-file">{doc.filename || 'Untitled document'}</span>
+                  </button>
+                  <span className="cr-doc-type">{humanizeType(doc.document_type)}</span>
+                  <span className={`cr-status cr-tone-${tone}`}>{docState}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </Section>
     </>
   );
@@ -284,7 +280,7 @@ function PropertyToday({ caseFile, label }: { caseFile: NonNullable<Verification
 }
 
 /** Is the title clear: opinion, documents needed, the report and the agent's steps. */
-function ReportPage({ state, error, uploadingId, start, upload, primary }: CaseResultsViewProps & { primary: string | null }) {
+function ReportPage({ state, uploadingId, start, upload, primary }: CaseResultsViewProps & { primary: string | null }) {
   const caseFile = state?.case_file || null;
   const report = state?.report || null;
   const label = refLabeller(caseFile);
@@ -297,7 +293,6 @@ function ReportPage({ state, error, uploadingId, start, upload, primary }: CaseR
 
   return (
     <>
-      {error && <p className="cr-alert"><AlertTriangle size={14} /> {error}</p>}
       {unfinished && (
         <p className="cr-alert">
           <AlertTriangle size={14} />

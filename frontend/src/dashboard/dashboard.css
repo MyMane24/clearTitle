@@ -1824,9 +1824,6 @@
 /* -- Case results page (results/*.tsx): content on the page, no cards or boxes.
    Sections are separated by space and one hairline; colour marks status only. -- */
   .ctd-root .cr-page{
-    --cr-ink: #1c1917; --cr-text: #44403c; --cr-soft: #78716c; --cr-faint: #a8a29e;
-    --cr-line: #eeeae6; --cr-brand: #ea580c;
-    --cr-good: #047857; --cr-warn: #b45309; --cr-bad: #b91c1c; --cr-neutral: #78716c;
     display: flex; flex-direction: column; width: 100%; max-width: 860px; margin: 0 auto; padding: 8px 0 80px;
     font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; color: var(--cr-text);
     -webkit-font-smoothing: antialiased;
@@ -1840,15 +1837,11 @@
   /* Header */
   .ctd-root .cr-header{ display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; flex-wrap: wrap; }
   .ctd-root .cr-header-text{ display: flex; flex-direction: column; gap: 10px; min-width: 0; max-width: 680px; }
-  .ctd-root .cr-kicker{ font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--cr-brand); }
   .ctd-root .cr-header h1{ font-size: clamp(26px, 3.4vw, 34px); line-height: 1.15; font-weight: 700; letter-spacing: -.025em; }
   .ctd-root .cr-meta{ display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--cr-soft); }
   .ctd-root .cr-meta-item{ display: inline-flex; align-items: center; }
   .ctd-root .cr-meta-item + .cr-meta-item::before{ content: ""; width: 3px; height: 3px; border-radius: 50%; background: var(--cr-faint); margin-right: 14px; }
   .ctd-root .cr-verdict{ gap: 8px; color: var(--tone, var(--cr-soft)); }
-  .ctd-root .cr-verdict-code{ display: inline-flex; align-items: center; gap: 7px; font-size: 10.5px; font-weight: 700; letter-spacing: .12em; }
-  .ctd-root .cr-verdict-code::before{ content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
-  .ctd-root .cr-verdict-label{ font-size: 13px; font-weight: 600; color: var(--cr-ink); }
   .ctd-root .cr-header-actions{ display: flex; align-items: center; gap: 6px; }
   .ctd-root .cr-header-actions .btn{ display: inline-flex; align-items: center; gap: 7px; padding: 10px 18px; border-radius: 999px; font-size: 13px; font-weight: 600; }
 

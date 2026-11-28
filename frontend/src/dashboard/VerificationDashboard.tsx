@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import './dashboard.css';
+import './results/chain.css';
 import clearTitleLogo from '../assets/clearTitle.png';
 import {
   API, AuthResponse, AuthUser, CaseListItem, CaseResults as CaseResultsData,

@@ -14,6 +14,21 @@ export function yearOf(date: string | null | undefined): string {
   return match ? match[0] : '';
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "06 Dec" from "06-12-2007", "06.12.2007" or "2007-12-06"; empty when the date is none of those. */
+export function dayMonth(date: string | null | undefined): string {
+  const text = date || '';
+  const dmy = text.match(/\b(\d{1,2})[-/.](\d{1,2})[-/.](?:19|20)\d{2}\b/);
+  const ymd = text.match(/\b(?:19|20)\d{2}[-/.](\d{1,2})[-/.](\d{1,2})\b/);
+  const day = dmy ? dmy[1] : ymd ? ymd[2] : '';
+  const month = dmy ? dmy[2] : ymd ? ymd[1] : '';
+  const index = Number(month);
+  return day && index >= 1 && index <= 12 && Number(day) >= 1 && Number(day) <= 31
+    ? `${day} ${MONTHS[index - 1]}`
+    : '';
+}
+
 /** "Sale of 2010". */
 export function transferName(transfer: Pick<VerificationTransfer, 'transaction'>): string {
   const year = yearOf(transfer.transaction.executed_date || transfer.transaction.registration_date);

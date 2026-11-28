@@ -6,7 +6,7 @@ import type { CaseResults, VerificationState } from '../../api/backend';
 import { LiveFeed } from '../verification/LiveFeed';
 import { CaseResultsView } from './CaseResults';
 import { ChainTimeline, timelineLinks } from './ChainTimeline';
-import { humanizeType, refLabeller } from './labels';
+import { humanizeType, dayMonth, refLabeller } from './labels';
 import { shouldPoll } from './useVerification';
 
 const RESULTS: CaseResults = {
@@ -230,6 +230,10 @@ test('a draft link saved before transferor fields existed renders instead of cra
 
 test('labels and polling helpers', () => {
   assert.equal(humanizeType('PROPERTY_REGISTER_CARD'), 'Property register card');
+  assert.equal(dayMonth('06-12-2007'), '06 Dec');
+  assert.equal(dayMonth('2007-12-06'), '06 Dec');
+  assert.equal(dayMonth('06.12.2007'), '06 Dec');
+  assert.equal(dayMonth('2007'), '');
   assert.equal(refLabeller(STATE.case_file)('DOC_002'), 'EC 2010 to 2026.pdf');
   assert.equal(refLabeller(null)('see PA-TC-0009 and DOC_099'), 'see a transfer and the document');
   assert.equal(refLabeller(STATE.case_file)('Follow up on R1.'), 'Follow up on Registered GPA to Girish.');

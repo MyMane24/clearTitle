@@ -1,7 +1,7 @@
 import React from 'react';
 import { AlertTriangle, CheckCircle2, ChevronDown, XCircle } from 'lucide-react';
 import type { ChainTransaction, VerificationTransfer } from '../../api/backend';
-import { VERDICT, humanizeType, yearOf } from './labels';
+import { VERDICT, dayMonth, humanizeType, yearOf } from './labels';
 
 /** One row of the timeline: a transfer, with its verification record when there is one. */
 export interface TimelineLink {
@@ -51,6 +51,7 @@ export function ChainTimeline({ links, label = plain }: { links: TimelineLink[];
         const verdict = record?.result ? VERDICT[record.result] : undefined;
         const date = t.executed_date || t.registration_date || '';
         const year = yearOf(date);
+        const day = dayMonth(date);
         const broken = record?.connects && !record.connects.ok;
         return (
           <li key={link.id} className={`cr-tl-item cr-tone-${verdict?.tone || 'neutral'}`}>
@@ -62,11 +63,11 @@ export function ChainTimeline({ links, label = plain }: { links: TimelineLink[];
                 <span className="cr-tl-dot" aria-hidden="true" />
                 <span className="cr-link-date">
                   <b>{year}</b>
-                  {date && date !== year && <small>{date}</small>}
+                  {day && <small>{day}</small>}
                 </span>
                 <span className="cr-link-main">
                   <b>{humanizeType(t.transaction_type)}</b>
-                  <span className="cr-muted">{(t.transferors || []).join(', ') || 'Earlier owner'} → {(t.transferees || []).join(', ') || 'Acquirer not recorded'}</span>
+                  <span className="cr-link-parties">{(t.transferors || []).join(', ') || 'Earlier owner'} → {(t.transferees || []).join(', ') || 'Acquirer not recorded'}</span>
                 </span>
                 <span className="cr-link-tags">
                   {record?.origin === 'verification' && <span className="cr-type">Added during verification</span>}

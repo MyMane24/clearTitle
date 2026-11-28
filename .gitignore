@@ -7,6 +7,9 @@ __pycache__/
 outputs/
 uploads/
 
+# Hallmark design-run records (screenshots, before/after, log)
+.hallmark/
+
 *.log
 .DS_Store
 Thumbs.db

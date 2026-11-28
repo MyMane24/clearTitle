@@ -1,0 +1,202 @@
+/* Hallmark · shape: app screen · genre: modern-minimal · theme: brand · redesign: full
+ * paper: #ffffff · accent: #c2410c · display: Plus Jakarta Sans · body: Inter
+ * nav: kept · signature: the chain as one continuous ownership ledger · states: empty, full (loading and error live in the shell)
+ * axes: light/geometric-sans/warm · posture: Restrained · contrast: pass · v2.0.0 */
+/* Hallmark · pre-emit critique: P4 H4 E4 S5 R4 V3 · weakest: V, the first logged run; the ledger itself leads instead of the header-and-cards reflex */
+/* Hallmark · finish-review: subagent · 8 findings · 8 resolved · 1 noted (verdict stays a phrase, not a code) · render: not run, puppeteer-core absent */
+
+/* The chain screen's theme block. Every colour and face below reads from here. */
+:root{
+  --cr-paper: #ffffff;
+  --cr-paper-2: #faf7f4;
+  --cr-paper-3: #f5f0eb;
+  --cr-ink: #1c1917;
+  --cr-text: #44403c;
+  --cr-soft: #57534e;
+  --cr-faint: #78716c;
+  --cr-line: #e7e2dc;
+  --cr-brand: #ea580c;
+  --cr-brand-ink: #c2410c;
+  --cr-focus: #c2410c;
+  --cr-good: #047857;
+  --cr-warn: #b45309;
+  --cr-bad: #b91c1c;
+  --cr-neutral: #57534e;
+  --cr-body: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --cr-display: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+  --space-3xs: 2px; --space-2xs: 4px; --space-xs: 8px; --space-sm: 12px;
+  --space-md: 16px; --space-lg: 24px; --space-xl: 32px; --space-2xl: 48px; --space-3xl: 64px;
+  --cr-date-col: 96px;
+  --cr-badge-col: 84px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --dur-micro: 120ms; --dur-short: 220ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ctd-root .cr-page{
+  max-width: 1040px;
+  padding-top: var(--space-md);
+  font-family: var(--cr-body);
+  color: var(--cr-text);
+}
+
+.ctd-root .cr-page h1,
+.ctd-root .cr-page h2{
+  font-family: var(--cr-display);
+  color: var(--cr-ink);
+  overflow-wrap: break-word;
+  min-width: 0;
+  text-wrap: balance;
+}
+.ctd-root .cr-page h1{ font-size: clamp(26px, 3vw, 31px); line-height: 1.15; font-weight: 700; letter-spacing: -.02em; }
+.ctd-root .cr-page h2{ font-size: 18px; line-height: 1.25; font-weight: 700; letter-spacing: -.01em; }
+
+.ctd-root .cr-page :where(button, summary, a, input, label.cr-action):focus-visible{
+  outline: 2px solid var(--cr-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.ctd-root .cr-page :where(button, summary):active{ transform: translateY(1px); }
+.ctd-root .cr-page :where(button, input):disabled,
+.ctd-root .cr-page .cr-disabled{ opacity: .55; cursor: not-allowed; }
+
+/* Header: the property, its verdict, then the record's own numbers. */
+.ctd-root .cr-page .cr-header{ gap: var(--space-md); padding-bottom: var(--space-xs); }
+.ctd-root .cr-page .cr-header-text{ gap: var(--space-sm); }
+.ctd-root .cr-page .cr-meta{ gap: var(--space-xs) var(--space-md); font-size: 12.5px; color: var(--cr-soft); }
+.ctd-root .cr-page .cr-meta-item + .cr-meta-item::before{ display: none; }
+.ctd-root .cr-page .cr-verdict{
+  padding: var(--space-3xs) var(--space-xs);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--tone, var(--cr-neutral)) 9%, var(--cr-paper));
+  color: var(--tone, var(--cr-neutral));
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+/* Tabs: the two pages of one case. */
+.ctd-root .cr-page .cr-tabs{ gap: var(--space-lg); margin-top: var(--space-lg); }
+.ctd-root .cr-page .cr-tab{ gap: var(--space-xs); padding: var(--space-xs) 0 var(--space-sm); font-size: 13.5px; transition: color var(--dur-short) var(--ease-out), border-color var(--dur-short) var(--ease-out); }
+
+/* Sections: a heading, its count, a hairline between records. */
+.ctd-root .cr-page .cr-section{ padding: var(--space-xl) 0; }
+.ctd-root .cr-page .cr-section + .cr-section{ border-top: 1px solid var(--cr-line); }
+.ctd-root .cr-page .cr-section-head{ gap: var(--space-md); }
+.ctd-root .cr-page .cr-section-aside{ font-size: 12.5px; font-weight: 500; color: var(--cr-soft); }
+.ctd-root .cr-page .cr-section-note{ margin-top: var(--space-2xs); font-size: 13px; line-height: 1.55; color: var(--cr-soft); }
+.ctd-root .cr-page .cr-section > * + *{ margin-top: var(--space-md); }
+.ctd-root .cr-page .cr-section > .cr-section-note{ margin-top: var(--space-2xs); }
+
+/* Property identity: the reference strip above the record. */
+.ctd-root .cr-page .cr-section[aria-labelledby="cr-identity-title"] .cr-facts{
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-sm) var(--space-lg);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--cr-line);
+}
+.ctd-root .cr-page .cr-facts dt{ margin-bottom: var(--space-3xs); font-size: 12px; font-weight: 500; color: var(--cr-soft); }
+.ctd-root .cr-page .cr-facts dd{ font-size: 14.5px; line-height: 1.5; color: var(--cr-ink); }
+
+/* The chain: one continuous ledger, earliest first. */
+.ctd-root .cr-page .cr-timeline{ padding-left: var(--space-xl); }
+.ctd-root .cr-page .cr-timeline::before{ left: 5px; top: var(--space-lg); bottom: var(--space-lg); width: 1px; background: var(--cr-line); }
+.ctd-root .cr-page .cr-tl-item + .cr-tl-item{ border-top: 1px solid var(--cr-line); }
+.ctd-root .cr-page .cr-tl-dot{
+  left: calc(var(--space-xl) * -1);
+  top: var(--space-lg);
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--tone, var(--cr-faint));
+  background: var(--cr-paper);
+  box-shadow: 0 0 0 3px var(--cr-paper);
+}
+.ctd-root .cr-page .cr-break{ gap: var(--space-xs); padding-top: var(--space-sm); font-size: 13px; }
+
+.ctd-root .cr-page .cr-link summary{
+  display: grid;
+  grid-template-columns: var(--cr-date-col) minmax(0, 1fr) auto 20px;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-xs);
+  margin: 0 calc(var(--space-xs) * -1);
+  border-radius: var(--radius-sm);
+  transition: background-color var(--dur-short) var(--ease-out);
+}
+.ctd-root .cr-page .cr-link summary:hover{ background: var(--cr-paper-2); }
+.ctd-root .cr-page .cr-link-date{ flex: none; gap: var(--space-3xs); }
+.ctd-root .cr-page .cr-link-date b{ font-family: var(--cr-display); font-size: 19px; font-weight: 600; color: var(--cr-ink); }
+.ctd-root .cr-page .cr-link-date small{ font-size: 12px; color: var(--cr-faint); }
+.ctd-root .cr-page .cr-link-main{ gap: var(--space-3xs); }
+.ctd-root .cr-page .cr-link-main b{ font-size: 15px; font-weight: 600; color: var(--cr-ink); transition: color var(--dur-short) var(--ease-out); }
+.ctd-root .cr-page .cr-link-main .cr-link-parties{ font-size: 13.5px; line-height: 1.45; color: var(--cr-text); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.ctd-root .cr-page .cr-link[open] .cr-link-parties{ display: block; overflow: visible; -webkit-line-clamp: unset; }
+.ctd-root .cr-page .cr-link-tags{ gap: var(--space-sm); justify-content: flex-end; }
+.ctd-root .cr-page .cr-type{ font-size: 12px; color: var(--cr-soft); }
+.ctd-root .cr-page .cr-chevron{ color: var(--cr-faint); transition: transform var(--dur-short) var(--ease-out); }
+.ctd-root .cr-page .cr-link[open] .cr-chevron{ transform: rotate(180deg); }
+
+.ctd-root .cr-page .cr-link-body{ gap: var(--space-md); padding: 0 0 var(--space-lg) calc(var(--cr-date-col) + var(--space-md)); font-size: 14px; line-height: 1.6; }
+.ctd-root .cr-page .cr-link-body > p{ max-width: 70ch; }
+.ctd-root .cr-page .cr-link-body .cr-facts{ gap: var(--space-sm) var(--space-lg); }
+.ctd-root .cr-page .cr-proof{ gap: var(--space-xs); }
+.ctd-root .cr-page .cr-proof li{ gap: var(--space-xs); }
+.ctd-root .cr-page .cr-concerns li{ grid-template-columns: var(--cr-badge-col) minmax(0, 1fr); gap: var(--space-sm); }
+
+/* Status is a word in a tinted field, never a dot alone. */
+.ctd-root .cr-page .cr-status{
+  gap: 0;
+  padding: var(--space-3xs) var(--space-xs);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--tone, var(--cr-neutral)) 9%, var(--cr-paper));
+  color: var(--tone, var(--cr-neutral));
+  font-size: 12px;
+  font-weight: 600;
+}
+.ctd-root .cr-page .cr-status::before{ display: none; }
+.ctd-root .cr-page .cr-badge{
+  padding: var(--space-3xs) var(--space-2xs);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--tone, var(--cr-neutral)) 9%, var(--cr-paper));
+  color: var(--tone, var(--cr-neutral));
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Records below the chain: property today, uploaded documents. */
+.ctd-root .cr-page .cr-docs li{ gap: var(--space-sm) var(--space-md); padding: var(--space-sm) 0; }
+.ctd-root .cr-page .cr-doc-name{ gap: var(--space-xs); font-size: 14px; color: var(--cr-ink); transition: color var(--dur-short) var(--ease-out); }
+.ctd-root .cr-page .cr-doc-file{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctd-root .cr-page .cr-doc-name:hover{ color: var(--cr-brand-ink); }
+.ctd-root .cr-page .cr-doc-type{ font-size: 12.5px; color: var(--cr-soft); }
+.ctd-root .cr-page .cr-docs .cr-status{ justify-self: end; }
+.ctd-root .cr-page .cr-today .cr-doc-name{ font-weight: 600; }
+
+/* Empty and error states. */
+.ctd-root .cr-page .cr-empty{ padding: var(--space-xl) 0; }
+.ctd-root .cr-page .cr-empty h2{ font-size: 20px; }
+.ctd-root .cr-page .cr-empty p{ margin-top: var(--space-xs); font-size: 14.5px; line-height: 1.6; color: var(--cr-soft); }
+.ctd-root .cr-page .cr-alert{ gap: var(--space-xs); margin-top: var(--space-lg); font-size: 13.5px; }
+.ctd-root .cr-page .cr-muted{ font-size: 13.5px; color: var(--cr-soft); }
+
+@media (max-width: 720px){
+  .ctd-root .cr-page{ padding-left: var(--space-sm); padding-right: var(--space-sm); }
+  .ctd-root .cr-page .cr-section{ padding: var(--space-lg) 0; }
+  .ctd-root .cr-page .cr-link summary{ grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2xs) var(--space-sm); }
+  .ctd-root .cr-page .cr-link-date{ grid-column: 1; flex-direction: row; align-items: baseline; gap: var(--space-xs); }
+  .ctd-root .cr-page .cr-link-main{ grid-column: 1; }
+  .ctd-root .cr-page .cr-link-tags{ grid-column: 1; justify-content: flex-start; }
+  .ctd-root .cr-page .cr-chevron{ grid-column: 2; grid-row: 1 / span 3; align-self: center; }
+  .ctd-root .cr-page .cr-link-body{ padding-left: 0; }
+  .ctd-root .cr-page .cr-concerns li{ grid-template-columns: minmax(0, 1fr); gap: var(--space-2xs); }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .ctd-root .cr-page .cr-tab,
+  .ctd-root .cr-page .cr-link summary,
+  .ctd-root .cr-page .cr-link-main b,
+  .ctd-root .cr-page .cr-chevron,
+  .ctd-root .cr-page .cr-doc-name{ transition: none; }
+}
