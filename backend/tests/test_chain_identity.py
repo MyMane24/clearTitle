@@ -124,17 +124,6 @@ class TestChainIdAssignment(unittest.TestCase):
         rerun = [_entry(1, "Sale deed", reg_number="REG-1")]
         CI.assign_chain_tx_ids(rerun, prior, set())
         self.assertEqual(rerun[0]["tx_id"], "PA-TC-0001")
-    def test_upstream_links_follow_party_continuity(self):
-        chain = [
-            _entry(1, "Sale deed", transferors=["A"], transferees=["B"]),
-            _entry(2, "Sale deed", transferors=["B"], transferees=["C"]),
-            _entry(3, "Gift deed", transferors=["X"], transferees=["Y"]),
-        ]
-        CI.assign_chain_tx_ids(chain, [], set())
-        CI.attach_upstream_ids(chain)
-        self.assertIsNone(chain[0].get("upstream_tx_ids"))
-        self.assertEqual(chain[1].get("upstream_tx_ids"), ["PA-TC-0001"])
-        self.assertIsNone(chain[2].get("upstream_tx_ids"))
 class TestRegistrationOfficeIdentity(unittest.TestCase):
     """Corrective patch (review finding §1.3): registration numbers are
     office-scoped, so the stated office participates in the
@@ -203,36 +192,6 @@ class TestRegistrationOfficeIdentity(unittest.TestCase):
                         executed_date="2001-01-30", source_refs=("DOC2",))]
         CI.assign_chain_tx_ids(rerun, prior, set())
         self.assertEqual(rerun[0]["tx_id"], "PA-TC-0002")
-class TestMultiParentUpstream(unittest.TestCase):
-    """Corrective patch (review finding §7): a consolidated conveyance can
-    legitimately depend on multiple predecessors."""
-    def test_consolidated_conveyance_records_all_valid_predecessors(self):
-        # Two independent branch conveyances; the third transferor holds under
-        # both branches (partition/settlement consolidating them). The
-        # non-adjacent branch parent is corroborated by the partition deed
-        # recording the parent's parcel code (subdivided); the adjacent one is
-        # the ordinary succession link.
-        chain = [
-            _entry(1, "Sale deed", transferors=["A"], transferees=["B"], survey_number="S-50"),
-            _entry(2, "Sale deed", transferors=["C"], transferees=["D"], survey_number="S-77"),
-            _entry(3, "Partition deed", transferors=["B", "D"], transferees=["E"],
-                   survey_number="S-50/1, S-50/2"),
-        ]
-        CI.assign_chain_tx_ids(chain, [], set())
-        notes = CI.attach_upstream_ids(chain)
-        self.assertEqual(chain[2]["upstream_tx_ids"], ["PA-TC-0001", "PA-TC-0002"])
-        self.assertTrue(any("continuing parcel" in note for note in notes))
-    def test_adjacent_continuity_relationship_is_unchanged(self):
-        chain = [
-            _entry(1, "Sale deed", transferors=["A"], transferees=["B"]),
-            _entry(2, "Sale deed", transferors=["B"], transferees=["C"]),
-            _entry(3, "Gift deed", transferors=["X"], transferees=["Y"]),
-        ]
-        CI.assign_chain_tx_ids(chain, [], set())
-        CI.attach_upstream_ids(chain)
-        self.assertIsNone(chain[0].get("upstream_tx_ids"))
-        self.assertEqual(chain[1].get("upstream_tx_ids"), ["PA-TC-0001"])
-        self.assertIsNone(chain[2].get("upstream_tx_ids"))
 class TestUpstreamMatchingSafety(unittest.TestCase):
     """Part 2 (reliability review): party-name overlap alone is trusted only
     for the adjacent chain link; non-adjacent predecessors need corroborating

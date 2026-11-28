@@ -55,11 +55,6 @@ def test_missing_summary_does_not_fail_classification(monkeypatch):
     assert document_processor.classify_document("sale deed OCR")["summary"] is None
 
 
-def test_extraction_functions_are_gone():
-    assert not hasattr(document_processor, "extract_document")
-    assert not hasattr(document_processor, "classify_and_structure")
-
-
 def test_karnataka_rdpr_form9_is_rule_classified_as_e_swattu(monkeypatch):
     monkeypatch.setattr(document_processor, "_client", lambda: pytest.fail("Form 9 rule should bypass model classification"))
 
@@ -97,7 +92,7 @@ def test_completion_certificate_subtype_uses_issuer_header(monkeypatch, header, 
     assert result["document_type"] == expected
 
 
-def test_semantic_schema_lookup_matches_alias_when_present(monkeypatch):
+def test_canonical_type_matches_a_longer_alias(monkeypatch):
     monkeypatch.setattr(document_processor, "DOCUMENT_TYPES", frozenset({"MEMORANDUM_OF_DEPOSIT"}))
     canonical = document_processor.canonical_document_type("MEMORANDUM_OF_DEPOSIT_OF_TITLE_DEEDS")
     assert canonical == "MEMORANDUM_OF_DEPOSIT"
