@@ -1,7 +1,7 @@
 import React from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  AlertTriangle, CheckCircle2, Download, FileText, GitBranch, MoreHorizontal, ScrollText, ShieldCheck, Upload,
+  AlertTriangle, CheckCircle2, Download, FileText, GitBranch, MoreHorizontal, ScrollText, ShieldCheck, Upload, X,
 } from 'lucide-react';
 import { API, type CaseResults as CaseResultsData, type SectionName, type VerificationEvent, type VerificationState } from '../../api/backend';
 import { LiveFeed } from '../verification/LiveFeed';
@@ -42,8 +42,11 @@ export interface CaseResultsViewProps extends CaseResultsProps {
   error: string | null;
   running: boolean;
   uploadingId: string | null;
+  queuedUploads: Record<string, File>;
   start: (fresh?: boolean) => void;
   upload: (requisitionId: string, file: File) => void;
+  cancelUpload: (requisitionId: string) => void;
+  submitUploads: () => void;
   page: CasePage;
   onPageChange: (page: CasePage) => void;
 }
@@ -281,7 +284,7 @@ function PropertyToday({ caseFile, label }: { caseFile: NonNullable<Verification
 }
 
 /** Is the title clear: opinion, documents needed, the report and the agent's steps. */
-function ReportPage({ state, uploadingId, start, upload, primary }: CaseResultsViewProps & { primary: string | null }) {
+function ReportPage({ state, uploadingId, queuedUploads, start, upload, cancelUpload, submitUploads, primary }: CaseResultsViewProps & { primary: string | null }) {
   const caseFile = state?.case_file || null;
   const report = state?.report || null;
   const label = refLabeller(caseFile);
@@ -332,7 +335,7 @@ function ReportPage({ state, uploadingId, start, upload, primary }: CaseResultsV
           id="cr-needed-title"
           title="Documents needed"
           aside={pending.length === 1 ? '1 open item' : `${pending.length} open items`}
-          note="Upload each document; only the transfer it affects is checked again."
+          note="Choose the documents you have, then process them together; one verification updates the report."
         >
           <ul className="cr-needed">
             {pending.map(item => (
@@ -342,30 +345,44 @@ function ReportPage({ state, uploadingId, start, upload, primary }: CaseResultsV
                   <span>{label(item.reason)}</span>
                   {item.needed_for.length > 0 && <span className="cr-needed-for">For: {item.needed_for.map(label).join(', ')}</span>}
                 </div>
-                <span className={`cr-status cr-tone-${item.status === 'open' ? 'warn' : 'good'}`}>
-                  {item.status === 'open' ? 'Open' : 'Received'}
-                </span>
-                {item.status === 'open' ? (
-                  <label className={`cr-action${uploadingId ? ' cr-disabled' : ''}`}>
-                    <Upload size={13} /> {uploadingId === item.id ? 'Uploading…' : 'Upload'}
-                    <input
-                      type="file"
-                      accept="application/pdf"
-                      hidden
-                      disabled={uploadingId !== null}
-                      onChange={event => {
-                        const file = event.target.files?.[0];
-                        if (file) upload(item.id, file);
-                        event.target.value = '';
-                      }}
-                    />
-                  </label>
+                {queuedUploads[item.id] ? (
+                  <>
+                    <span className="cr-needed-file" title={queuedUploads[item.id].name}>{queuedUploads[item.id].name}</span>
+                    <button type="button" className="cr-cancel" onClick={() => cancelUpload(item.id)} disabled={uploadingId !== null} aria-label="Cancel upload"><X size={15} /></button>
+                  </>
                 ) : (
-                  <span className="cr-needed-note">Being checked</span>
+                  <>
+                    <span className={`cr-status cr-tone-${item.status === 'open' ? 'warn' : 'good'}`}>
+                      {item.status === 'open' ? 'Open' : 'Received'}
+                    </span>
+                    {item.status === 'open' ? (
+                      <label className={`cr-action${uploadingId ? ' cr-disabled' : ''}`}>
+                        <Upload size={13} /> Choose PDF
+                        <input
+                          type="file"
+                          accept="application/pdf"
+                          hidden
+                          disabled={uploadingId !== null}
+                          onChange={event => {
+                            const file = event.target.files?.[0];
+                            if (file) upload(item.id, file);
+                            event.target.value = '';
+                          }}
+                        />
+                      </label>
+                    ) : (
+                      <span className="cr-needed-note">Being checked</span>
+                    )}
+                  </>
                 )}
               </li>
             ))}
           </ul>
+          {Object.keys(queuedUploads).length > 0 && (
+            <button className="btn btn-primary" type="button" onClick={submitUploads} disabled={uploadingId !== null}>
+              {uploadingId === 'batch' ? 'Processing documents…' : `Process ${Object.keys(queuedUploads).length} document${Object.keys(queuedUploads).length === 1 ? '' : 's'}`}
+            </button>
+          )}
           {settled > 0 && <p className="cr-settled"><CheckCircle2 size={13} /> {settled} already settled</p>}
         </Section>
       )}

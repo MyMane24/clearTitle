@@ -18,6 +18,7 @@ export function useVerification(caseId: string) {
   const [error, setError] = useState<string | null>(null);
   const [startRequestedAt, setStartRequestedAt] = useState<number | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [queuedUploads, setQueuedUploads] = useState<Record<string, File>>({});
   const cursorRef = useRef(0);
   const timerRef = useRef<number | null>(null);
   const runBeforeStartRef = useRef<string | null | undefined>(undefined);
@@ -42,6 +43,7 @@ export function useVerification(caseId: string) {
     setEvents([]);
     setState(null);
     setError(null);
+    setQueuedUploads({});
     refresh().catch(e => setError(e.message));
   }, [caseId, refresh]);
 
@@ -64,11 +66,26 @@ export function useVerification(caseId: string) {
     }
   };
 
-  const upload = async (requisitionId: string, file: File) => {
+  const upload = (requisitionId: string, file: File) => {
+    setQueuedUploads(previous => ({ ...previous, [requisitionId]: file }));
+  };
+
+  const cancelUpload = (requisitionId: string) => {
+    setQueuedUploads(previous => {
+      const next = { ...previous };
+      delete next[requisitionId];
+      return next;
+    });
+  };
+
+  const submitUploads = async () => {
+    const uploads = Object.entries(queuedUploads).map(([requisitionId, file]) => ({ requisitionId, file }));
+    if (!uploads.length) return;
     setError(null);
-    setUploadingId(requisitionId);
+    setUploadingId('batch');
     try {
-      await API.uploadForRequisition(caseId, requisitionId, file);
+      await API.uploadForRequisitions(caseId, uploads);
+      setQueuedUploads({});
       await refresh();
     } catch (e: any) {
       setError(e.message);
@@ -79,5 +96,5 @@ export function useVerification(caseId: string) {
 
   const waitingToStart = startRequestedAt !== null && Date.now() - startRequestedAt < WAIT_FOR_START_MS;
   const running = state?.run?.status === 'running' || waitingToStart;
-  return { state, events, error, running, uploadingId, start, upload };
+  return { state, events, error, running, uploadingId, start, upload, cancelUpload, submitUploads, queuedUploads };
 }

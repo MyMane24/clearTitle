@@ -3,7 +3,7 @@ a PDF), and upload a requested document. HTTP only; logic is in the service."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 
 from backend.database.repositories.case_repo import get_case_owner
 from backend.logger import get_logger
@@ -98,3 +98,39 @@ async def upload_for_requisition(
     except (service.RequisitionError, service.VerificationBusyError) as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     return {**result, "requisition_id": requisition_id, "doc_id": doc_id}
+
+
+@router.post("/verify/{case_id}/requisitions/batch-upload")
+async def upload_for_requisitions(
+    case_id: str,
+    files: list[UploadFile] = File(...),
+    requisition_ids: list[str] = Form(...),
+    user: dict | None = Depends(get_optional_user),
+):
+    """Upload several requested documents and verify them in one run."""
+    _enforce_access(case_id, user)
+    if not files or len(files) != len(requisition_ids):
+        raise HTTPException(status_code=400, detail="Each uploaded file needs one document request")
+    if any(not (file.filename or "").lower().endswith(".pdf") for file in files):
+        raise HTTPException(status_code=400, detail="Only PDF documents can be uploaded")
+    try:
+        if service.is_running(case_id):
+            raise service.VerificationBusyError("Verification is running; upload when it finishes.")
+        for requisition_id in requisition_ids:
+            service.get_open_requisition(case_id, requisition_id)
+    except service.RequisitionError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except service.VerificationBusyError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+    from backend.routers.cases import add_uploaded_files
+
+    result = await add_uploaded_files(case_id, files)
+    try:
+        for requisition_id, item in zip(requisition_ids, result["files"], strict=True):
+            service.attach_requisition_document(
+                case_id, requisition_id, item["doc_id"], "manual_upload"
+            )
+    except (service.RequisitionError, service.VerificationBusyError) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return {**result, "requisition_ids": requisition_ids}

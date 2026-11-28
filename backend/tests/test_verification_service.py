@@ -2,7 +2,7 @@
 
 import asyncio
 from datetime import datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -206,6 +206,46 @@ def test_requisition_upload_rejects_unknown_requisition():
     ):
         asyncio.run(routes.upload_for_requisition("C1", "R9", Upload(), None))
     assert raised.value.status_code == 404
+
+
+def test_batch_upload_attaches_each_file_to_its_request():
+    class Upload:
+        filename = "deed.pdf"
+
+    files = [Upload(), Upload()]
+    added = {"files": [{"doc_id": "DOC_010"}, {"doc_id": "DOC_011"}]}
+    with (
+        patch.object(routes, "_enforce_access"),
+        patch.object(service, "is_running", return_value=False),
+        patch.object(service, "get_open_requisition"),
+        patch("backend.routers.cases.add_uploaded_files", new=AsyncMock(return_value=added)) as add,
+        patch.object(service, "attach_requisition_document") as attach,
+    ):
+        result = asyncio.run(routes.upload_for_requisitions("C1", files, ["R1", "R2"], None))
+    add.assert_awaited_once_with("C1", files)
+    assert [call.args[:3] for call in attach.call_args_list] == [
+        ("C1", "R1", "DOC_010"),
+        ("C1", "R2", "DOC_011"),
+    ]
+    assert result["requisition_ids"] == ["R1", "R2"]
+
+
+def test_batch_upload_rejects_an_unknown_request_before_saving():
+    class Upload:
+        filename = "deed.pdf"
+
+    with (
+        patch.object(routes, "_enforce_access"),
+        patch.object(service, "is_running", return_value=False),
+        patch.object(
+            service, "get_open_requisition", side_effect=service.RequisitionError("No R9")
+        ),
+        patch("backend.routers.cases.add_uploaded_files", new=AsyncMock()) as add,
+        pytest.raises(HTTPException) as raised,
+    ):
+        asyncio.run(routes.upload_for_requisitions("C1", [Upload()], ["R9"], None))
+    assert raised.value.status_code == 404
+    add.assert_not_awaited()
 
 
 # -- runner reset ----------------------------------------------------------------------

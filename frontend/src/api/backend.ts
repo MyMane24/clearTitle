@@ -386,9 +386,12 @@ export const API = {
     URL.revokeObjectURL(url);
   },
 
-  async uploadForRequisition(caseId: string, requisitionId: string, file: File) {
+  async uploadForRequisitions(caseId: string, uploads: { requisitionId: string; file: File }[]) {
     const fd = new FormData();
-    fd.append("file", file);
-    return request(`/api/verify/${caseId}/requisitions/${requisitionId}/upload`, { method: "POST", body: fd });
+    uploads.forEach(({ requisitionId, file }) => {
+      fd.append("files", file);
+      fd.append("requisition_ids", requisitionId);
+    });
+    return request(`/api/verify/${caseId}/requisitions/batch-upload`, { method: "POST", body: fd });
   },
 };

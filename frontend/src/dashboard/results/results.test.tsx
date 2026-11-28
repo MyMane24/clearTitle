@@ -77,7 +77,8 @@ function render(state: VerificationState | null, running = false, page: 'chain' 
   return renderToStaticMarkup(
     <CaseResultsView
       caseId="C1" results={results} chainBusy={false} onRebuildChain={() => {}} onOpenPdf={() => {}}
-      state={state} events={[]} error={null} running={running} uploadingId={null} start={() => {}} upload={() => {}}
+      state={state} events={[]} error={null} running={running} uploadingId={null}
+      queuedUploads={{}} start={() => {}} upload={() => {}} cancelUpload={() => {}} submitUploads={() => {}}
       page={page} onPageChange={() => {}}
     />,
   );
@@ -182,6 +183,22 @@ test('requests appear once, with upload only for open ones', () => {
   assert.match(html, /1 already settled/);
 });
 
+test('queued documents are submitted together in one batch', () => {
+  const html = renderToStaticMarkup(
+    <CaseResultsView
+      caseId="C1" results={RESULTS} chainBusy={false} onRebuildChain={() => {}} onOpenPdf={() => {}}
+      state={STATE} events={[]} error={null} running={false} uploadingId={null}
+      queuedUploads={{ R1: new File(['x'], 'gpa.pdf') }}
+      start={() => {}} upload={() => {}} cancelUpload={() => {}} submitUploads={() => {}}
+      page="report" onPageChange={() => {}}
+    />,
+  );
+  assert.match(html, /gpa\.pdf/);
+  assert.match(html, /aria-label="Cancel upload"/);
+  assert.match(html, /Process 1 document/);
+  assert.doesNotMatch(html, /Queued|>Open</);
+});
+
 test('the opinion shows its reasons and what changed above the report', () => {
   const state: VerificationState = {
     ...STATE,
@@ -241,7 +258,8 @@ test('while a run is in progress only this run\u2019s steps show, not the previo
   const html = renderToStaticMarkup(
     <CaseResultsView
       caseId="C1" results={RESULTS} chainBusy={false} onRebuildChain={() => {}} onOpenPdf={() => {}}
-      state={running} events={events} error={null} running uploadingId={null} start={() => {}} upload={() => {}}
+      state={running} events={events} error={null} running uploadingId={null}
+      queuedUploads={{}} start={() => {}} upload={() => {}} cancelUpload={() => {}} submitUploads={() => {}}
       page="report" onPageChange={() => {}}
     />,
   );
