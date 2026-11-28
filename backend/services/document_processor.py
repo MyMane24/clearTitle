@@ -128,12 +128,16 @@ def canonical_document_type(document_type: str) -> str | None:
 
 def _json_call(client, *, system: str, user: str, max_tokens: int = 6000):
     started = time.monotonic()
-    response = client.chat.completions.create(
-        model=DOCUMENT_PROCESSOR_MODEL,
-        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-        response_format={"type": "json_object"},
-        max_completion_tokens=max_tokens,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=DOCUMENT_PROCESSOR_MODEL,
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+            response_format={"type": "json_object"},
+            max_completion_tokens=max_tokens,
+        )
+    except Exception as exc:
+        # The stored document error must name the service whose key to fix.
+        raise DocumentProcessingError(f"OpenAI: {exc}") from exc
     latency = int((time.monotonic() - started) * 1000)
     try:
         result = json.loads(response.choices[0].message.content or "", strict=False)

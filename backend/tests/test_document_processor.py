@@ -113,6 +113,20 @@ def test_unrelated_document_requests_user_action(monkeypatch):
     assert len(captures) == 1
 
 
+def test_model_call_failure_names_the_provider(monkeypatch):
+    class FailingCompletions:
+        def create(self, **kwargs):
+            raise RuntimeError("Error code: 401 - Your API key has expired.")
+
+    monkeypatch.setattr(
+        document_processor,
+        "_client",
+        lambda: SimpleNamespace(chat=SimpleNamespace(completions=FailingCompletions())),
+    )
+    with pytest.raises(document_processor.DocumentProcessingError, match="OpenAI: Error code: 401"):
+        document_processor.classify_document("sale deed OCR")
+
+
 def test_empty_ocr_fails_without_calling_model(monkeypatch):
     monkeypatch.setattr(document_processor, "_client", lambda: pytest.fail("model client must not be created"))
     with pytest.raises(document_processor.DocumentProcessingError, match="OCR text is empty"):
