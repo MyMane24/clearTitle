@@ -1890,10 +1890,10 @@
   .ctd-root .cr-badge{ font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--tone, var(--cr-soft)); }
   .ctd-root .cr-type{ font-size: 12.5px; color: var(--cr-soft); white-space: nowrap; }
 
-  /* Opinion: the answer, large, in its colour */
+  /* Opinion: a compact status row, with its reasons in plain text */
   .ctd-root .cr-opinion{ padding-top: 36px; }
   .ctd-root .cr-opinion-label{ font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--cr-soft); }
-  .ctd-root .cr-opinion-verdict{ margin-top: 6px; font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif; font-size: clamp(30px, 4.2vw, 42px); font-weight: 800; letter-spacing: -.03em; line-height: 1.1; color: var(--tone, var(--cr-ink)); }
+  .ctd-root .cr-opinion-verdict{ margin-top: 12px; font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif; font-size: clamp(18px, 2vw, 21px); font-weight: 600; letter-spacing: -.015em; line-height: 1.25; color: var(--cr-ink); }
   .ctd-root .cr-reasons{ list-style: none; margin-top: 16px; max-width: 70ch; display: flex; flex-direction: column; gap: 8px; }
   .ctd-root .cr-reasons li{ position: relative; padding-left: 18px; font-size: 15.5px; line-height: 1.6; color: var(--cr-text); }
   .ctd-root .cr-reasons li::before{ content: ""; position: absolute; left: 2px; top: 11px; width: 6px; height: 6px; border-radius: 50%; background: var(--tone, var(--cr-faint)); }
