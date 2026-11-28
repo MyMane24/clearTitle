@@ -248,14 +248,28 @@ def _recorded_elsewhere(case: CaseFile, concern: Concern, key: str) -> str | Non
     return None
 
 
+def _request_years_match(request: Request, doc: ProofDocument) -> bool:
+    years = set(re.findall(r"\b(?:19|20)\d{2}\b", doc.name))
+    requested_years = set(re.findall(r"\b(?:19|20)\d{2}\b", request.document))
+    return not years or not requested_years or not years.isdisjoint(requested_years)
+
+
+def _request_fits_document(request: Request, doc: ProofDocument) -> bool:
+    """The request asks for this one document: same year, same name, not a bundled name."""
+    if SEVERAL_DOCUMENTS.search(request.document):
+        return False
+    return _request_years_match(request, doc) and (
+        normalize(request.document) == normalize(doc.name)
+        or alike(doc.name, "", request.document, "")
+    )
+
+
 def _matching_request(case: CaseFile, doc: ProofDocument) -> Request | None:
     """An active request that asks for the same document."""
     for request in case.requests:
         if request.status not in ACTIVE_REQUEST:
             continue
-        if normalize(request.document) == normalize(doc.name) or alike(
-            doc.name, doc.proves, request.document, request.reason
-        ):
+        if _request_fits_document(request, doc):
             return request
     return None
 
@@ -268,9 +282,10 @@ def _file_requests(deps: VerifyDeps, key: str, documents: list[ProofDocument]) -
     for doc in documents:
         if doc.status != "missing":
             continue
-        request = (case.request(doc.request_id) if doc.request_id else None) or _matching_request(
-            case, doc
-        )
+        request = case.request(doc.request_id) if doc.request_id else None
+        if request is not None and not _request_fits_document(request, doc):
+            request = None
+        request = request or _matching_request(case, doc)
         if request is None:
             request = Request(id=case.next_id("R"), document=doc.name, reason=doc.proves)
             case.requests.append(request)

@@ -81,10 +81,29 @@ def duplicate_requests(case: CaseFile) -> list[tuple[str, str]]:
 
 
 # Text that joins several documents into one: "the deed; the Will", "set: A, B",
-# "records plus the agreement", "completion certificate and occupancy certificate".
+# "records plus the agreement", "completion and occupancy certificates", "CC, OC".
+_DOCUMENT_NOUN = (
+    r"(?:certificates?|deeds?|orders?|plans?|letters?|agreements?|records?|extracts?|receipts?|"
+    r"reports?|statements?|affidavits?|declarations?|notices?|polic(?:y|ies)|sanctions?|approvals?|"
+    r"permissions?|licen[cs]es?|registrations?|index(?:es)?|mutations?|sketch(?:es)?|maps?|cards?|"
+    r"passbooks?|returns?|challans?|wills?|awards?|decrees?|judgments?|probates?|settlements?|"
+    r"pattas?|khatas?|entries?|attorney|ec|rtc|cc|oc|gpa|noc)"
+)
+# "completion and occupancy certificates": the document word comes only at the end.
+# "agreement" is left out so "sale and purchase agreement" is not read as two documents.
+_QUALIFIED_DOCUMENT = (
+    r"(?:certificates?|deeds?|orders?|plans?|letters?|records?|extracts?|receipts?|reports?|"
+    r"statements?|affidavits?|declarations?|notices?|sanctions?|approvals?|permissions?|"
+    r"licen[cs]es?|registrations?|index(?:es)?|mutations?|sketch(?:es)?|maps?|cards?|"
+    r"passbooks?|returns?|challans?|wills?|awards?|decrees?|judgments?|probates?|settlements?|"
+    r"pattas?|khatas?|entries?)"
+)
 SEVERAL_DOCUMENTS = re.compile(
-    r"[;:]|\b(?:plus|together with|along with|as well as|and any)\b"
-    r"|\b(certificates?|deeds?|orders?|plans?|letters?|agreements?|records?)\b.*\band\b.*\b\1\b",
+    r"[;:]"
+    r"|\b(?:plus|together with|along with|as well as|and any)\b"
+    rf"|\b\w+\s+and\s+(?:\w+\s+){{1,3}}{_QUALIFIED_DOCUMENT}\b"
+    rf"|\b{_DOCUMENT_NOUN}\b\s*,\s*(?:the\s+)?{_DOCUMENT_NOUN}\b"
+    rf"|\b{_DOCUMENT_NOUN}\b.*\b(?:and|&)\b.*\b{_DOCUMENT_NOUN}\b",
     re.I,
 )
 

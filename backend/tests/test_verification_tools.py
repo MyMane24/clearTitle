@@ -246,10 +246,72 @@ def test_the_same_document_for_two_transfers_is_one_request():
         documents=[DEED["PA-TC-0002"], missing("The 1996 Will of Parvatibai with probate")],
     )
     record(
-        ctx, "PA-TC-0003", documents=[DEED["PA-TC-0003"], missing("Any document", request_id="R1")]
+        ctx,
+        "PA-TC-0003",
+        documents=[DEED["PA-TC-0003"], missing("The 1996 Will of Parvatibai", request_id="R1")],
     )
     assert [r.id for r in ctx.deps.case.requests] == ["R1"]
     assert ctx.deps.case.request("R1").needed_for == ["PA-TC-0001", "PA-TC-0002", "PA-TC-0003"]
+
+
+def test_a_request_for_one_document_is_not_reused_for_another():
+    ctx, _ = make_ctx()
+    record(
+        ctx,
+        "PA-TC-0001",
+        documents=[DEED["PA-TC-0001"], missing("Completion certificate", "Shows completion.")],
+    )
+    record(
+        ctx,
+        "PA-TC-0002",
+        documents=[
+            DEED["PA-TC-0002"],
+            missing("Occupancy certificate", "Shows lawful occupation.", request_id="R1"),
+        ],
+    )
+    assert [(r.id, r.document) for r in ctx.deps.case.requests] == [
+        ("R1", "Completion certificate"),
+        ("R2", "Occupancy certificate"),
+    ]
+
+
+def test_an_old_bundled_request_is_not_reused_and_is_dropped():
+    ctx, _ = make_ctx()
+    ctx.deps.case.requests.append(
+        cf.Request(
+            id="R9",
+            document="Completion and occupancy certificates",
+            reason="An old saved request that joined two documents.",
+            needed_for=["PA-TC-0001"],
+        )
+    )
+    record(
+        ctx,
+        "PA-TC-0001",
+        documents=[DEED["PA-TC-0001"], missing("Completion certificate", "Shows completion.")],
+    )
+    assert [(r.id, r.document) for r in ctx.deps.case.requests] == [
+        ("R1", "Completion certificate"),
+    ]
+
+
+def test_different_year_deeds_do_not_reuse_a_request_even_with_a_stale_request_id():
+    ctx, _ = make_ctx()
+    root_deed = missing(
+        "registered sale deed of 2007",
+        "Root purchase by the three Revankars; deed itself not uploaded.",
+    )
+    record(ctx, "PA-TC-0001", documents=[DEED["PA-TC-0001"], root_deed])
+    later_deed = missing(
+        "registered sale deed of 2019 to Arjun Patil",
+        "The 2007 deed does not prove this sale.",
+        request_id="R1",
+    )
+    record(ctx, "PA-TC-0002", documents=[DEED["PA-TC-0002"], later_deed])
+    assert [(request.id, request.document) for request in ctx.deps.case.requests] == [
+        ("R1", "registered sale deed of 2007"),
+        ("R2", "registered sale deed of 2019 to Arjun Patil"),
+    ]
 
 
 def test_the_duplicates_from_case_8a14d132_merge():
@@ -260,8 +322,12 @@ def test_the_duplicates_from_case_8a14d132_merge():
         documents=[
             DEED["PA-TC-0001"],
             missing(
-                "Approved layout plan for Site 9 and khata showing the site within the layout",
+                "Approved layout plan for Site 9",
                 "Proves Site 9 was approved within the layout.",
+            ),
+            missing(
+                "Khata for Site 9 showing it within the layout",
+                "Shows Site 9 is recorded within the approved layout.",
             ),
             missing(
                 "Conversion correction or survey linkage order for R.S. 699-A/14 and 699A/15",
@@ -275,8 +341,12 @@ def test_the_duplicates_from_case_8a14d132_merge():
         documents=[
             DEED["PA-TC-0002"],
             missing(
-                "Approved layout plan and khata for Plot 9 showing it within the approved layout",
+                "Approved layout plan for Plot 9",
                 "Proves the site conveyed in the 2010 sale was approved.",
+            ),
+            missing(
+                "Khata for Plot 9 showing it within the layout",
+                "Shows Plot 9 is recorded within the approved layout.",
             ),
             missing(
                 "Survey sketch or correction order linking R.S. 699-A/14, R.S. 699A/15 and "
@@ -285,7 +355,11 @@ def test_the_duplicates_from_case_8a14d132_merge():
             ),
         ],
     )
-    assert [r.id for r in ctx.deps.case.requests] == ["R1", "R2"]
+    assert [(r.id, r.document) for r in ctx.deps.case.requests] == [
+        ("R1", "Approved layout plan for Site 9"),
+        ("R2", "Khata for Site 9 showing it within the layout"),
+        ("R3", "Conversion correction or survey linkage order for R.S. 699-A/14 and 699A/15"),
+    ]
 
 
 @pytest.mark.parametrize(
@@ -294,12 +368,52 @@ def test_the_duplicates_from_case_8a14d132_merge():
         "Complete Gundappa succession set: death, legal-heir certificate and heirs' mutation",
         "Court case and settlement records, plus the agreement of sale recited in the 2007 deed",
         "Municipal completion certificate and occupancy certificate for the house",
+        "Completion and occupancy certificates for the building",
+        "Completion and occupancy certificate for the building",
+        "Encumbrance certificate and tax paid receipt",
+        "Conversion order and approved layout plan",
+        "Death certificate, legal heir certificate and mutation",
+        "Khata extract and tax receipt",
+        "CC and OC",
+        "CC, OC",
+        "current RTC and mutation register extract",
+        "approved layout plan including this site and site khata",
     ],
 )
 def test_bundled_documents_are_refused(name):
     ctx, _ = make_ctx()
     with pytest.raises(ModelRetry, match="names several documents"):
         record(ctx, "PA-TC-0001", documents=[DEED["PA-TC-0001"], missing(name)])
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "Record of Rights, Tenancy and Crops",
+        "last will and testament",
+        "sale and purchase agreement",
+    ],
+)
+def test_one_document_with_and_in_its_name_is_accepted(name):
+    ctx, _ = make_ctx()
+    record(ctx, "PA-TC-0001", documents=[DEED["PA-TC-0001"], missing(name)])
+
+
+def test_two_documents_for_one_transfer_get_two_requests():
+    ctx, _ = make_ctx()
+    record(
+        ctx,
+        "PA-TC-0001",
+        documents=[
+            DEED["PA-TC-0001"],
+            missing("Completion certificate", "Shows the building was completed as sanctioned."),
+            missing("Occupancy certificate", "Shows the building may lawfully be occupied."),
+        ],
+    )
+    assert [(r.document, r.needed_for) for r in ctx.deps.case.requests] == [
+        ("Completion certificate", ["PA-TC-0001"]),
+        ("Occupancy certificate", ["PA-TC-0001"]),
+    ]
 
 
 def test_a_request_no_record_needs_is_dropped():

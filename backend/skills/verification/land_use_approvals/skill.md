@@ -16,9 +16,14 @@ Compare what each transfer conveyed with what the next one conveys. The change t
 ## What proves each step
 - **Conversion:** the conversion (NA) order for this survey number and extent, and the use it allows.
 - **Layout:** the approved layout plan from the planning authority, with this site in it; the khata for the site.
-- **Building:** the sanctioned building plan; the completion certificate and occupancy certificate.
+- **Building:** the sanctioned building plan; the completion certificate; the occupancy
+  certificate. List the completion and occupancy certificates as two separate documents.
+  A completion certificate issued by the licensed architect or engineer who supervised
+  the building satisfies this step; do not ask for a municipal or corporation-issued
+  completion certificate as well. The occupancy certificate is the local authority's.
 - **Flat in an apartment project:**
-  - the developer's right to build: a joint development agreement and power of attorney from the landowner, or the developer's own title;
+  - the developer's right to build: a joint development agreement; a power of
+    attorney from the landowner; or the developer's own title;
   - the sale deed conveys the flat and an undivided share in the land;
   - the occupancy certificate for the building;
   - registration of the project with the real estate regulator, where the project falls under RERA (check the rules for the project's size and dates);
@@ -32,4 +37,4 @@ Compare what each transfer conveyed with what the next one conveys. The change t
 A site, house or flat sold out of agricultural land with no conversion; a site outside an approved layout; a building without a sanctioned plan or occupancy certificate; granted land sold without permission.
 
 ## Missing documents (list each one that is not uploaded)
-The conversion order, approved layout plan, sanctioned building plan, completion or occupancy certificate, joint development agreement, RERA registration, khata extract, tax receipt.
+The conversion order, approved layout plan, sanctioned building plan, completion certificate, occupancy certificate, joint development agreement, RERA registration, khata extract, tax receipt.

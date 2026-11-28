@@ -138,7 +138,10 @@ class DocumentEntry(_Model):
 class ProofDocument(_Model):
     """One document that legally proves part of a transfer (or of the property today)."""
 
-    name: Text = Field(description="One document, e.g. 'registered sale deed of 2010'.")
+    name: Text = Field(
+        description="One document, e.g. 'registered sale deed of 2010'. Never two documents "
+        "joined by 'and': list each separately."
+    )
     proves: Text = Field(description="One line: what it proves here.")
     status: Literal["found", "missing"]
     citations: list[Citation] = Field(

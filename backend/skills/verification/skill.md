@@ -66,9 +66,14 @@ summary:   Registered sale, but nothing yet shows how Ramesh got the land from R
       prove each step (see `land_use_approvals`) and list them.
    5. **Documents:** list every document that legally proves this transfer:
       its own registered instrument, plus what the topic playbooks require.
-      An uploaded document is found only after you confirm it proves this
-      transfer (right parties, property, extent, date, registration); cite
-      it. One that is not uploaded is missing.
+      One document per entry: never join two with "and", even when the
+      transfer needs both ("completion and occupancy certificates" is two
+      entries). An uploaded document is found only after you confirm it
+      proves this transfer (right parties, property, extent, date,
+      registration); cite it. One that is not uploaded is missing: say only
+      what that document would establish for this transfer, in positive
+      terms; never explain it by comparing it with another transaction or
+      document.
    6. **Concerns:** every problem, once, with its severity, on the transfer
       where it arises. A concern never just says a document is missing: the
       missing document already says that.
